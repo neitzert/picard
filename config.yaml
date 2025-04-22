@@ -1,0 +1,7 @@
+# picard/config.yaml
+# Example config file
+mounts:
+  - type: mqtt
+    broker_url: "mqtt://localhost:1883"
+encryption: true
+parallel: true
