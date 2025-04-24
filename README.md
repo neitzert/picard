@@ -44,3 +44,4 @@ PicardOrchestrator.read_block(path, block_index)
                     -> AES-GCM decrypt to get original block
                     -> return decrypted block
 Each adapter (like MQTT or ATProto) is stupid-simple: it just knows how to send and receive chunk-sized messages. The orchestrator manages logic, encryption, metadata, and redundancy.
+```
