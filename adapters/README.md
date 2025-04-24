@@ -20,7 +20,7 @@ class BaseTransportAdapter:
     def evaluate_capabilities(self) -> dict
     def write_chunk(...)
     def read_chunks(...)
-
+```
 
 Adapters can be dynamically evaluated and used redundantly or selectively depending on capability and availability.
 
