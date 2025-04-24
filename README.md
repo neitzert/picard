@@ -52,4 +52,4 @@ PicardOrchestrator.read_block(path, block_index)
 ```
 
 Each adapter (like MQTT or ATProto) is simple: it just knows how to send and receive chunk-sized messages. The orchestrator manages logic, encryption, metadata, and redundancy.
-```
+
