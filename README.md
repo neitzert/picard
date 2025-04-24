@@ -1,6 +1,6 @@
 ### ⚙️ PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data ⚙️
 
-Picard 'makes it so', no matter what the underlying medium is. Doesn’t matter if it’s IRC, SMTP, IPoAC, or vibes-based quantum gossip, Picard figures it out, builds a resilient, encrypted, RWX-ready filesystem on top, and keeps it alive in harsh conditions.
+Picard 'makes it so', no matter what the underlying medium is. Doesn’t matter if it’s IRC, AT PROTO, DNS, SMTP, IPoAC, or vibes-based quantum gossip, Picard figures it out, builds a resilient, encrypted, RWX-ready filesystem on top, and keeps it alive in harsh conditions.
 
 🧠 Core Philosophy
 
