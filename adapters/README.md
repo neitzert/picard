@@ -1,4 +1,3 @@
-```
 # PICARD Adapters
 
 Each file in this directory defines a protocol adapter that allows the filesystem to operate over a specific transport.
@@ -21,7 +20,7 @@ class BaseTransportAdapter:
     def evaluate_capabilities(self) -> dict
     def write_chunk(...)
     def read_chunks(...)
-```
+
 
 Adapters can be dynamically evaluated and used redundantly or selectively depending on capability and availability.
 
@@ -31,4 +30,4 @@ Adapters can be dynamically evaluated and used redundantly or selectively depend
 - `atproto_adapter.py` — Uses ATProto/Bluesky API to publish and retrieve chunks as posts
 
 More adapters can be added for protocols like DNS, ICMP, SMTP, IRC, ATPROTO, USENET, etc. The system is pluggable.
-```
+
