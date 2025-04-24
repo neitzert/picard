@@ -1,7 +1,43 @@
 # picard/config.yaml
 # Example config file
+# objective here is to loosely configuration requirements to connect to services that become mount points within PICARD
+# ToDo: connect this back to main adapter and orchestrator in a way that works?
+#
 mounts:
   - type: mqtt
-    broker_url: "mqtt://localhost:1883"
+    broker_url: "mqtt://localhost:8883"
+    mqtt_user: (call env variable here)
+    mqtt_pass: (call env variable here)
+    mqtt_clientID: (call env variable here)
+#    
+  - type: atproto
+    instance_url: "https://bsky.social"  
+    atproto_user: (call env variable here)
+    atproto_pass: (call env variable here)
+    
+# Example additional mount types
+# - type: irc
+#   instance_server: "irc.eff.net"
+#   port: "6667"
+#   nick: "SOMETHING"
+#   ident: "SOMETHING_else" #RFC-1413
+#
+# - type: activitypub
+#   Make this https://www.w3.org/TR/activitypub/  work here
+#
+# - type: usenet
+#   server: "host.domain.tld"
+#   port: "443"
+#   usenet_user: "SOMETHING"
+#   usenet_pass: (call env variable here)
+#   usenet_newsgroup_path: (alt.binaries.something)
+#
+# - type: usenet
+#   server: "host.domain.tld"
+#   port: "443"
+#   user: "SOMETHING"
+#   pass: (call env variable here)
+
+transport_encryption: true
 encryption: true
 parallel: true
