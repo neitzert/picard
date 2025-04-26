@@ -5,7 +5,7 @@ Picard 'makes it so', no matter what the underlying medium is. Doesn’t matter 
 🧠 Core Philosophy
 
 * All protocol are scaffolding that data can be attached to, transport, and extracted.
-* 
+  
 * Treat all protocols as potential storage/messaging substrates.
 
 * Auto-detect capabilities and limitations.
