@@ -1,19 +1,17 @@
 ### PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data 
-Picard is your universal data management system. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or vibes-based quantum gossip—Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem, and keeps it alive in the most hostile environments.
+Picard is your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
 
 ## Core Philosophy
 
-* All protocols are scaffolding that data can latch onto, move through, and eventually be extracted from.
+* All protocols are scaffolding that data can be attached to, move through, and later be extracted from.
 
-* Treat all protocols as potential storage and messaging substrates—we make no assumptions about the medium.
-
-* Auto-detect capabilities and limitations: Picard figures out what works, what doesn't, and adjusts accordingly.
+* Treat all protocols as potential storage and messaging substrates, we make no assumptions about the medium, but plenty about the environment.
 
 * Adapt transmission, chunking, and retrieval strategies dynamically based on the protocol.
 
 * Support for encryption, redundancy, and failover.
 
-* Long-term stability is the goal, not just short-term speed.
+* Long-term stability is the goal, we dont care about short-term speed.
 
 * Where feasible, allow read/write operations—fallback to read-only if not.
 
@@ -151,4 +149,4 @@ retrieved_data = orchestrator.read_block(path="testfile", block_index=0)
 ```
 ---
 
-Picard aims to be a versatile and modular experiment designed for resilient data storage across a wide variety of protocols. By treating all protocols as potential storage substrates, Picard ensures long-term stability and robust data management across different environments.
+Picard aims to be a versatile and modular experiment designed for resilient data storage across a wide variety of protocols.
