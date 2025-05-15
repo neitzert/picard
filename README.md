@@ -1,5 +1,5 @@
 ### PICARD: Protocol-Introspecting Chunk Adapter for Resilient Data 
-Picard is your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
+Picard is a WORK IN PROGRESS, your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
 
 ## Core Philosophy
 
