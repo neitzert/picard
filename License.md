@@ -49,9 +49,10 @@ If you’re making money, you're using the wrong license. Email me. Let’s talk
 
 ## LEGAL BACKSTOP
 
-This license is inspired by the [Polyform Noncommercial License](https://polyformproject.org/licenses/noncommercial/1.0.0/).
+This license is inspired by and includes the full terms of the [Polyform Noncommercial License](https://polyformproject.org/licenses/noncommercial/1.0.0/).
 
 That means:
+- You need to read that document also
 - You get the freedom to explore and learn.
 - I retain the right to keep you from exploiting educational software for cash.
 
