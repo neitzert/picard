@@ -74,17 +74,15 @@ max_chunk_size: The maximum size for each chunk, adjusted based on protocol limi
 ### Example Adapters
 dns_adapter.py: Uses DNS to store and retrieve encrypted data chunks as TXT records.
 
-The max_chunk_size is 384 bytes to fit within DNS record size limits, taking base64 encoding overhead into account.
-
-The adapter stores the encrypted data as TXT records, where each record can hold a maximum of 512 bytes (after encoding).
+* The max_chunk_size is 384 bytes to fit within DNS record size limits, taking base64 encoding overhead into account. The adapter stores the encrypted data as TXT records, where each record can hold a maximum of 512 bytes (after encoding).
 
 mqtt_adapter.py: Uses MQTT topics with base64-encoded payloads (supports retained messages).
 
-Designed for low-latency, lightweight storage in IoT systems or other MQTT-based environments.
+* Designed for low-latency, lightweight storage in IoT systems or other MQTT-based environments.
 
 atproto_adapter.py: Uses the ATProto/Bluesky API to publish and retrieve data chunks as posts.
 
-Adapts data to the social media-oriented ATProto network.
+* Adapts data to the social media-oriented ATProto network.
 
 
 ### Adding New Adapters
