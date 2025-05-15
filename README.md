@@ -1,5 +1,5 @@
 ### PICARD: Protocol-Introspecting Chunk Adapter for Resilient Data 
-Picard is a WORK IN PROGRESS, your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
+PICARD is a WORK IN PROGRESS, your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), PICARD automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
 
 ## Core Philosophy
 
@@ -86,7 +86,7 @@ atproto_adapter.py: Uses the ATProto/Bluesky API to publish and retrieve data ch
 
 
 ### Adding New Adapters
-Adding new protocols to Picard is simple:
+Adding new protocols to PICARD is simple:
 
 Create a new Python file in the adapters/ directory.
 
@@ -120,7 +120,7 @@ Add new adapters by following the same template as the existing ones.
 
 Update PicardOrchestrator to detect and use new adapters automatically by placing them in the adapters/ directory.
 
-Adapters can be configured dynamically using the configuration files, which Picard reads at runtime.
+Adapters can be configured dynamically using the configuration files, which PICARD reads at runtime.
 
 ---
 
@@ -147,4 +147,4 @@ retrieved_data = orchestrator.read_block(path="testfile", block_index=0)
 ```
 ---
 
-Picard aims to be a versatile and modular experiment designed for resilient data storage across a wide variety of protocols.
+PICARD aims to be a versatile and modular experiment designed for resilient data storage across a wide variety of protocols.
