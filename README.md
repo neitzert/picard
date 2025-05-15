@@ -1,4 +1,4 @@
-### PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data 
+### PICARD: Protocol-Introspecting Chunk Adapter for Resilient Data 
 Picard is your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), Picard automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
 
 ## Core Philosophy
@@ -13,7 +13,7 @@ Picard is your universal network application procotol as a file system applicati
 
 * Long-term stability is the goal, we dont care about short-term speed.
 
-* Where feasible, allow read/write operations—fallback to read-only if not.
+* Where feasible, allow read/write operations and fallback to read-only if not.
 
 
 
@@ -72,17 +72,17 @@ max_chunk_size: The maximum size for each chunk, adjusted based on protocol limi
 
 
 ### Example Adapters
-dns_adapter.py — Uses DNS to store and retrieve encrypted data chunks as TXT records.
+dns_adapter.py: Uses DNS to store and retrieve encrypted data chunks as TXT records.
 
 The max_chunk_size is 384 bytes to fit within DNS record size limits, taking base64 encoding overhead into account.
 
 The adapter stores the encrypted data as TXT records, where each record can hold a maximum of 512 bytes (after encoding).
 
-mqtt_adapter.py — Uses MQTT topics with base64-encoded payloads (supports retained messages).
+mqtt_adapter.py: Uses MQTT topics with base64-encoded payloads (supports retained messages).
 
 Designed for low-latency, lightweight storage in IoT systems or other MQTT-based environments.
 
-atproto_adapter.py — Uses the ATProto/Bluesky API to publish and retrieve data chunks as posts.
+atproto_adapter.py: Uses the ATProto/Bluesky API to publish and retrieve data chunks as posts.
 
 Adapts data to the social media-oriented ATProto network.
 
