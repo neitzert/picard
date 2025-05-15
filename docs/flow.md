@@ -1,6 +1,6 @@
 # PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data
 
-## 📘 Abstract Flow Concept for PICARD
+## Abstract Flow Concept for PICARD
 
 ### WRITE FLOW
 

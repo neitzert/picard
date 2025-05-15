@@ -9,7 +9,7 @@ Each adapter:
 
 ### Adapter Interface
 
-```
+``` python
 class BaseTransportAdapter:
     name: str
     persistent: bool
@@ -31,3 +31,20 @@ Adapters can be dynamically evaluated and used redundantly or selectively depend
 
 More adapters can be added for protocols like DNS, ICMP, SMTP, IRC, ATPROTO, USENET, etc. The system is pluggable.
 
+### Adapter Configuration Files
+
+Adapters get their config from a JSON file with their same name.
+dns_adapter.py --> dns_adapter.json
+
+``` JSON
+{
+    "dns_server": {
+      "ip": "192.168.1.100",  // Replace with the actual IP of the DNS server
+      "port": 53,
+      "domain": "example.com",
+      "server_name": "DNSaaFS_DNS"
+    },
+    "timeout": 5,
+    "retries": 3
+  }
+```

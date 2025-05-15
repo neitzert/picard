@@ -1,0 +1,10 @@
+{
+    "dns_server": {
+      "ip": "192.168.1.100",
+      "port": 53,
+      "domain": "example.com",
+      "server_name": "DNSaaFS_DNS"
+    },
+    "timeout": 5,
+    "retries": 3
+  }

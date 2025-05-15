@@ -1,0 +1,30 @@
+    {
+  "localmounts": [
+    {
+      "localmountpoint": "/tmp/picard"
+    }
+  ],
+  "protomounts": [
+    {
+      "type": "dns",
+      "adapter_file": "./adapter/dns_adapter.py"
+    },
+    {
+      "type": "mqtt",
+      "adapter_file": "./adapter/mqtt_adapter.py",
+      "broker_url": "mqtt://localhost:8883",
+      "mqtt_user": "(call env variable here)",
+      "mqtt_pass": "(call env variable here)",
+      "mqtt_clientID": "(call env variable here)"
+    },
+    {
+      "type": "atproto",
+      "instance_url": "https://bsky.social",
+      "atproto_user": "(call env variable here)",
+      "atproto_pass": "(call env variable here)"
+    }
+  ],
+  "transport_encryption": true,
+  "block_encryption": true,
+  "parallel": true
+}
