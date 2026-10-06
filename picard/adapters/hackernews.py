@@ -1,0 +1,146 @@
+"""Hacker News adapter — stores chunks as HN comments.
+
+Write via form POST, read via Firebase API:
+    hn://{parent_item_id}/{comment_id}
+
+Requires: pip install picard[hn]
+"""
+
+from __future__ import annotations
+
+from typing import Sequence
+
+from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+
+_MARKER = "[PCHK]"
+_HN_API = "https://hacker-news.firebaseio.com"
+_HN_WEB = "https://news.ycombinator.com"
+
+
+class HackerNewsAdapter(Adapter):
+    """Scatter chunks into Hacker News comments."""
+
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        parent_item_id: int,
+        *,
+        max_chunk_bytes: int = 4096,
+    ) -> None:
+        self._username = username
+        self._password = password
+        self._parent_id = parent_item_id
+        self._max = max_chunk_bytes
+        self._cookie: str | None = None
+
+    def profile(self) -> AdapterProfile:
+        return AdapterProfile(
+            name="hackernews",
+            max_chunk_bytes=self._max,
+            persistent=True,
+            ordered=False,
+            rate_limit_per_min=4,
+        )
+
+    async def _login(self, session) -> None:
+        if self._cookie:
+            return
+        data = {
+            "acct": self._username,
+            "pw": self._password,
+            "goto": "news",
+        }
+        async with session.post(f"{_HN_WEB}/login", data=data) as resp:
+            cookies = resp.cookies
+            if "user" in cookies:
+                self._cookie = cookies["user"].value
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        import aiohttp
+
+        text = f"{_MARKER}{encoded_chunk}"
+
+        async with aiohttp.ClientSession() as session:
+            await self._login(session)
+            headers = {"Cookie": f"user={self._cookie}"} if self._cookie else {}
+
+            data = {
+                "parent": str(self._parent_id),
+                "text": text,
+                "goto": f"item?id={self._parent_id}",
+            }
+            async with session.post(
+                f"{_HN_WEB}/comment", data=data, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+
+            # Fetch parent to find our comment
+            async with session.get(
+                f"{_HN_API}/v0/item/{self._parent_id}.json"
+            ) as resp:
+                parent_data = await resp.json()
+                kids = parent_data.get("kids", [])
+                comment_id = kids[-1] if kids else 0
+
+        location = f"hn://{self._parent_id}/{comment_id}"
+        return StoredChunkRef(adapter_name="hackernews", location=location)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        import aiohttp
+
+        comment_id = ref.location.rsplit("/", 1)[1]
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{_HN_API}/v0/item/{comment_id}.json"
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+        text = data.get("text", "")
+        if text.startswith(_MARKER):
+            text = text[len(_MARKER) :]
+        return text
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        return False
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        import aiohttp
+
+        refs: list[StoredChunkRef] = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{_HN_API}/v0/item/{self._parent_id}.json"
+                ) as resp:
+                    data = await resp.json()
+                    for kid_id in data.get("kids", []):
+                        async with session.get(
+                            f"{_HN_API}/v0/item/{kid_id}.json"
+                        ) as kresp:
+                            kdata = await kresp.json()
+                            text = kdata.get("text", "")
+                            if _MARKER in text and manifest_id in text:
+                                refs.append(
+                                    StoredChunkRef(
+                                        adapter_name="hackernews",
+                                        location=f"hn://{self._parent_id}/{kid_id}",
+                                    )
+                                )
+        except Exception:
+            pass
+        return refs
+
+    async def health_check(self) -> bool:
+        import aiohttp
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{_HN_API}/v0/item/{self._parent_id}.json"
+                ) as resp:
+                    return resp.status == 200
+        except Exception:
+            return False
