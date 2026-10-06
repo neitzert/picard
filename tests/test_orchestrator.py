@@ -4,6 +4,7 @@ import pytest
 
 from picard.adapters.memory import MemoryAdapter
 from picard.index import Index
+from picard.keys import KeyRing, load_master_key
 from picard.orchestrator import Orchestrator
 
 
@@ -12,6 +13,15 @@ def orch():
     adapter = MemoryAdapter(max_chunk_bytes=256)
     index = Index()  # in-memory SQLite
     return Orchestrator([adapter], index, block_size=128)
+
+
+@pytest.fixture
+def orch_with_keys():
+    adapter = MemoryAdapter(max_chunk_bytes=512)
+    index = Index()
+    mk = load_master_key(passphrase="test-passphrase")
+    ring = KeyRing(mk)
+    return Orchestrator([adapter], index, block_size=128, key_ring=ring)
 
 
 @pytest.mark.asyncio
@@ -66,3 +76,19 @@ class TestLsRm:
         await orch.rm("/gone.txt")
         with pytest.raises(FileNotFoundError):
             await orch.get("/gone.txt", "pw")
+
+
+@pytest.mark.asyncio
+class TestPutGetWithKeyRing:
+    async def test_round_trip_with_envelope(self, orch_with_keys):
+        data = b"sealed secret"
+        await orch_with_keys.put("/sealed.txt", data, "pw")
+        result = await orch_with_keys.get("/sealed.txt", "pw")
+        assert result == data
+
+    async def test_multi_block_with_envelope(self, orch_with_keys):
+        data = b"x" * 500
+        manifest = await orch_with_keys.put("/big.bin", data, "pw")
+        assert manifest.total_blocks == 4
+        result = await orch_with_keys.get("/big.bin", "pw")
+        assert result == data

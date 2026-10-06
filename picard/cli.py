@@ -14,6 +14,7 @@ import typer
 
 from picard.adapters.filesystem import FilesystemAdapter
 from picard.index import Index
+from picard.keys import KeyRing, load_master_key
 from picard.orchestrator import Orchestrator
 
 app = typer.Typer(
@@ -41,12 +42,20 @@ def _get_passphrase() -> str:
 def _make_orchestrator(
     store_dir: Path = _DEFAULT_STORE,
     db_path: Path = _DEFAULT_DB,
+    keyfile: Path | None = None,
+    passphrase: str | None = None,
 ) -> Orchestrator:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store_dir.mkdir(parents=True, exist_ok=True)
     adapter = FilesystemAdapter(store_dir)
     index = Index(db_path)
-    return Orchestrator([adapter], index)
+
+    key_ring = None
+    if keyfile or passphrase:
+        mk = load_master_key(passphrase=passphrase, keyfile=keyfile)
+        key_ring = KeyRing(mk)
+
+    return Orchestrator([adapter], index, key_ring=key_ring)
 
 
 @app.command()
@@ -54,6 +63,9 @@ def put(
     file: Path = typer.Argument(..., help="Local file to store."),
     virtual_path: str = typer.Option(
         "", "--as", "-a", help="Virtual path (default: filename)."
+    ),
+    keyfile: Path = typer.Option(
+        None, "--keyfile", "-k", help="Key file for sub-key derivation."
     ),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
@@ -65,7 +77,7 @@ def put(
     data = file.read_bytes()
     vpath = virtual_path or file.name
     pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path)
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
     manifest = asyncio.run(orch.put(vpath, data, pp))
     typer.echo(
         f"stored {vpath}  ({manifest.total_blocks} blocks, "
@@ -79,12 +91,15 @@ def get(
     output: Path = typer.Option(
         None, "--out", "-o", help="Write to file (default: stdout)."
     ),
+    keyfile: Path = typer.Option(
+        None, "--keyfile", "-k", help="Key file for sub-key derivation."
+    ),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Retrieve and decrypt a file."""
     pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path)
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
     data = asyncio.run(orch.get(virtual_path, pp))
     if output:
         output.write_bytes(data)

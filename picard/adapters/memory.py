@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
@@ -25,8 +26,11 @@ class MemoryAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        chunk = Chunk.decode(encoded_chunk)
-        loc = f"mem://{self._name}/{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
+        try:
+            chunk = Chunk.decode(encoded_chunk)
+            loc = f"mem://{self._name}/{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
+        except ValueError:
+            loc = f"mem://{self._name}/{uuid.uuid4().hex}"
         self.store[loc] = encoded_chunk
         return StoredChunkRef(adapter_name=self._name, location=loc)
 
