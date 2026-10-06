@@ -1,8 +1,67 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+*.egg
 *.egg-info/
 dist/
 build/
+*.whl
+sdist/
+wheels/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Claude Code
+.claude/
+
+# Testing / Coverage
+.coverage
+.coverage.*
+htmlcov/
 .pytest_cache/
-*.db
+.tox/
+.nox/
+
+# Type checking
+.mypy_cache/
+.pytype/
+.pyre/
+
+# Ruff / Linting
+.ruff_cache/
+
+# OS artifacts
+Thumbs.db
+Desktop.ini
+.DS_Store
+._*
+
+# PICARD runtime
 .picard/
+
+# Environment / Secrets
+.env
+.env.*
+*.pem
+*.key
+*.keyfile
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Distribution / Packaging
+*.tar.gz
+*.zip
