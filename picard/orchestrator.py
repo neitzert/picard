@@ -13,7 +13,9 @@ from typing import Sequence
 from picard.adapters.base import Adapter, StoredChunkRef
 from picard.chunker import Chunk, chunkify, reassemble
 from picard.crypto import decrypt, encrypt
+from picard.envelope import seal, unseal
 from picard.index import Index
+from picard.keys import KeyRing
 from picard.manifest import (
     BlockRecord,
     ChunkRecord,
@@ -35,12 +37,14 @@ class Orchestrator:
         index: Index,
         *,
         block_size: int = DEFAULT_BLOCK_SIZE,
+        key_ring: KeyRing | None = None,
     ) -> None:
         if not adapters:
             raise ValueError("need at least one adapter")
         self._adapters = list(adapters)
         self._index = index
         self._block_size = block_size
+        self._key_ring = key_ring
 
     # --- public API --------------------------------------------------------
 
@@ -77,14 +81,20 @@ class Orchestrator:
 
             for chunk in chunks:
                 encoded = chunk.encode()
-                ref = await adapter.write_chunk(encoded)
+                if self._key_ring:
+                    sub_key = self._key_ring.get_sub_key(prof.name)
+                    wire = seal(encoded, sub_key, manifest.manifest_id)
+                    wire_str = wire.hex()
+                else:
+                    wire_str = encoded
+                ref = await adapter.write_chunk(wire_str)
                 block.chunks.append(
                     ChunkRecord(
                         chunk_index=chunk.chunk_index,
                         adapter_name=ref.adapter_name,
                         location=ref.location,
                         status=ChunkStatus.STORED,
-                        size_bytes=len(encoded),
+                        size_bytes=len(wire_str),
                     )
                 )
 
@@ -106,7 +116,12 @@ class Orchestrator:
             for cr in block.chunks:
                 adapter = self._adapter_by_name(cr.adapter_name)
                 ref = StoredChunkRef(adapter_name=cr.adapter_name, location=cr.location)
-                encoded = await adapter.read_chunk(ref)
+                wire_str = await adapter.read_chunk(ref)
+                if self._key_ring:
+                    sub_key = self._key_ring.get_sub_key(cr.adapter_name)
+                    encoded = unseal(bytes.fromhex(wire_str), sub_key)
+                else:
+                    encoded = wire_str
                 raw_chunks.append(Chunk.decode(encoded))
 
             ct = reassemble(raw_chunks)
