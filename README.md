@@ -11,10 +11,12 @@ PICARD takes a file, encrypts it (AES-256-GCM, Argon2id key derivation), splits 
 Currently implemented adapters:
 - **memory** — in-process dict (for tests)
 - **filesystem** — chunks as files on disk (for local testing)
-
-Planned adapters:
-- Bluesky / ATProto
-- Reddit
+- **bluesky** — ATProto blobs on Bluesky PDS (`pip install picard[bluesky]`)
+- **reddit** — Reddit wiki pages as chunk storage (`pip install picard[reddit]`)
+- **dns** — DNS TXT records via RFC 2136 dynamic updates (`pip install picard[dns]`)
+- **cloudflare-dns** — DNS TXT records via Cloudflare API (`pip install picard[cloudflare]`)
+- **mqtt** — retained MQTT messages (`pip install picard[mqtt]`)
+- **icmp** — raw ICMP echo request/reply payloads (requires root/CAP_NET_RAW)
 
 ## Quickstart
 
@@ -42,8 +44,12 @@ Orchestrator
 └── Adapters
     ├── memory
     ├── filesystem
-    ├── bluesky (planned)
-    └── reddit (planned)
+    ├── bluesky
+    ├── reddit
+    ├── dns
+    ├── cloudflare-dns
+    ├── mqtt
+    └── icmp
 ```
 
 ## Project structure
@@ -59,17 +65,26 @@ picard/
     index.py           # SQLite manifest/chunk store
     orchestrator.py    # put / get / ls / rm pipeline
     cli.py             # Typer CLI
+    config.py          # TOML/env configuration loader
+    registry.py        # Adapter discovery + instantiation
     adapters/
       base.py          # Adapter Protocol + AdapterProfile
       memory.py        # In-memory (tests)
       filesystem.py    # On-disk (local testing)
+      bluesky.py       # ATProto / Bluesky PDS
+      reddit.py        # Reddit wiki pages
+      dns.py           # DNS TXT records (RFC 2136)
+      cloudflare_dns.py # DNS TXT via Cloudflare API
+      mqtt.py          # MQTT retained messages
+      icmp.py          # ICMP echo payloads
   tests/
 ```
 
 ## Requirements
 
 - Python 3.11+
-- Dependencies: `cryptography`, `argon2-cffi`, `typer`
+- Core: `cryptography`, `argon2-cffi`, `typer`
+- Adapter extras: `atproto`, `praw`, `dnspython`, `httpx`, `paho-mqtt`
 - Dev: `pytest`, `pytest-asyncio`
 
 ## License
