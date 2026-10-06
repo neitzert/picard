@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "picard"
+version = "0.1.0"
+description = "Protocol-Introspecting Chunk Adapter for Resilient Data — encrypt, chunk, and scatter data across protocol gaps."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Christopher Neitzert", email = "chris@neitzert.com" }]
+dependencies = [
+    "cryptography>=42.0",
+    "argon2-cffi>=23.1",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+bluesky = ["atproto>=0.0.55"]
+reddit = ["praw>=7.7"]
+fuse = ["refuse>=0.0.3"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+picard = "picard.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["picard"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
