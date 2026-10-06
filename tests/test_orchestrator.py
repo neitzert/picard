@@ -1,5 +1,7 @@
 """End-to-end tests: orchestrator over the memory adapter."""
 
+import hashlib
+
 import pytest
 
 from picard.adapters.memory import MemoryAdapter
@@ -92,3 +94,92 @@ class TestPutGetWithKeyRing:
         assert manifest.total_blocks == 4
         result = await orch_with_keys.get("/big.bin", "pw")
         assert result == data
+
+
+@pytest.mark.asyncio
+class TestInfo:
+    async def test_basic(self, orch):
+        data = b"hello info"
+        await orch.put("/info.txt", data, "pw")
+        result = await orch.info("/info.txt")
+        assert result["path"] == "/info.txt"
+        assert result["original_size"] == len(data)
+        assert result["total_blocks"] >= 1
+        assert result["total_chunks"] >= 1
+        assert result["all_stored"] is True
+        assert result["plaintext_hash"] == hashlib.sha256(data).hexdigest()
+
+    async def test_not_found(self, orch):
+        with pytest.raises(FileNotFoundError):
+            await orch.info("/nope")
+
+    async def test_adapter_distribution(self, orch):
+        await orch.put("/dist.txt", b"data", "pw")
+        result = await orch.info("/dist.txt")
+        assert "memory" in result["adapter_distribution"]
+
+
+@pytest.mark.asyncio
+class TestVerify:
+    async def test_ok(self, orch):
+        await orch.put("/v.txt", b"verify me", "pw")
+        report = await orch.verify("/v.txt")
+        assert report["ok"] is True
+        assert report["missing_chunks"] == 0
+        assert report["corrupt_blocks"] == 0
+
+    async def test_missing_chunk(self, orch):
+        await orch.put("/v2.txt", b"verify me", "pw")
+        adapter = orch._adapters[0]
+        adapter.store.clear()
+        report = await orch.verify("/v2.txt")
+        assert report["ok"] is False
+        assert report["missing_chunks"] > 0
+
+    async def test_not_found(self, orch):
+        with pytest.raises(FileNotFoundError):
+            await orch.verify("/nope")
+
+
+@pytest.mark.asyncio
+class TestCpMv:
+    async def test_cp(self, orch):
+        data = b"copy me"
+        await orch.put("/orig.txt", data, "pw")
+        await orch.cp("/orig.txt", "/copy.txt")
+        result = await orch.get("/copy.txt", "pw")
+        assert result == data
+        orig = await orch.get("/orig.txt", "pw")
+        assert orig == data
+
+    async def test_mv(self, orch):
+        data = b"move me"
+        await orch.put("/old.txt", data, "pw")
+        await orch.mv("/old.txt", "/new.txt")
+        result = await orch.get("/new.txt", "pw")
+        assert result == data
+
+    async def test_cp_not_found(self, orch):
+        with pytest.raises(FileNotFoundError):
+            await orch.cp("/nope", "/dst")
+
+    async def test_mv_not_found(self, orch):
+        with pytest.raises(FileNotFoundError):
+            await orch.mv("/nope", "/dst")
+
+
+@pytest.mark.asyncio
+class TestDu:
+    async def test_empty(self, orch):
+        result = await orch.du()
+        assert result["total_files"] == 0
+        assert result["total_chunks"] == 0
+
+    async def test_with_files(self, orch):
+        await orch.put("/a.txt", b"aaa", "pw")
+        await orch.put("/b.txt", b"bbb", "pw")
+        result = await orch.du()
+        assert result["total_files"] == 2
+        assert result["total_chunks"] >= 2
+        assert result["total_bytes"] > 0
+        assert "memory" in result["adapters"]

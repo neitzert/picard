@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS manifests (
     block_size   INTEGER NOT NULL,
     total_blocks INTEGER NOT NULL,
     created_at   TEXT NOT NULL,
-    tags         TEXT NOT NULL DEFAULT '{}'
+    tags         TEXT NOT NULL DEFAULT '{}',
+    plaintext_hash TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS blocks (
@@ -45,6 +46,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     location      TEXT NOT NULL,
     status        TEXT NOT NULL DEFAULT 'pending',
     size_bytes    INTEGER NOT NULL DEFAULT 0,
+    digest        TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (manifest_id, block_index, chunk_index),
     FOREIGN KEY (manifest_id, block_index)
         REFERENCES blocks(manifest_id, block_index)
@@ -52,6 +54,11 @@ CREATE TABLE IF NOT EXISTS chunks (
 
 CREATE INDEX IF NOT EXISTS idx_manifests_path ON manifests(path);
 """
+
+_MIGRATIONS = [
+    "ALTER TABLE manifests ADD COLUMN plaintext_hash TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE chunks ADD COLUMN digest TEXT NOT NULL DEFAULT ''",
+]
 
 
 class Index:
@@ -61,6 +68,11 @@ class Index:
         self._conn = sqlite3.connect(str(db_path))
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
+        for migration in _MIGRATIONS:
+            try:
+                self._conn.execute(migration)
+            except sqlite3.OperationalError:
+                pass
 
     # --- write -------------------------------------------------------------
 
@@ -68,7 +80,7 @@ class Index:
         """Insert or replace a full manifest (with blocks and chunks)."""
         with self._conn:
             self._conn.execute(
-                "INSERT OR REPLACE INTO manifests VALUES (?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO manifests VALUES (?,?,?,?,?,?,?,?)",
                 (
                     m.manifest_id,
                     m.path,
@@ -77,6 +89,7 @@ class Index:
                     m.total_blocks,
                     m.created_at,
                     json.dumps(m.tags),
+                    m.plaintext_hash,
                 ),
             )
             for b in m.blocks:
@@ -86,7 +99,7 @@ class Index:
                 )
                 for c in b.chunks:
                     self._conn.execute(
-                        "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?)",
+                        "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?)",
                         (
                             m.manifest_id,
                             b.block_index,
@@ -95,6 +108,7 @@ class Index:
                             c.location,
                             c.status.value,
                             c.size_bytes,
+                            c.digest,
                         ),
                     )
 
@@ -186,6 +200,7 @@ class Index:
                     location=cr["location"],
                     status=ChunkStatus(cr["status"]),
                     size_bytes=cr["size_bytes"],
+                    digest=cr["digest"],
                 )
                 for cr in chunk_rows
             ]
@@ -206,6 +221,7 @@ class Index:
             blocks=blocks,
             created_at=row["created_at"],
             tags=json.loads(row["tags"]),
+            plaintext_hash=row["plaintext_hash"],
         )
 
     def close(self) -> None:

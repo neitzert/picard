@@ -9,6 +9,8 @@ from picard.keys import (
     MasterKey,
     derive_correlation_tag,
     derive_sub_key,
+    export_master_key_salt,
+    import_master_key,
     load_master_key,
 )
 
@@ -133,3 +135,26 @@ class TestKeyRing:
         ring.rotate("s3")
         sk = ring.rotate("s3")
         assert sk.version == 3
+
+
+class TestSaltPortability:
+    def test_export_import_round_trip(self):
+        mk = load_master_key(passphrase="test-pass")
+        portable = export_master_key_salt(mk)
+        mk2 = import_master_key(portable, passphrase="test-pass")
+        assert mk.key == mk2.key
+        assert mk.salt == mk2.salt
+
+    def test_export_import_keyfile(self, tmp_path):
+        kf = tmp_path / "master.key"
+        kf.write_bytes(b"secret-key-material-1234567890ab")
+        mk = load_master_key(keyfile=kf)
+        portable = export_master_key_salt(mk)
+        mk2 = import_master_key(portable, keyfile=kf)
+        assert mk.key == mk2.key
+
+    def test_import_wrong_passphrase_different_key(self):
+        mk = load_master_key(passphrase="right-pass")
+        portable = export_master_key_salt(mk)
+        mk2 = import_master_key(portable, passphrase="wrong-pass")
+        assert mk.key != mk2.key

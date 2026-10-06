@@ -67,6 +67,25 @@ def derive_correlation_tag(sub_key: SubKey, manifest_id: str) -> bytes:
     return hmac.new(sub_key.key, manifest_id.encode(), hashlib.sha256).digest()[:8]
 
 
+def export_master_key_salt(master: MasterKey) -> dict:
+    """Export the non-secret parts needed to re-derive on another machine."""
+    import base64
+
+    return {"salt": base64.b64encode(master.salt).decode(), "source": master.source}
+
+
+def import_master_key(
+    portable: dict,
+    passphrase: str | None = None,
+    keyfile: Path | None = None,
+) -> MasterKey:
+    """Re-derive a MasterKey on another machine using exported salt."""
+    import base64
+
+    salt = base64.b64decode(portable["salt"])
+    return load_master_key(passphrase=passphrase, keyfile=keyfile, salt=salt)
+
+
 class KeyRing:
     def __init__(self, master: MasterKey) -> None:
         self._master = master

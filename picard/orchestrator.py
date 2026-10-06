@@ -6,7 +6,10 @@ and the reverse path: gathering, verifying, reassembling, decrypting.
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import math
+import uuid
 from datetime import datetime, timezone
 from typing import Sequence
 
@@ -57,6 +60,7 @@ class Orchestrator:
             block_size=self._block_size,
             total_blocks=total_blocks,
             created_at=datetime.now(timezone.utc).isoformat(),
+            plaintext_hash=hashlib.sha256(data).hexdigest(),
         )
 
         for bi in range(total_blocks):
@@ -88,6 +92,9 @@ class Orchestrator:
                 else:
                     wire_str = encoded
                 ref = await adapter.write_chunk(wire_str)
+                chunk_digest = hashlib.sha256(
+                    wire_str.encode() if isinstance(wire_str, str) else wire_str
+                ).hexdigest()
                 block.chunks.append(
                     ChunkRecord(
                         chunk_index=chunk.chunk_index,
@@ -95,6 +102,7 @@ class Orchestrator:
                         location=ref.location,
                         status=ChunkStatus.STORED,
                         size_bytes=len(wire_str),
+                        digest=chunk_digest,
                     )
                 )
 
@@ -154,6 +162,158 @@ class Orchestrator:
 
         self._index.delete_manifest(manifest.manifest_id)
         return True
+
+    async def info(self, path: str) -> dict:
+        """Return detailed metadata about a stored file."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+
+        adapter_distribution: dict[str, int] = {}
+        total_chunk_bytes = 0
+        for block in manifest.blocks:
+            for cr in block.chunks:
+                adapter_distribution[cr.adapter_name] = (
+                    adapter_distribution.get(cr.adapter_name, 0) + 1
+                )
+                total_chunk_bytes += cr.size_bytes
+
+        return {
+            "path": manifest.path,
+            "manifest_id": manifest.manifest_id,
+            "original_size": manifest.original_size,
+            "block_size": manifest.block_size,
+            "total_blocks": manifest.total_blocks,
+            "total_chunks": manifest.total_chunks,
+            "total_chunk_bytes": total_chunk_bytes,
+            "created_at": manifest.created_at,
+            "plaintext_hash": manifest.plaintext_hash,
+            "adapter_distribution": adapter_distribution,
+            "tags": manifest.tags,
+            "all_stored": manifest.all_stored,
+        }
+
+    async def verify(self, path: str) -> dict:
+        """Verify integrity of all chunks for a file."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+
+        report: dict = {
+            "path": manifest.path,
+            "manifest_id": manifest.manifest_id,
+            "total_blocks": manifest.total_blocks,
+            "total_chunks": manifest.total_chunks,
+            "verified_chunks": 0,
+            "missing_chunks": 0,
+            "corrupt_blocks": 0,
+            "errors": [],
+        }
+
+        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
+            raw_chunks: list[Chunk] = []
+            block_ok = True
+            for cr in block.chunks:
+                try:
+                    adapter = self._adapter_by_name(cr.adapter_name)
+                    ref = StoredChunkRef(
+                        adapter_name=cr.adapter_name, location=cr.location
+                    )
+                    wire_str = await adapter.read_chunk(ref)
+                    if self._key_ring:
+                        sub_key = self._key_ring.get_sub_key(cr.adapter_name)
+                        encoded = unseal(bytes.fromhex(wire_str), sub_key)
+                    else:
+                        encoded = wire_str
+                    raw_chunks.append(Chunk.decode(encoded))
+                    report["verified_chunks"] += 1
+                except Exception as e:
+                    report["missing_chunks"] += 1
+                    report["errors"].append(
+                        {
+                            "block_index": block.block_index,
+                            "chunk_index": cr.chunk_index,
+                            "adapter": cr.adapter_name,
+                            "error": str(e),
+                        }
+                    )
+                    block_ok = False
+
+            if block_ok and raw_chunks:
+                ct = reassemble(raw_chunks)
+                if block_digest(ct) != block.digest:
+                    report["corrupt_blocks"] += 1
+                    report["errors"].append(
+                        {
+                            "block_index": block.block_index,
+                            "error": "block digest mismatch",
+                        }
+                    )
+
+        report["ok"] = (
+            report["missing_chunks"] == 0 and report["corrupt_blocks"] == 0
+        )
+        return report
+
+    async def cp(self, src_path: str, dst_path: str) -> bool:
+        """Copy a virtual file to a new path (re-indexes, no re-scatter)."""
+        manifest = self._index.get_manifest_by_path(src_path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {src_path}")
+        new_manifest = copy.deepcopy(manifest)
+        new_manifest.manifest_id = uuid.uuid4().hex
+        new_manifest.path = dst_path
+        new_manifest.created_at = datetime.now(timezone.utc).isoformat()
+        self._index.save_manifest(new_manifest)
+        return True
+
+    async def mv(self, src_path: str, dst_path: str) -> bool:
+        """Rename a virtual file path."""
+        manifest = self._index.get_manifest_by_path(src_path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {src_path}")
+        manifest.path = dst_path
+        self._index.save_manifest(manifest)
+        return True
+
+    async def du(self) -> dict:
+        """Storage usage summary per adapter."""
+        paths = self._index.list_paths()
+        adapter_stats: dict[str, dict] = {}
+        total_bytes = 0
+        total_chunks = 0
+
+        for path in paths:
+            manifest = self._index.get_manifest_by_path(path)
+            if manifest is None:
+                continue
+            for block in manifest.blocks:
+                for cr in block.chunks:
+                    if cr.adapter_name not in adapter_stats:
+                        adapter_stats[cr.adapter_name] = {
+                            "chunk_count": 0,
+                            "bytes": 0,
+                        }
+                    adapter_stats[cr.adapter_name]["chunk_count"] += 1
+                    adapter_stats[cr.adapter_name]["bytes"] += cr.size_bytes
+                    total_bytes += cr.size_bytes
+                    total_chunks += 1
+
+        for adapter in self._adapters:
+            name = adapter.profile().name
+            if name in adapter_stats:
+                try:
+                    cap = await adapter.capacity()
+                    adapter_stats[name]["capacity"] = cap
+                except Exception:
+                    pass
+
+        return {
+            "total_bytes": total_bytes,
+            "total_chunks": total_chunks,
+            "total_files": len(paths),
+            "adapters": adapter_stats,
+        }
 
     # --- internal ----------------------------------------------------------
 

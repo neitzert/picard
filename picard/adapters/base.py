@@ -29,6 +29,7 @@ class AdapterProfile:
     ordered: bool = True  # retrieval order matches write order
     ttl_seconds: int | None = None  # None = no automatic expiry
     rate_limit_per_min: int = 60  # writes per minute
+    max_total_bytes: int | None = None  # total storage quota (None = unlimited/unknown)
     tags: dict[str, str] = field(default_factory=dict)
 
 
@@ -69,3 +70,16 @@ class Adapter(ABC):
     async def health_check(self) -> bool:
         """Return True if the backend is currently reachable."""
         return True
+
+    async def capacity(self) -> dict[str, int | None]:
+        """Return storage capacity info.
+
+        Keys: used_bytes, free_bytes, total_bytes, chunk_count.
+        Any value may be None if the adapter can't determine it.
+        """
+        return {
+            "used_bytes": None,
+            "free_bytes": None,
+            "total_bytes": None,
+            "chunk_count": None,
+        }

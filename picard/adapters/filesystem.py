@@ -71,3 +71,16 @@ class FilesystemAdapter(Adapter):
 
     async def health_check(self) -> bool:
         return self._root.is_dir() and os.access(self._root, os.W_OK)
+
+    async def capacity(self) -> dict[str, int | None]:
+        import shutil
+
+        usage = shutil.disk_usage(self._root)
+        chunk_count = sum(1 for _ in self._root.rglob("*.pchk"))
+        used = sum(f.stat().st_size for f in self._root.rglob("*.pchk"))
+        return {
+            "used_bytes": used,
+            "free_bytes": usage.free,
+            "total_bytes": usage.total,
+            "chunk_count": chunk_count,
+        }

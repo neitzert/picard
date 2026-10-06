@@ -32,6 +32,7 @@ class ChunkRecord:
     location: str  # adapter-specific URI / identifier
     status: ChunkStatus = ChunkStatus.PENDING
     size_bytes: int = 0
+    digest: str = ""  # SHA-256 hex of the encoded chunk
 
 
 @dataclass(slots=True)
@@ -56,6 +57,7 @@ class Manifest:
     blocks: list[BlockRecord] = field(default_factory=list)
     created_at: str = ""  # ISO-8601
     tags: dict[str, str] = field(default_factory=dict)
+    plaintext_hash: str = ""  # SHA-256 hex of the original plaintext file
 
     # --- helpers -----------------------------------------------------------
 

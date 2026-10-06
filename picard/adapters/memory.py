@@ -53,3 +53,12 @@ class MemoryAdapter(Adapter):
 
     async def health_check(self) -> bool:
         return True
+
+    async def capacity(self) -> dict[str, int | None]:
+        used = sum(len(v.encode()) for v in self.store.values())
+        return {
+            "used_bytes": used,
+            "free_bytes": None,
+            "total_bytes": None,
+            "chunk_count": len(self.store),
+        }
