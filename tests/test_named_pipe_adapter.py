@@ -17,7 +17,7 @@ class TestProfile:
         assert adapter.profile().name == "named-pipe"
 
     async def test_persistent(self, adapter):
-        assert adapter.profile().persistent is False
+        assert adapter.profile().persistent is True
 
     async def test_max_chunk_bytes(self, adapter):
         assert adapter.profile().max_chunk_bytes == 4096
@@ -38,6 +38,19 @@ class TestWriteRead:
         ref = await adapter.write_chunk(data)
         result = await adapter.read_chunk(ref)
         assert result == data
+
+    async def test_read_from_sidecar_after_cache_clear(self, adapter):
+        ref = await adapter.write_chunk("sidecar-test")
+        adapter._cache.clear()
+        result = await adapter.read_chunk(ref)
+        assert result == "sidecar-test"
+
+    async def test_write_creates_sidecar_file(self, adapter):
+        ref = await adapter.write_chunk("file-check")
+        key = ref.location.rsplit("/", 1)[-1]
+        sidecar = adapter._sidecar_path(key)
+        assert sidecar.exists()
+        assert sidecar.read_text(encoding="utf-8") == "file-check"
 
     async def test_read_missing(self, adapter):
         ref = StoredChunkRef(adapter_name="named-pipe", location="pipe:///tmp/pipes/nonexistent")
