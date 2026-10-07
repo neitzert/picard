@@ -539,5 +539,239 @@ def web(
     serve(host=host, port=port)
 
 
+@app.command()
+def mkdir(
+    virtual_path: str = typer.Argument(..., help="Directory path to create."),
+    parents: bool = typer.Option(False, "-p", "--parents", help="Create parent directories."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Create a virtual directory."""
+    orch = _make_orchestrator(store_dir, db_path)
+    asyncio.run(orch.mkdir(virtual_path, parents=parents))
+    typer.echo(f"mkdir {virtual_path}")
+
+
+@app.command(name="stat")
+def stat_cmd(
+    virtual_path: str = typer.Argument(..., help="Path to stat."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Show filesystem metadata for a path."""
+    orch = _make_orchestrator(store_dir, db_path)
+    m = orch._index.get_manifest_by_path(virtual_path)
+    if m is None:
+        typer.echo(f"not found: {virtual_path}", err=True)
+        raise typer.Exit(1)
+    typer.echo(f"  Path:    {m.path}")
+    typer.echo(f"  Type:    {m.file_type}")
+    typer.echo(f"  Mode:    {oct(m.mode)}")
+    typer.echo(f"  Size:    {m.original_size}")
+    typer.echo(f"  Version: {m.version}")
+    typer.echo(f"  UID/GID: {m.uid}/{m.gid}")
+    typer.echo(f"  mtime:   {m.mtime}")
+    typer.echo(f"  ctime:   {m.ctime}")
+    if m.file_type == "symlink":
+        typer.echo(f"  Target:  {m.symlink_target}")
+
+
+@app.command()
+def tree(
+    virtual_path: str = typer.Argument("/", help="Root path for tree."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Show directory tree."""
+    orch = _make_orchestrator(store_dir, db_path)
+    result = asyncio.run(orch.tree(virtual_path))
+    _print_tree(result, "")
+
+
+def _print_tree(node: dict, prefix: str) -> None:
+    name = node["path"].rsplit("/", 1)[-1] or "/"
+    typer.echo(f"{prefix}{name}")
+    children = node.get("children", [])
+    for i, child in enumerate(children):
+        is_last = i == len(children) - 1
+        connector = "└── " if is_last else "├── "
+        if "children" in child:
+            typer.echo(f"{prefix}{connector}", nl=False)
+            _print_tree(child, prefix + ("    " if is_last else "│   "))
+        else:
+            leaf = child["path"].rsplit("/", 1)[-1]
+            typer.echo(f"{prefix}{connector}{leaf}")
+
+
+@app.command()
+def find(
+    pattern: str = typer.Argument("", help="Prefix to search for."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Find paths matching a prefix."""
+    orch = _make_orchestrator(store_dir, db_path)
+    if pattern:
+        paths = orch._index.list_paths_with_prefix(pattern)
+    else:
+        paths = asyncio.run(orch.ls())
+    for p in paths:
+        typer.echo(p)
+
+
+@app.command()
+def touch(
+    virtual_path: str = typer.Argument(..., help="Path to touch."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Create an empty file or update timestamps."""
+    from datetime import datetime, timezone
+
+    orch = _make_orchestrator(store_dir, db_path)
+    m = orch._index.get_manifest_by_path(virtual_path)
+    now = datetime.now(timezone.utc).isoformat()
+    if m:
+        orch._index.update_manifest_metadata(m.manifest_id, mtime=now, atime=now)
+        typer.echo(f"touched {virtual_path}")
+    else:
+        pp = _get_passphrase()
+        asyncio.run(orch.put(virtual_path, b"", pp))
+        typer.echo(f"created {virtual_path}")
+
+
+@app.command()
+def ln(
+    target: str = typer.Argument(..., help="Target path."),
+    link: str = typer.Argument(..., help="Link path to create."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Create a symbolic link."""
+    orch = _make_orchestrator(store_dir, db_path)
+    asyncio.run(orch.symlink(link, target))
+    typer.echo(f"{link} -> {target}")
+
+
+@app.command()
+def head(
+    virtual_path: str = typer.Argument(..., help="Path to read."),
+    bytes_count: int = typer.Option(1024, "-c", "--bytes", help="Number of bytes."),
+    keyfile: Path = typer.Option(None, "--keyfile", "-k"),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Read the first N bytes of a file."""
+    pp = _get_passphrase()
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    data = asyncio.run(orch.read_range(virtual_path, 0, bytes_count, pp))
+    sys.stdout.buffer.write(data)
+
+
+@app.command()
+def tail(
+    virtual_path: str = typer.Argument(..., help="Path to read."),
+    bytes_count: int = typer.Option(1024, "-c", "--bytes", help="Number of bytes."),
+    keyfile: Path = typer.Option(None, "--keyfile", "-k"),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Read the last N bytes of a file."""
+    pp = _get_passphrase()
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    result = asyncio.run(orch.info(virtual_path))
+    size = result["original_size"]
+    offset = max(0, size - bytes_count)
+    data = asyncio.run(orch.read_range(virtual_path, offset, bytes_count, pp))
+    sys.stdout.buffer.write(data)
+
+
+@app.command(name="fsck")
+def fsck_cmd(
+    keyfile: Path = typer.Option(None, "--keyfile", "-k"),
+    no_digests: bool = typer.Option(False, "--no-digests", help="Skip digest verification."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Check filesystem integrity."""
+    from picard.fsck import fsck as _fsck
+
+    pp = None
+    if keyfile:
+        pp = _get_passphrase()
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    report = asyncio.run(_fsck(
+        orch._index, orch._adapters,
+        verify_digests=not no_digests,
+        key_ring=orch._key_ring,
+    ))
+    typer.echo(f"fsck: {report.total_manifests} manifests, "
+               f"{report.total_blocks} blocks, {report.total_chunks} chunks")
+    typer.echo(f"  Verified:    {report.verified_chunks}")
+    if report.missing_chunks:
+        typer.echo(f"  Missing:     {report.missing_chunks}", err=True)
+    if report.corrupt_blocks:
+        typer.echo(f"  Corrupt:     {report.corrupt_blocks}", err=True)
+    if report.directory_errors:
+        typer.echo(f"  Dir errors:  {report.directory_errors}", err=True)
+    if report.symlink_errors:
+        typer.echo(f"  Link errors: {report.symlink_errors}", err=True)
+    if report.journal_incomplete:
+        typer.echo(f"  Journal:     {report.journal_incomplete} incomplete", err=True)
+    for err in report.errors:
+        typer.echo(f"  ! {err}", err=True)
+    if report.ok:
+        typer.echo("  OK")
+    else:
+        raise typer.Exit(1)
+
+
+@app.command()
+def log(
+    virtual_path: str = typer.Argument(..., help="Path to show history for."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Show version history for a path."""
+    orch = _make_orchestrator(store_dir, db_path)
+    versions = asyncio.run(orch.list_versions(virtual_path))
+    if not versions:
+        typer.echo(f"no versions for {virtual_path}")
+        return
+    for v in versions:
+        typer.echo(f"  v{v['version']}  {v['created_at']}  "
+                   f"{v['original_size']} bytes  {v['manifest_id'][:12]}...")
+
+
+@app.command(name="mount")
+def mount_cmd(
+    mountpoint: str = typer.Argument(..., help="Mount point (directory or drive letter)."),
+    keyfile: Path = typer.Option(None, "--keyfile", "-k"),
+    readonly: bool = typer.Option(False, "--ro", help="Mount read-only."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Mount PICARD as a FUSE filesystem."""
+    from picard.cache import BlockCache
+    from picard.fuse_mount import HAS_FUSE, mount as fuse_mount
+
+    if not HAS_FUSE:
+        typer.echo(
+            "FUSE not available. Install:\n"
+            "  Linux: sudo apt install libfuse-dev (or equivalent)\n"
+            "  macOS: brew install macfuse\n"
+            "  Windows: install WinFSP from https://winfsp.dev",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    pp = _get_passphrase()
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    cache = BlockCache()
+    typer.echo(f"Mounting PICARD at {mountpoint} ...")
+    typer.echo("Press Ctrl+C to unmount.")
+    fuse_mount(orch, pp, mountpoint, block_cache=cache, readonly=readonly)
+
+
 if __name__ == "__main__":
     app()

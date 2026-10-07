@@ -19,14 +19,26 @@ from picard.manifest import (
 
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS manifests (
-    manifest_id  TEXT PRIMARY KEY,
-    path         TEXT NOT NULL,
-    original_size INTEGER NOT NULL,
-    block_size   INTEGER NOT NULL,
-    total_blocks INTEGER NOT NULL,
-    created_at   TEXT NOT NULL,
-    tags         TEXT NOT NULL DEFAULT '{}',
-    plaintext_hash TEXT NOT NULL DEFAULT ''
+    manifest_id    TEXT PRIMARY KEY,
+    path           TEXT NOT NULL,
+    original_size  INTEGER NOT NULL,
+    block_size     INTEGER NOT NULL,
+    total_blocks   INTEGER NOT NULL,
+    created_at     TEXT NOT NULL,
+    tags           TEXT NOT NULL DEFAULT '{}',
+    plaintext_hash TEXT NOT NULL DEFAULT '',
+    file_type      TEXT NOT NULL DEFAULT 'regular',
+    mode           INTEGER NOT NULL DEFAULT 33188,
+    mtime          TEXT NOT NULL DEFAULT '',
+    ctime          TEXT NOT NULL DEFAULT '',
+    atime          TEXT NOT NULL DEFAULT '',
+    uid            INTEGER NOT NULL DEFAULT 0,
+    gid            INTEGER NOT NULL DEFAULT 0,
+    symlink_target TEXT NOT NULL DEFAULT '',
+    nlink          INTEGER NOT NULL DEFAULT 1,
+    xattrs         TEXT NOT NULL DEFAULT '{}',
+    version        INTEGER NOT NULL DEFAULT 1,
+    parent_path    TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS blocks (
@@ -53,11 +65,27 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_manifests_path ON manifests(path);
+CREATE INDEX IF NOT EXISTS idx_manifests_parent ON manifests(parent_path);
+CREATE INDEX IF NOT EXISTS idx_manifests_path_version ON manifests(path, version);
 """
 
 _MIGRATIONS = [
     "ALTER TABLE manifests ADD COLUMN plaintext_hash TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE chunks ADD COLUMN digest TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE manifests ADD COLUMN file_type TEXT NOT NULL DEFAULT 'regular'",
+    "ALTER TABLE manifests ADD COLUMN mode INTEGER NOT NULL DEFAULT 33188",
+    "ALTER TABLE manifests ADD COLUMN mtime TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE manifests ADD COLUMN ctime TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE manifests ADD COLUMN atime TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE manifests ADD COLUMN uid INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE manifests ADD COLUMN gid INTEGER NOT NULL DEFAULT 0",
+    "ALTER TABLE manifests ADD COLUMN symlink_target TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE manifests ADD COLUMN nlink INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE manifests ADD COLUMN xattrs TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE manifests ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+    "ALTER TABLE manifests ADD COLUMN parent_path TEXT NOT NULL DEFAULT ''",
+    "CREATE INDEX IF NOT EXISTS idx_manifests_parent ON manifests(parent_path)",
+    "CREATE INDEX IF NOT EXISTS idx_manifests_path_version ON manifests(path, version)",
 ]
 
 
@@ -80,7 +108,11 @@ class Index:
         """Insert or replace a full manifest (with blocks and chunks)."""
         with self._conn:
             self._conn.execute(
-                "INSERT OR REPLACE INTO manifests VALUES (?,?,?,?,?,?,?,?)",
+                "INSERT OR REPLACE INTO manifests "
+                "(manifest_id, path, original_size, block_size, total_blocks, "
+                "created_at, tags, plaintext_hash, file_type, mode, mtime, ctime, "
+                "atime, uid, gid, symlink_target, nlink, xattrs, version, parent_path) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     m.manifest_id,
                     m.path,
@@ -90,6 +122,18 @@ class Index:
                     m.created_at,
                     json.dumps(m.tags),
                     m.plaintext_hash,
+                    m.file_type,
+                    m.mode,
+                    m.mtime,
+                    m.ctime,
+                    m.atime,
+                    m.uid,
+                    m.gid,
+                    m.symlink_target,
+                    m.nlink,
+                    json.dumps(m.xattrs),
+                    m.version,
+                    m.parent_path,
                 ),
             )
             for b in m.blocks:
@@ -212,6 +256,12 @@ class Index:
                     chunks=chunks,
                 )
             )
+        def _col(name: str, default=""):
+            try:
+                return row[name]
+            except (IndexError, KeyError):
+                return default
+
         return Manifest(
             manifest_id=mid,
             path=row["path"],
@@ -222,7 +272,94 @@ class Index:
             created_at=row["created_at"],
             tags=json.loads(row["tags"]),
             plaintext_hash=row["plaintext_hash"],
+            file_type=_col("file_type", "regular"),
+            mode=_col("mode", 0o100644),
+            mtime=_col("mtime", ""),
+            ctime=_col("ctime", ""),
+            atime=_col("atime", ""),
+            uid=_col("uid", 0),
+            gid=_col("gid", 0),
+            symlink_target=_col("symlink_target", ""),
+            nlink=_col("nlink", 1),
+            xattrs=json.loads(_col("xattrs", "{}")),
+            version=_col("version", 1),
+            parent_path=_col("parent_path", ""),
         )
+
+    def get_next_version(self, path: str) -> int:
+        row = self._conn.execute(
+            "SELECT MAX(version) as max_v FROM manifests WHERE path=?", (path,)
+        ).fetchone()
+        return (row["max_v"] or 0) + 1
+
+    def get_manifest_by_path_version(self, path: str, version: int) -> Manifest | None:
+        row = self._conn.execute(
+            "SELECT * FROM manifests WHERE path=? AND version=? LIMIT 1",
+            (path, version),
+        ).fetchone()
+        if row is None:
+            return None
+        return self._row_to_manifest(row)
+
+    def list_versions(self, path: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT manifest_id, version, created_at, original_size, file_type "
+            "FROM manifests WHERE path=? ORDER BY version",
+            (path,),
+        ).fetchall()
+        return [
+            {
+                "manifest_id": r["manifest_id"],
+                "version": r["version"],
+                "created_at": r["created_at"],
+                "original_size": r["original_size"],
+                "file_type": r["file_type"],
+            }
+            for r in rows
+        ]
+
+    def list_children(self, parent_path: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT path FROM manifests WHERE parent_path=? ORDER BY path",
+            (parent_path,),
+        ).fetchall()
+        return [r["path"] for r in rows]
+
+    def list_paths_with_prefix(self, prefix: str) -> list[str]:
+        rows = self._conn.execute(
+            "SELECT DISTINCT path FROM manifests WHERE path LIKE ? ORDER BY path",
+            (prefix + "%",),
+        ).fetchall()
+        return [r["path"] for r in rows]
+
+    def update_manifest_metadata(self, manifest_id: str, **fields: object) -> None:
+        if not fields:
+            return
+        allowed = {
+            "mode", "mtime", "ctime", "atime", "uid", "gid",
+            "nlink", "symlink_target", "xattrs", "tags",
+        }
+        sets = []
+        vals = []
+        for k, v in fields.items():
+            if k not in allowed:
+                continue
+            if k in ("xattrs", "tags"):
+                v = json.dumps(v)
+            sets.append(f"{k}=?")
+            vals.append(v)
+        if not sets:
+            return
+        vals.append(manifest_id)
+        with self._conn:
+            self._conn.execute(
+                f"UPDATE manifests SET {', '.join(sets)} WHERE manifest_id=?",
+                vals,
+            )
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self._conn
 
     def close(self) -> None:
         self._conn.close()

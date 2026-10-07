@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Sequence
 
 from picard.adapters.base import Adapter, StoredChunkRef
+from picard.cache import BlockCache
 from picard.chunker import Chunk, chunkify, reassemble
 from picard.crypto import decrypt, encrypt
 from picard.envelope import seal, unseal
@@ -41,6 +42,7 @@ class Orchestrator:
         *,
         block_size: int = DEFAULT_BLOCK_SIZE,
         key_ring: KeyRing | None = None,
+        block_cache: BlockCache | None = None,
     ) -> None:
         if not adapters:
             raise ValueError("need at least one adapter")
@@ -48,20 +50,38 @@ class Orchestrator:
         self._index = index
         self._block_size = block_size
         self._key_ring = key_ring
+        self._block_cache = block_cache
         self._next_adapter: int = 0
 
     # --- public API --------------------------------------------------------
 
-    async def put(self, path: str, data: bytes, passphrase: str) -> Manifest:
+    async def put(
+        self,
+        path: str,
+        data: bytes,
+        passphrase: str,
+        *,
+        mode: int = 0o100644,
+    ) -> Manifest:
         """Encrypt, chunk, scatter *data* and return its manifest."""
         total_blocks = max(1, math.ceil(len(data) / self._block_size))
+        now = datetime.now(timezone.utc).isoformat()
+        parts = path.rsplit("/", 1)
+        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        version = self._index.get_next_version(path)
         manifest = Manifest(
             path=path,
             original_size=len(data),
             block_size=self._block_size,
             total_blocks=total_blocks,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=now,
             plaintext_hash=hashlib.sha256(data).hexdigest(),
+            mtime=now,
+            ctime=now,
+            atime=now,
+            mode=mode,
+            version=version,
+            parent_path=parent,
         )
 
         for bi in range(total_blocks):
@@ -112,41 +132,65 @@ class Orchestrator:
         self._index.save_manifest(manifest)
         return manifest
 
-    async def get(self, path: str, passphrase: str) -> bytes:
+    async def get(
+        self, path: str, passphrase: str, *, follow_symlinks: bool = True,
+    ) -> bytes:
         """Retrieve and decrypt the file at *path*."""
+        manifest = self._resolve_path(path, follow_symlinks)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+        if manifest.file_type != "regular":
+            raise FileNotFoundError(f"not a regular file: {path}")
+        parts: list[bytes] = []
+        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
+            parts.append(await self._decrypt_block(manifest, block, passphrase))
+        return b"".join(parts)
+
+    async def get_block(
+        self, path: str, block_index: int, passphrase: str,
+    ) -> bytes:
+        """Fetch, reassemble, and decrypt a single block of *path*."""
         manifest = self._index.get_manifest_by_path(path)
         if manifest is None:
             raise FileNotFoundError(f"no manifest for path: {path}")
+        for block in manifest.blocks:
+            if block.block_index == block_index:
+                return await self._decrypt_block(manifest, block, passphrase)
+        raise IndexError(
+            f"block {block_index} not found (file has {manifest.total_blocks} blocks)"
+        )
 
-        plaintext_blocks: list[bytes] = []
+    async def read_range(
+        self, path: str, offset: int, length: int, passphrase: str,
+    ) -> bytes:
+        """Read *length* bytes starting at *offset* within *path*."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+        if offset >= manifest.original_size:
+            return b""
+        end = min(offset + length, manifest.original_size)
+        bs = manifest.block_size
+        start_bi = offset // bs
+        end_bi = (end - 1) // bs
 
-        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
-            raw_chunks: list[Chunk] = []
-            for cr in block.chunks:
-                adapter = self._adapter_by_name(cr.adapter_name)
-                ref = StoredChunkRef(adapter_name=cr.adapter_name, location=cr.location)
-                wire_str = await adapter.read_chunk(ref)
-                if self._key_ring:
-                    sub_key = self._key_ring.get_sub_key(cr.adapter_name)
-                    encoded = unseal(bytes.fromhex(wire_str), sub_key)
-                else:
-                    encoded = wire_str
-                raw_chunks.append(Chunk.decode(encoded))
+        blocks_by_idx = {b.block_index: b for b in manifest.blocks}
+        result: list[bytes] = []
+        for bi in range(start_bi, end_bi + 1):
+            block = blocks_by_idx.get(bi)
+            if block is None:
+                raise ValueError(f"missing block {bi}")
+            pt = await self._decrypt_block(manifest, block, passphrase)
+            blk_start = bi * bs
+            lo = max(offset, blk_start) - blk_start
+            hi = min(end, blk_start + bs) - blk_start
+            result.append(pt[lo:hi])
+        return b"".join(result)
 
-            ct = reassemble(raw_chunks)
-
-            # Verify digest
-            if block_digest(ct) != block.digest:
-                raise ValueError(
-                    f"block {block.block_index} digest mismatch — data may be corrupted"
-                )
-
-            plaintext_blocks.append(decrypt(ct, passphrase))
-
-        return b"".join(plaintext_blocks)
-
-    async def ls(self) -> list[str]:
-        """List all stored virtual paths."""
+    async def ls(self, path: str = "") -> list[str]:
+        """List virtual paths. With *path*, list children of that directory."""
+        if path:
+            return self._index.list_children(path)
         return self._index.list_paths()
 
     async def rm(self, path: str) -> bool:
@@ -316,7 +360,204 @@ class Orchestrator:
             "adapters": adapter_stats,
         }
 
+    # --- directories -------------------------------------------------------
+
+    async def mkdir(
+        self, path: str, *, mode: int = 0o040755, parents: bool = False,
+    ) -> Manifest:
+        """Create a directory entry."""
+        if parents:
+            self._ensure_parents(path)
+        now = datetime.now(timezone.utc).isoformat()
+        parts = path.rsplit("/", 1)
+        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        manifest = Manifest(
+            path=path,
+            original_size=0,
+            block_size=0,
+            total_blocks=0,
+            created_at=now,
+            file_type="directory",
+            mode=mode,
+            mtime=now,
+            ctime=now,
+            atime=now,
+            version=self._index.get_next_version(path),
+            parent_path=parent,
+        )
+        self._index.save_manifest(manifest)
+        return manifest
+
+    async def rmdir(self, path: str) -> bool:
+        """Remove an empty directory."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None:
+            return False
+        if manifest.file_type != "directory":
+            raise OSError(f"not a directory: {path}")
+        children = self._index.list_children(path)
+        if children:
+            raise OSError(f"directory not empty: {path}")
+        self._index.delete_manifest(manifest.manifest_id)
+        return True
+
+    async def tree(self, path: str = "/") -> dict:
+        """Return a nested dict representing the directory tree."""
+        children = self._index.list_children(path)
+        result: dict = {"path": path, "children": []}
+        for child in children:
+            m = self._index.get_manifest_by_path(child)
+            if m and m.file_type == "directory":
+                result["children"].append(await self.tree(child))
+            else:
+                result["children"].append({"path": child})
+        return result
+
+    def _ensure_parents(self, path: str) -> None:
+        """Create directory manifests for all missing ancestors of *path*."""
+        parts = path.strip("/").split("/")
+        for i in range(len(parts) - 1):
+            dir_path = "/" + "/".join(parts[: i + 1])
+            existing = self._index.get_manifest_by_path(dir_path)
+            if existing is None:
+                now = datetime.now(timezone.utc).isoformat()
+                dir_parts = dir_path.rsplit("/", 1)
+                parent = dir_parts[0] if len(dir_parts) > 1 and dir_parts[0] else "/"
+                m = Manifest(
+                    path=dir_path,
+                    original_size=0,
+                    block_size=0,
+                    total_blocks=0,
+                    created_at=now,
+                    file_type="directory",
+                    mode=0o040755,
+                    mtime=now,
+                    ctime=now,
+                    atime=now,
+                    version=self._index.get_next_version(dir_path),
+                    parent_path=parent,
+                )
+                self._index.save_manifest(m)
+
+    # --- symlinks ----------------------------------------------------------
+
+    async def symlink(self, link_path: str, target_path: str) -> Manifest:
+        """Create a symbolic link at *link_path* pointing to *target_path*."""
+        now = datetime.now(timezone.utc).isoformat()
+        parts = link_path.rsplit("/", 1)
+        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        manifest = Manifest(
+            path=link_path,
+            original_size=0,
+            block_size=0,
+            total_blocks=0,
+            created_at=now,
+            file_type="symlink",
+            mode=0o120777,
+            symlink_target=target_path,
+            mtime=now,
+            ctime=now,
+            atime=now,
+            version=self._index.get_next_version(link_path),
+            parent_path=parent,
+        )
+        self._index.save_manifest(manifest)
+        return manifest
+
+    async def readlink(self, path: str) -> str:
+        """Return the target of a symlink."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+        if manifest.file_type != "symlink":
+            raise OSError(f"not a symlink: {path}")
+        return manifest.symlink_target
+
+    # --- versioning --------------------------------------------------------
+
+    async def get_version(
+        self, path: str, version: int, passphrase: str,
+    ) -> bytes:
+        """Retrieve a specific version of a file."""
+        manifest = self._index.get_manifest_by_path_version(path, version)
+        if manifest is None:
+            raise FileNotFoundError(
+                f"no manifest for path {path!r} version {version}"
+            )
+        parts: list[bytes] = []
+        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
+            parts.append(await self._decrypt_block(manifest, block, passphrase))
+        return b"".join(parts)
+
+    async def list_versions(self, path: str) -> list[dict]:
+        """Return version history for a path."""
+        return self._index.list_versions(path)
+
+    async def rollback(self, path: str, version: int) -> Manifest:
+        """Restore a previous version by creating a new manifest with its blocks."""
+        old = self._index.get_manifest_by_path_version(path, version)
+        if old is None:
+            raise FileNotFoundError(
+                f"no manifest for path {path!r} version {version}"
+            )
+        new = copy.deepcopy(old)
+        new.manifest_id = uuid.uuid4().hex
+        new.version = self._index.get_next_version(path)
+        new.created_at = datetime.now(timezone.utc).isoformat()
+        new.mtime = new.created_at
+        self._index.save_manifest(new)
+        return new
+
     # --- internal ----------------------------------------------------------
+
+    def _resolve_path(
+        self, path: str, follow_symlinks: bool = True,
+    ) -> Manifest | None:
+        """Resolve *path*, following symlinks up to 40 levels deep."""
+        manifest = self._index.get_manifest_by_path(path)
+        if manifest is None or not follow_symlinks:
+            return manifest
+        depth = 0
+        while manifest is not None and manifest.file_type == "symlink":
+            depth += 1
+            if depth > 40:
+                raise OSError("too many levels of symbolic links")
+            manifest = self._index.get_manifest_by_path(manifest.symlink_target)
+        return manifest
+
+    async def _decrypt_block(
+        self, manifest: Manifest, block: BlockRecord, passphrase: str,
+    ) -> bytes:
+        """Decrypt a single block, using the block cache if available."""
+        if self._block_cache is not None:
+            cached = self._block_cache.get(manifest.manifest_id, block.block_index)
+            if cached is not None:
+                return cached
+
+        raw_chunks: list[Chunk] = []
+        for cr in block.chunks:
+            adapter = self._adapter_by_name(cr.adapter_name)
+            ref = StoredChunkRef(
+                adapter_name=cr.adapter_name, location=cr.location,
+            )
+            wire_str = await adapter.read_chunk(ref)
+            if self._key_ring:
+                sub_key = self._key_ring.get_sub_key(cr.adapter_name)
+                encoded = unseal(bytes.fromhex(wire_str), sub_key)
+            else:
+                encoded = wire_str
+            raw_chunks.append(Chunk.decode(encoded))
+        ct = reassemble(raw_chunks)
+        if block_digest(ct) != block.digest:
+            raise ValueError(
+                f"block {block.block_index} digest mismatch — data may be corrupted"
+            )
+        pt = decrypt(ct, passphrase)
+
+        if self._block_cache is not None:
+            self._block_cache.put(manifest.manifest_id, block.block_index, pt)
+
+        return pt
 
     def _pick_adapter(self) -> Adapter:
         """Round-robin across all adapters."""

@@ -14,6 +14,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
+class FileType(str, Enum):
+    REGULAR = "regular"
+    DIRECTORY = "directory"
+    SYMLINK = "symlink"
+
+
 class ChunkStatus(str, Enum):
     """Lifecycle state of a single chunk."""
 
@@ -58,6 +64,18 @@ class Manifest:
     created_at: str = ""  # ISO-8601
     tags: dict[str, str] = field(default_factory=dict)
     plaintext_hash: str = ""  # SHA-256 hex of the original plaintext file
+    file_type: str = "regular"
+    mode: int = 0o100644
+    mtime: str = ""
+    ctime: str = ""
+    atime: str = ""
+    uid: int = 0
+    gid: int = 0
+    symlink_target: str = ""
+    nlink: int = 1
+    xattrs: dict[str, str] = field(default_factory=dict)
+    version: int = 1
+    parent_path: str = ""
 
     # --- helpers -----------------------------------------------------------
 
