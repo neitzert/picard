@@ -107,7 +107,7 @@ class TestCapacity:
 class TestBuildTOML:
     def test_valid_toml_structure(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("config data"))
+        asyncio.run(adapter.write_chunk("config data"))
         toml = adapter._build_toml()
         assert "[picard]" in toml
         assert "data = " in toml

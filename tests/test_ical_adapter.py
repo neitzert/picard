@@ -107,7 +107,7 @@ class TestCapacity:
 class TestBuildICS:
     def test_valid_ics_structure(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("event data"))
+        asyncio.run(adapter.write_chunk("event data"))
         ics = adapter._build_ics()
         assert "BEGIN:VCALENDAR" in ics
         assert "END:VCALENDAR" in ics

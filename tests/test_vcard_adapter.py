@@ -107,7 +107,7 @@ class TestCapacity:
 class TestBuildVCF:
     def test_valid_vcf_structure(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("note data"))
+        asyncio.run(adapter.write_chunk("note data"))
         vcf = adapter._build_vcf()
         assert "BEGIN:VCARD" in vcf
         assert "END:VCARD" in vcf

@@ -109,7 +109,7 @@ class TestCapacity:
 class TestBuildFeed:
     def test_valid_xml_structure(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("test"))
+        asyncio.run(adapter.write_chunk("test"))
         feed = adapter._build_feed()
         assert '<?xml version="1.0"' in feed
         assert '<rss version="2.0">' in feed

@@ -118,7 +118,7 @@ class TestHostnameEncoding:
 
     def test_build_hosts(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("test"))
+        asyncio.run(adapter.write_chunk("test"))
         hosts = adapter._build_hosts()
         assert "127.0." in hosts
         assert ".picard.local" in hosts

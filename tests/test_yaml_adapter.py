@@ -107,7 +107,7 @@ class TestCapacity:
 class TestBuildYAML:
     def test_valid_yaml_structure(self, adapter):
         import asyncio
-        asyncio.get_event_loop().run_until_complete(adapter.write_chunk("yaml val"))
+        asyncio.run(adapter.write_chunk("yaml val"))
         yml = adapter._build_yaml()
         assert "picard:" in yml
         assert "chunks:" in yml
