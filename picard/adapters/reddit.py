@@ -4,7 +4,9 @@ Each chunk becomes a self-post whose body is the PCHK-encoded string.
 Posts are titled with a manifest-id tag so they can be filtered for
 recovery.
 
-Requires: pip install picard[reddit]
+Two modes:
+  - API mode (default): uses PRAW — pip install picard[reddit]
+  - Browser mode: uses Playwright — pip install picard[browser]
 """
 
 from __future__ import annotations
@@ -15,20 +17,24 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
 
+_OLD_REDDIT = "https://old.reddit.com"
+
 
 class RedditAdapter(Adapter):
-    """Scatter chunks into Reddit self-posts via PRAW."""
+    """Scatter chunks into Reddit self-posts via PRAW or Playwright."""
 
     def __init__(
         self,
-        client_id: str,
-        client_secret: str,
-        username: str,
-        password: str,
-        subreddit: str,
+        client_id: str = "",
+        client_secret: str = "",
+        username: str = "",
+        password: str = "",
+        subreddit: str = "u_picard_test",
         *,
         user_agent: str = "picard/0.1",
         max_chunk_bytes: int = 39_000,
+        use_browser: bool = False,
+        headless: bool = True,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
@@ -37,6 +43,8 @@ class RedditAdapter(Adapter):
         self._subreddit_name = subreddit
         self._user_agent = user_agent
         self._max = max_chunk_bytes
+        self._use_browser = use_browser
+        self._headless = headless
         self._reddit: object | None = None
 
     def _ensure_reddit(self):
@@ -59,10 +67,12 @@ class RedditAdapter(Adapter):
             max_chunk_bytes=self._max,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=10,
+            rate_limit_per_min=4 if self._use_browser else 10,
         )
 
-    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+    # ── API mode ────────────────────────────────────────────────
+
+    async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
         reddit = self._ensure_reddit()
         chunk = Chunk.decode(encoded_chunk)
         title = (
@@ -78,7 +88,7 @@ class RedditAdapter(Adapter):
         submission_id = await asyncio.to_thread(_submit)
         return StoredChunkRef(adapter_name="reddit", location=submission_id)
 
-    async def read_chunk(self, ref: StoredChunkRef) -> str:
+    async def _api_read(self, ref: StoredChunkRef) -> str:
         reddit = self._ensure_reddit()
 
         def _read():
@@ -86,7 +96,7 @@ class RedditAdapter(Adapter):
 
         return await asyncio.to_thread(_read)
 
-    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+    async def _api_delete(self, ref: StoredChunkRef) -> bool:
         reddit = self._ensure_reddit()
 
         def _delete():
@@ -98,7 +108,7 @@ class RedditAdapter(Adapter):
 
         return await asyncio.to_thread(_delete)
 
-    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+    async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         reddit = self._ensure_reddit()
         tag = f"[PCHK] {manifest_id} "
 
@@ -118,7 +128,139 @@ class RedditAdapter(Adapter):
 
         return await asyncio.to_thread(_list)
 
+    # ── Browser mode ────────────────────────────────────────────
+
+    async def _browser_page(self):
+        from picard.browser_pool import BrowserPool
+
+        pool = await BrowserPool.get(headless=self._headless)
+        ctx = await pool.context("reddit")
+        page = await ctx.new_page()
+
+        # Check if already logged in
+        await page.goto(f"{_OLD_REDDIT}/user/{self._username}", wait_until="domcontentloaded")
+        logged_in = await page.locator("form.logout").count() > 0
+
+        if not logged_in:
+            await page.goto(f"{_OLD_REDDIT}/login", wait_until="domcontentloaded")
+            await page.fill('input[name="user"]', self._username)
+            await page.fill('input[name="passwd"]', self._password)
+            await page.click('button[type="submit"]')
+            await page.wait_for_url(f"{_OLD_REDDIT}/**", timeout=15000)
+            await pool.save_state("reddit")
+
+        return page, pool
+
+    async def _browser_write(self, encoded_chunk: str) -> StoredChunkRef:
+        chunk = Chunk.decode(encoded_chunk)
+        title = (
+            f"[PCHK] {chunk.manifest_id} "
+            f"b{chunk.block_index} c{chunk.chunk_index}"
+        )
+        page, pool = await self._browser_page()
+        try:
+            await page.goto(
+                f"{_OLD_REDDIT}/r/{self._subreddit_name}/submit?selftext=true",
+                wait_until="domcontentloaded",
+            )
+            await page.fill('textarea[name="title"]', title)
+            await page.fill('textarea[name="text"]', encoded_chunk)
+            await page.click('button[name="submit"]')
+            await page.wait_for_url("**/comments/**", timeout=30000)
+            url = page.url
+            submission_id = url.split("/comments/")[1].split("/")[0]
+            await pool.save_state("reddit")
+            return StoredChunkRef(adapter_name="reddit", location=submission_id)
+        finally:
+            await page.close()
+
+    async def _browser_read(self, ref: StoredChunkRef) -> str:
+        page, _ = await self._browser_page()
+        try:
+            await page.goto(
+                f"{_OLD_REDDIT}/comments/{ref.location}",
+                wait_until="domcontentloaded",
+            )
+            selftext = page.locator("div.usertext-body .md").first
+            return await selftext.inner_text()
+        finally:
+            await page.close()
+
+    async def _browser_delete(self, ref: StoredChunkRef) -> bool:
+        page, pool = await self._browser_page()
+        try:
+            await page.goto(
+                f"{_OLD_REDDIT}/comments/{ref.location}",
+                wait_until="domcontentloaded",
+            )
+            delete_btn = page.locator('a.delete-button > span:text("delete")')
+            if await delete_btn.count() == 0:
+                return False
+            await delete_btn.click()
+            confirm = page.locator('.option.error a.yes')
+            await confirm.click()
+            await page.wait_for_timeout(2000)
+            await pool.save_state("reddit")
+            return True
+        except Exception:
+            return False
+        finally:
+            await page.close()
+
+    async def _browser_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        page, _ = await self._browser_page()
+        try:
+            await page.goto(
+                f"{_OLD_REDDIT}/user/{self._username}/submitted",
+                wait_until="domcontentloaded",
+            )
+            refs: list[StoredChunkRef] = []
+            tag = f"[PCHK] {manifest_id} "
+            links = page.locator("a.title")
+            count = await links.count()
+            for i in range(count):
+                text = await links.nth(i).inner_text()
+                if text.startswith(tag):
+                    href = await links.nth(i).get_attribute("href") or ""
+                    if "/comments/" in href:
+                        sid = href.split("/comments/")[1].split("/")[0]
+                        refs.append(
+                            StoredChunkRef(adapter_name="reddit", location=sid)
+                        )
+            return refs
+        finally:
+            await page.close()
+
+    # ── Dispatch ────────────────────────────────────────────────
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._use_browser:
+            return await self._browser_write(encoded_chunk)
+        return await self._api_write(encoded_chunk)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if self._use_browser:
+            return await self._browser_read(ref)
+        return await self._api_read(ref)
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        if self._use_browser:
+            return await self._browser_delete(ref)
+        return await self._api_delete(ref)
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if self._use_browser:
+            return await self._browser_list(manifest_id)
+        return await self._api_list(manifest_id)
+
     async def health_check(self) -> bool:
+        if self._use_browser:
+            try:
+                page, _ = await self._browser_page()
+                await page.close()
+                return True
+            except Exception:
+                return False
         try:
             reddit = self._ensure_reddit()
             await asyncio.to_thread(lambda: reddit.user.me())

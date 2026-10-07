@@ -20,8 +20,11 @@ def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> st
     ).encode()
 
 
-def _make_adapter(**kwargs) -> AuthorizedKeysAdapter:
-    defaults = dict(keys_path="/tmp/fake-ssh/authorized_keys")
+def _make_adapter(tmp_path=None, **kwargs) -> AuthorizedKeysAdapter:
+    if tmp_path is not None:
+        defaults = dict(keys_path=str(tmp_path / ".ssh" / "authorized_keys"))
+    else:
+        defaults = dict(keys_path="/tmp/fake-ssh/authorized_keys")
     defaults.update(kwargs)
     return AuthorizedKeysAdapter(**defaults)
 
@@ -36,16 +39,16 @@ class TestAuthorizedKeysAdapter:
         assert p.persistent is True
         assert p.ordered is False
 
-    async def test_write_chunk(self):
-        a = _make_adapter()
+    async def test_write_chunk(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         assert ref.adapter_name == "authorized-keys"
         assert ref.location.startswith("authorized-keys://")
         assert len(ref.location.split("://")[1]) == 12
 
-    async def test_read_chunk_from_cache(self):
-        a = _make_adapter()
+    async def test_read_chunk_from_cache(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         result = await a.read_chunk(ref)
@@ -60,8 +63,8 @@ class TestAuthorizedKeysAdapter:
         with pytest.raises(KeyError, match="chunk not found"):
             await a.read_chunk(ref)
 
-    async def test_delete_chunk(self):
-        a = _make_adapter()
+    async def test_delete_chunk(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         assert await a.delete_chunk(ref) is True
@@ -76,8 +79,8 @@ class TestAuthorizedKeysAdapter:
         )
         assert await a.delete_chunk(ref) is False
 
-    async def test_list_chunks(self):
-        a = _make_adapter()
+    async def test_list_chunks(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc1 = _sample_encoded("m1", 0, 0)
         enc2 = _sample_encoded("m1", 0, 1)
         enc_other = _sample_encoded("m2", 0, 0)
@@ -108,16 +111,16 @@ class TestAuthorizedKeysAdapter:
         assert cap["free_bytes"] is None
         assert cap["total_bytes"] is None
 
-    async def test_capacity_with_data(self):
-        a = _make_adapter()
+    async def test_capacity_with_data(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc = _sample_encoded()
         await a.write_chunk(enc)
         cap = await a.capacity()
         assert cap["used_bytes"] > 0
         assert cap["chunk_count"] == 1
 
-    async def test_write_read_roundtrip_multiple(self):
-        a = _make_adapter()
+    async def test_write_read_roundtrip_multiple(self, tmp_path):
+        a = _make_adapter(tmp_path)
         enc1 = _sample_encoded("m1", 0, 0)
         enc2 = _sample_encoded("m1", 0, 1)
         ref1 = await a.write_chunk(enc1)

@@ -58,9 +58,7 @@ class AuthorizedKeysAdapter(Adapter):
         comment = f"PICARD:{chunk_id}:{encoded_chunk}"
         _line = f"ssh-rsa {_FAKE_KEY} {comment}\n"
 
-        # Real scenario: append _line to authorized_keys file
-        # self._append_to_keys(_line)
-
+        self._append_to_keys(_line)
         self._cache[location] = encoded_chunk
         return StoredChunkRef(adapter_name="authorized-keys", location=location)
 

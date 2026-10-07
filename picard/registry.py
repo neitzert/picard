@@ -78,7 +78,7 @@ def _auto_discover() -> None:
     """Scan picard/adapters/ and register every Adapter subclass found."""
     adapters_pkg = Path(__file__).parent / "adapters"
     for fname in sorted(os.listdir(adapters_pkg)):
-        if not fname.endswith(".py") or fname.startswith("__") or fname == "base.py":
+        if not fname.endswith(".py") or fname.startswith("__") or fname in ("base.py", "browser_base.py"):
             continue
         modname = f"picard.adapters.{fname[:-3]}"
         type_name = _module_to_type_name(fname)
