@@ -57,6 +57,10 @@ class Orchestrator:
         self._journal = journal
         self._next_adapter: int = 0
 
+    async def close(self) -> None:
+        for adapter in self._adapters:
+            await adapter.close()
+
     # --- public API --------------------------------------------------------
 
     async def put(

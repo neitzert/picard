@@ -42,11 +42,13 @@ _SAFE_ORIGINS = ("http://127.0.0.1", "http://localhost", "http://[::1]")
 @app.middleware("http")
 async def _security_middleware(request: Request, call_next):
     client = request.client
-    if client and client.host not in ("127.0.0.1", "::1", "testclient"):
+    if client is None or client.host not in ("127.0.0.1", "::1", "testclient"):
         return JSONResponse(status_code=403, content={"error": "local access only"})
     if request.method in ("POST", "PUT", "DELETE"):
         origin = request.headers.get("origin", "")
-        if origin and not any(origin.startswith(o) for o in _SAFE_ORIGINS):
+        referer = request.headers.get("referer", "")
+        check_value = origin or referer
+        if check_value and not any(check_value.startswith(o) for o in _SAFE_ORIGINS):
             return JSONResponse(status_code=403, content={"error": "CSRF rejected"})
     return await call_next(request)
 
@@ -303,7 +305,7 @@ async def list_files():
     if not Path(db_path).is_file():
         return []
     try:
-        idx = Index(db_path)
+        idx = _ensure_index()
         paths = idx.list_paths()
         result = []
         for p in paths:
@@ -588,6 +590,22 @@ def _format_toml_key(k: str) -> str:
     return '"' + _escape_toml(k) + '"'
 
 
+def _toml_value(v: object) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return str(v)
+    if isinstance(v, str):
+        return f'"{_escape_toml(v)}"'
+    if isinstance(v, list):
+        items = ", ".join(_toml_value(x) for x in v)
+        return f"[{items}]"
+    if isinstance(v, dict):
+        items = ", ".join(f"{_format_toml_key(k)} = {_toml_value(val)}" for k, val in v.items())
+        return f"{{{items}}}"
+    return f'"{_escape_toml(str(v))}"'
+
+
 def _save_config(cfg: PicardConfig) -> None:
     """Write PicardConfig back to config.toml, preserving raid/scatter sections."""
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -603,23 +621,13 @@ def _save_config(cfg: PicardConfig) -> None:
                 for entry in entries:
                     section = ["[[raid]]\n"]
                     for rk, rv in entry.items():
-                        if isinstance(rv, list):
-                            section.append(f"{_format_toml_key(rk)} = {rv}\n")
-                        elif isinstance(rv, str):
-                            section.append(f'{_format_toml_key(rk)} = "{_escape_toml(rv)}"\n')
-                        elif isinstance(rv, (int, float)):
-                            section.append(f"{_format_toml_key(rk)} = {rv}\n")
+                        section.append(f"{_format_toml_key(rk)} = {_toml_value(rv)}\n")
                     preserved_sections.append("".join(section))
             if "scatter" in existing:
                 for name, profile in existing["scatter"].items():
                     section = [f"[scatter.{_format_toml_key(name)}]\n"]
                     for sk, sv in profile.items():
-                        if isinstance(sv, str):
-                            section.append(f'{_format_toml_key(sk)} = "{_escape_toml(sv)}"\n')
-                        elif isinstance(sv, list):
-                            section.append(f"{_format_toml_key(sk)} = {sv}\n")
-                        elif isinstance(sv, (int, float)):
-                            section.append(f"{_format_toml_key(sk)} = {sv}\n")
+                        section.append(f"{_format_toml_key(sk)} = {_toml_value(sv)}\n")
                     preserved_sections.append("".join(section))
         except Exception:
             pass
@@ -634,13 +642,7 @@ def _save_config(cfg: PicardConfig) -> None:
         lines.append(f'type = "{_escape_toml(entry.type)}"\n')
         lines.append(f"enabled = {'true' if entry.enabled else 'false'}\n")
         for k, v in entry.params.items():
-            key = _format_toml_key(k)
-            if isinstance(v, str):
-                lines.append(f'{key} = "{_escape_toml(v)}"\n')
-            elif isinstance(v, bool):
-                lines.append(f"{key} = {'true' if v else 'false'}\n")
-            elif isinstance(v, (int, float)):
-                lines.append(f"{key} = {v}\n")
+            lines.append(f"{_format_toml_key(k)} = {_toml_value(v)}\n")
         lines.append("\n")
     for section in preserved_sections:
         lines.append(section)
@@ -698,4 +700,10 @@ def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
     journal = Journal(index.connection)
     orch = Orchestrator(adapters, index, journal=journal)
     _set_state(orch, index)
+
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        if _orch:
+            await _orch.close()
+
     uvicorn.run(app, host=host, port=port, log_level="info")

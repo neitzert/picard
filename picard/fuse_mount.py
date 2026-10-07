@@ -27,6 +27,7 @@ except (ImportError, OSError):
 
 ENODATA = getattr(errno, "ENODATA", 61)
 _XATTR_BIN_PREFIX = "\x00picard:b64:"
+_XATTR_BIN_PREFIX_LEGACY = "b64:"
 
 if TYPE_CHECKING:
     from picard.cache import BlockCache
@@ -241,6 +242,10 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
             raise FuseOSError(ENODATA)
         if isinstance(val, str) and val.startswith(_XATTR_BIN_PREFIX):
             return base64.b64decode(val[len(_XATTR_BIN_PREFIX):])
+        # Legacy prefix — old code only added it when UTF-8 decode failed,
+        # so any stored value with this prefix is genuine binary data.
+        if isinstance(val, str) and val.startswith(_XATTR_BIN_PREFIX_LEGACY):
+            return base64.b64decode(val[len(_XATTR_BIN_PREFIX_LEGACY):])
         return val.encode("utf-8") if isinstance(val, str) else val
 
     def setxattr(self, path, name, value, options, position=0):

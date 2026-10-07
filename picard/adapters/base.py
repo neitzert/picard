@@ -67,6 +67,9 @@ class Adapter(ABC):
         Used for scan-based recovery when the local index is lost.
         """
 
+    async def close(self) -> None:
+        """Release resources held by this adapter. Called on shutdown."""
+
     async def health_check(self) -> bool:
         """Return True if the backend is currently reachable."""
         return True
