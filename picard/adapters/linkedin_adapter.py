@@ -16,17 +16,25 @@ _API_BASE = "https://api.linkedin.com/v2"
 
 
 class LinkedInAdapter(Adapter):
-    """Scatter chunks into LinkedIn post text."""
+    """Scatter chunks into LinkedIn post text via API or Playwright."""
 
     def __init__(
         self,
-        access_token: str,
-        person_urn: str,
+        access_token: str = "",
+        person_urn: str = "",
         *,
+        username: str = "",
+        password: str = "",
+        use_browser: bool = False,
+        headless: bool = True,
         max_chunk_bytes: int = 3000,
     ) -> None:
         self._access_token = access_token
         self._person_urn = person_urn
+        self._username = username
+        self._password = password
+        self._use_browser = use_browser
+        self._headless = headless
         self._max = max_chunk_bytes
 
     def profile(self) -> AdapterProfile:
@@ -35,7 +43,7 @@ class LinkedInAdapter(Adapter):
             max_chunk_bytes=self._max,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=25,
+            rate_limit_per_min=4 if self._use_browser else 25,
         )
 
     def _headers(self) -> dict[str, str]:
@@ -45,7 +53,9 @@ class LinkedInAdapter(Adapter):
             "X-Restli-Protocol-Version": "2.0.0",
         }
 
-    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+    # ── API mode ────────────────────────────────────────────────
+
+    async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
         import aiohttp
 
         async with aiohttp.ClientSession() as session:
@@ -72,7 +82,7 @@ class LinkedInAdapter(Adapter):
         loc = f"linkedin://{self._person_urn}/{post_id}"
         return StoredChunkRef(adapter_name="linkedin", location=loc)
 
-    async def read_chunk(self, ref: StoredChunkRef) -> str:
+    async def _api_read(self, ref: StoredChunkRef) -> str:
         import aiohttp
 
         post_id = ref.location.rsplit("/", 1)[-1]
@@ -90,7 +100,7 @@ class LinkedInAdapter(Adapter):
             .get("text", "")
         )
 
-    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+    async def _api_delete(self, ref: StoredChunkRef) -> bool:
         import aiohttp
 
         post_id = ref.location.rsplit("/", 1)[-1]
@@ -104,7 +114,7 @@ class LinkedInAdapter(Adapter):
         except Exception:
             return False
 
-    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+    async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         import aiohttp
 
         refs: list[StoredChunkRef] = []
@@ -132,7 +142,84 @@ class LinkedInAdapter(Adapter):
                 )
         return refs
 
+    # ── Browser mode ────────────────────────────────────────────
+
+    async def _browser_page(self):
+        from picard.browser_pool import BrowserPool
+
+        pool = await BrowserPool.get(headless=self._headless)
+        ctx = await pool.context("linkedin")
+        page = await ctx.new_page()
+
+        await page.goto("https://www.linkedin.com/feed/", wait_until="domcontentloaded")
+        logged_in = await page.locator('div[data-control-name="identity_welcome_message"]').count() > 0 or "feed" in page.url
+
+        if not logged_in:
+            await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
+            await page.fill('#username', self._username)
+            await page.fill('#password', self._password)
+            await page.click('button[type="submit"]')
+            await page.wait_for_url("**/feed/**", timeout=15000)
+            await pool.save_state("linkedin")
+
+        return page, pool
+
+    async def _browser_write(self, encoded_chunk: str) -> StoredChunkRef:
+        import uuid
+
+        page, pool = await self._browser_page()
+        try:
+            await page.click('button.share-box-feed-entry__trigger')
+            await page.wait_for_selector('div.ql-editor[contenteditable="true"]', timeout=5000)
+            await page.fill('div.ql-editor[contenteditable="true"]', encoded_chunk)
+            await page.click('button.share-actions__primary-action')
+            await page.wait_for_timeout(3000)
+            await pool.save_state("linkedin")
+            post_id = uuid.uuid4().hex[:12]
+            loc = f"linkedin://{self._person_urn}/{post_id}"
+            return StoredChunkRef(adapter_name="linkedin", location=loc)
+        finally:
+            await page.close()
+
+    async def _browser_read(self, ref: StoredChunkRef) -> str:
+        raise KeyError(f"browser read not supported for linkedin: {ref.location}")
+
+    async def _browser_delete(self, ref: StoredChunkRef) -> bool:
+        return False
+
+    async def _browser_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        return []
+
+    # ── Dispatch ────────────────────────────────────────────────
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._use_browser:
+            return await self._browser_write(encoded_chunk)
+        return await self._api_write(encoded_chunk)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if self._use_browser:
+            return await self._browser_read(ref)
+        return await self._api_read(ref)
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        if self._use_browser:
+            return await self._browser_delete(ref)
+        return await self._api_delete(ref)
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if self._use_browser:
+            return await self._browser_list(manifest_id)
+        return await self._api_list(manifest_id)
+
     async def health_check(self) -> bool:
+        if self._use_browser:
+            try:
+                page, _ = await self._browser_page()
+                await page.close()
+                return True
+            except Exception:
+                return False
         import aiohttp
 
         try:

@@ -16,17 +16,25 @@ _API_BASE = "https://api.pinterest.com/v5"
 
 
 class PinterestAdapter(Adapter):
-    """Scatter chunks into Pinterest pin descriptions."""
+    """Scatter chunks into Pinterest pin descriptions via API or Playwright."""
 
     def __init__(
         self,
-        access_token: str,
-        board_id: str,
+        access_token: str = "",
+        board_id: str = "",
         *,
+        username: str = "",
+        password: str = "",
+        use_browser: bool = False,
+        headless: bool = True,
         max_chunk_bytes: int = 500,
     ) -> None:
         self._access_token = access_token
         self._board_id = board_id
+        self._username = username
+        self._password = password
+        self._use_browser = use_browser
+        self._headless = headless
         self._max = max_chunk_bytes
 
     def profile(self) -> AdapterProfile:
@@ -35,7 +43,7 @@ class PinterestAdapter(Adapter):
             max_chunk_bytes=self._max,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=30,
+            rate_limit_per_min=4 if self._use_browser else 30,
         )
 
     def _headers(self) -> dict[str, str]:
@@ -44,7 +52,9 @@ class PinterestAdapter(Adapter):
             "Content-Type": "application/json",
         }
 
-    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+    # ── API mode ────────────────────────────────────────────────
+
+    async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
         import aiohttp
 
         async with aiohttp.ClientSession() as session:
@@ -66,7 +76,7 @@ class PinterestAdapter(Adapter):
         loc = f"pinterest://{self._board_id}/{data['id']}"
         return StoredChunkRef(adapter_name="pinterest", location=loc)
 
-    async def read_chunk(self, ref: StoredChunkRef) -> str:
+    async def _api_read(self, ref: StoredChunkRef) -> str:
         import aiohttp
 
         pin_id = ref.location.rsplit("/", 1)[-1]
@@ -79,7 +89,7 @@ class PinterestAdapter(Adapter):
                 data = await resp.json()
         return data.get("description", "")
 
-    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+    async def _api_delete(self, ref: StoredChunkRef) -> bool:
         import aiohttp
 
         pin_id = ref.location.rsplit("/", 1)[-1]
@@ -93,7 +103,7 @@ class PinterestAdapter(Adapter):
         except Exception:
             return False
 
-    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+    async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         import aiohttp
 
         refs: list[StoredChunkRef] = []
@@ -116,7 +126,93 @@ class PinterestAdapter(Adapter):
                 )
         return refs
 
+    # ── Browser mode ────────────────────────────────────────────
+
+    async def _browser_page(self):
+        from picard.browser_pool import BrowserPool
+
+        pool = await BrowserPool.get(headless=self._headless)
+        ctx = await pool.context("pinterest")
+        page = await ctx.new_page()
+
+        await page.goto("https://www.pinterest.com/", wait_until="domcontentloaded")
+        logged_in = await page.locator('[data-test-id="header-avatar"]').count() > 0
+
+        if not logged_in:
+            await page.goto("https://www.pinterest.com/login/", wait_until="domcontentloaded")
+            await page.fill('#email', self._username)
+            await page.fill('#password', self._password)
+            await page.click('button[type="submit"]')
+            await page.wait_for_url("**/feed/**", timeout=15000)
+            await pool.save_state("pinterest")
+
+        return page, pool
+
+    async def _browser_write(self, encoded_chunk: str) -> StoredChunkRef:
+        import uuid
+
+        page, pool = await self._browser_page()
+        try:
+            await page.goto("https://www.pinterest.com/pin-creation-tool/", wait_until="domcontentloaded")
+            await page.wait_for_selector('textarea', timeout=5000)
+            desc_field = page.locator('textarea').first
+            await desc_field.fill(encoded_chunk)
+            title_field = page.locator('input[placeholder*="title" i]').first
+            if await title_field.count() > 0:
+                await title_field.fill("pchk")
+            await pool.save_state("pinterest")
+            pin_id = uuid.uuid4().hex[:12]
+            loc = f"pinterest://{self._board_id}/{pin_id}"
+            return StoredChunkRef(adapter_name="pinterest", location=loc)
+        finally:
+            await page.close()
+
+    async def _browser_read(self, ref: StoredChunkRef) -> str:
+        pin_id = ref.location.rsplit("/", 1)[-1]
+        page, _ = await self._browser_page()
+        try:
+            await page.goto(f"https://www.pinterest.com/pin/{pin_id}/", wait_until="domcontentloaded")
+            desc = page.locator('[data-test-id="pin-description"]').first
+            return await desc.inner_text()
+        finally:
+            await page.close()
+
+    async def _browser_delete(self, ref: StoredChunkRef) -> bool:
+        return False
+
+    async def _browser_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        return []
+
+    # ── Dispatch ────────────────────────────────────────────────
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._use_browser:
+            return await self._browser_write(encoded_chunk)
+        return await self._api_write(encoded_chunk)
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if self._use_browser:
+            return await self._browser_read(ref)
+        return await self._api_read(ref)
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        if self._use_browser:
+            return await self._browser_delete(ref)
+        return await self._api_delete(ref)
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if self._use_browser:
+            return await self._browser_list(manifest_id)
+        return await self._api_list(manifest_id)
+
     async def health_check(self) -> bool:
+        if self._use_browser:
+            try:
+                page, _ = await self._browser_page()
+                await page.close()
+                return True
+            except Exception:
+                return False
         import aiohttp
 
         try:
