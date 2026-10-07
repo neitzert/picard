@@ -236,6 +236,27 @@ async def raid_levels():
     ]
 
 
+@app.get("/api/scatter/profiles")
+async def scatter_profiles():
+    """Available scatter profiles (built-in + custom from config)."""
+    from picard.scatter import list_profiles
+
+    cfg = load_config()
+    profiles = list_profiles(cfg.scatter_profiles)
+    return [
+        {
+            "name": p.name,
+            "raid_level": p.raid_level,
+            "mirror_count": p.mirror_count,
+            "adapter_tags": p.adapter_tags,
+            "adapter_names": p.adapter_names,
+            "min_adapters": p.min_adapters,
+            "description": p.description,
+        }
+        for p in profiles
+    ]
+
+
 @app.get("/api/files")
 async def list_files():
     """List all stored virtual paths with metadata."""

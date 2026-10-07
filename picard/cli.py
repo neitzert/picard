@@ -18,7 +18,9 @@ from picard.config import load_config, resolve_params, DEFAULT_CONFIG_PATH
 from picard.index import Index
 from picard.keys import KeyRing, load_master_key
 from picard.orchestrator import Orchestrator
+from picard.raid import RaidLevel, RaidPool
 from picard.registry import get_adapter_class, instantiate, list_adapter_types
+from picard.scatter import build_from_profile, list_profiles, resolve_profile
 
 app = typer.Typer(
     name="picard",
@@ -42,17 +44,41 @@ def _get_passphrase() -> str:
 
 
 def _adapters_from_config(store_dir: Path) -> list:
-    """Build adapter instances from config.toml, or fall back to filesystem."""
+    """Build adapter instances from config.toml, or fall back to filesystem.
+
+    If ``[raid]`` sections are present, named adapters are wrapped in
+    RaidPool instances and replaced in the returned list.
+    """
     cfg = load_config()
-    adapters = []
+    by_name: dict[str, object] = {}
+    adapters: list = []
     for entry in cfg.adapters:
         if not entry.enabled:
             continue
         try:
             params = resolve_params(entry.params)
-            adapters.append(instantiate(entry.type, **params))
+            adapter = instantiate(entry.type, **params)
+            adapters.append(adapter)
+            by_name[entry.name] = adapter
         except Exception:
             pass
+
+    if cfg.raid:
+        pooled_names: set[str] = set()
+        pools: list = []
+        for raid_entry in cfg.raid:
+            pool_adapters = [by_name[n] for n in raid_entry.adapters if n in by_name]
+            if len(pool_adapters) < 2:
+                continue
+            level = RaidLevel(raid_entry.level)
+            pool = RaidPool(pool_adapters, level, mirror_count=raid_entry.mirror_count)
+            pools.append(pool)
+            pooled_names.update(raid_entry.adapters)
+        remaining = [a for a in adapters if not any(
+            name in pooled_names for name, obj in by_name.items() if obj is a
+        )]
+        adapters = pools + remaining
+
     if not adapters:
         store_dir.mkdir(parents=True, exist_ok=True)
         adapters.append(FilesystemAdapter(store_dir))
@@ -64,10 +90,16 @@ def _make_orchestrator(
     db_path: Path = _DEFAULT_DB,
     keyfile: Path | None = None,
     passphrase: str | None = None,
+    profile_name: str | None = None,
 ) -> Orchestrator:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     adapters = _adapters_from_config(store_dir)
     index = Index(db_path)
+
+    if profile_name:
+        cfg = load_config()
+        profile = resolve_profile(profile_name, cfg.scatter_profiles)
+        adapters = build_from_profile(profile, adapters)
 
     key_ring = None
     if keyfile or passphrase:
@@ -86,6 +118,9 @@ def put(
     keyfile: Path = typer.Option(
         None, "--keyfile", "-k", help="Key file for sub-key derivation."
     ),
+    profile: str = typer.Option(
+        None, "--profile", "-p", help="Scatter profile (stealth/resilient/speed/paranoid or custom)."
+    ),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
@@ -96,7 +131,7 @@ def put(
     data = file.read_bytes()
     vpath = virtual_path or file.name
     pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp, profile_name=profile)
     manifest = asyncio.run(orch.put(vpath, data, pp))
     typer.echo(
         f"stored {vpath}  ({manifest.total_blocks} blocks, "
@@ -337,6 +372,22 @@ def adapters(
                 typer.echo(f"  {t}")
         else:
             typer.echo(f"  {t}")
+
+
+@app.command(name="profiles")
+def scatter_profiles_cmd() -> None:
+    """List available scatter profiles."""
+    cfg = load_config()
+    profiles = list_profiles(cfg.scatter_profiles)
+    typer.echo(f"{len(profiles)} scatter profiles:\n")
+    for p in profiles:
+        raid = p.raid_level.upper().replace("RAID", "RAID ")
+        typer.echo(f"  {p.name:15s}  {raid:10s}  {p.description}")
+        if p.adapter_tags:
+            typer.echo(f"  {'':15s}  tags: {', '.join(p.adapter_tags)}")
+        if p.adapter_names:
+            typer.echo(f"  {'':15s}  adapters: {', '.join(p.adapter_names)}")
+    typer.echo(f"\nUse: picard put --profile <name> <file>")
 
 
 @app.command()

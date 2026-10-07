@@ -332,6 +332,35 @@ class RaidPool(Adapter):
             groups.append(list(range(i, min(i + group_size, len(self._adapters)))))
         return groups
 
+    async def capacity(self) -> dict[str, int | None]:
+        results = await asyncio.gather(
+            *(a.capacity() for a in self._adapters),
+            return_exceptions=True,
+        )
+        total_used = 0
+        total_free: int | None = 0
+        total_total: int | None = 0
+        total_chunks = 0
+        for r in results:
+            if isinstance(r, Exception):
+                continue
+            total_used += r.get("used_bytes", 0) or 0
+            total_chunks += r.get("chunk_count", 0) or 0
+            if total_free is not None and r.get("free_bytes") is not None:
+                total_free += r["free_bytes"]
+            else:
+                total_free = None
+            if total_total is not None and r.get("total_bytes") is not None:
+                total_total += r["total_bytes"]
+            else:
+                total_total = None
+        return {
+            "used_bytes": total_used,
+            "free_bytes": total_free,
+            "total_bytes": total_total,
+            "chunk_count": total_chunks,
+        }
+
     # --- shared read helpers ------------------------------------------------
 
     async def _read_single(self, ref: StoredChunkRef) -> str:

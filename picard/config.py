@@ -36,12 +36,37 @@ class AdapterEntry:
 
 
 @dataclass
+class RaidEntry:
+    """One ``[raid]`` or ``[[raid]]`` stanza from config.toml."""
+
+    name: str = "default"
+    level: str = "raid0"
+    adapters: list[str] = field(default_factory=list)
+    mirror_count: int = 2
+
+
+@dataclass
+class ScatterProfile:
+    """One ``[scatter.<name>]`` stanza from config.toml."""
+
+    name: str = "default"
+    raid_level: str = "raid0"
+    mirror_count: int = 2
+    adapter_tags: list[str] = field(default_factory=list)
+    adapter_names: list[str] = field(default_factory=list)
+    min_adapters: int = 2
+    description: str = ""
+
+
+@dataclass
 class PicardConfig:
     """Top-level configuration."""
 
     index_db: str = DEFAULT_INDEX_DB
     block_size: int = DEFAULT_BLOCK_SIZE
     adapters: list[AdapterEntry] = field(default_factory=list)
+    raid: list[RaidEntry] = field(default_factory=list)
+    scatter_profiles: list[ScatterProfile] = field(default_factory=list)
 
 
 def load_config(path: Path | None = None) -> PicardConfig:
@@ -69,6 +94,34 @@ def load_config(path: Path | None = None) -> PicardConfig:
                 params=params,
             )
         )
+
+    raid_raw = raw.get("raid", None)
+    if raid_raw is not None:
+        if isinstance(raid_raw, dict):
+            raid_raw = [raid_raw]
+        for i, entry in enumerate(raid_raw):
+            cfg.raid.append(
+                RaidEntry(
+                    name=entry.get("name", f"pool-{i}"),
+                    level=entry.get("level", "raid0"),
+                    adapters=entry.get("adapters", []),
+                    mirror_count=entry.get("mirror_count", 2),
+                )
+            )
+
+    for name, profile_raw in raw.get("scatter", {}).items():
+        if isinstance(profile_raw, dict):
+            cfg.scatter_profiles.append(
+                ScatterProfile(
+                    name=name,
+                    raid_level=profile_raw.get("raid_level", "raid0"),
+                    mirror_count=profile_raw.get("mirror_count", 2),
+                    adapter_tags=profile_raw.get("adapter_tags", []),
+                    adapter_names=profile_raw.get("adapter_names", []),
+                    min_adapters=profile_raw.get("min_adapters", 2),
+                    description=profile_raw.get("description", ""),
+                )
+            )
 
     return cfg
 
@@ -137,4 +190,34 @@ block_size = 65536
 # type = "bluesky"
 # handle = "you.bsky.social"
 # app_password = "keyring:picard/my-bluesky/app_password"
+
+# RAID pool — wrap named adapters in a redundancy pool.
+# Levels: raid0 (stripe), raid1 (mirror), raid5 (parity), raid10 (striped mirrors)
+#
+# [raid]
+# name = "default"
+# level = "raid1"
+# mirror_count = 2
+# adapters = ["local", "my-bluesky"]
+
+# Scatter profiles — named presets for adapter selection and RAID level.
+#
+# [scatter.stealth]
+# description = "Low-visibility scatter across unconventional protocols"
+# raid_level = "raid1"
+# mirror_count = 2
+# adapter_tags = ["steganographic", "low-profile"]
+# min_adapters = 4
+#
+# [scatter.resilient]
+# description = "Maximum redundancy across reliable adapters"
+# raid_level = "raid5"
+# adapter_tags = ["persistent", "cloud"]
+# min_adapters = 5
+#
+# [scatter.speed]
+# description = "Fast local scatter with no redundancy"
+# raid_level = "raid0"
+# adapter_tags = ["local", "fast"]
+# min_adapters = 2
 """
