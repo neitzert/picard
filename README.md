@@ -1,91 +1,142 @@
-# PICARD
+# PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data
 
-**Protocol-Introspecting Chunk Adapter for Resilient Data**
+> A push for protocol security and away from platforms for the integrity of compute.
 
-Encrypt, chunk, and scatter data across protocol gaps — then pull it back together on demand.
+PICARD encrypts your data with AES-256-GCM, splits it into blocks, chunks each block,
+and scatters the chunks across 259 protocol adapters — from social media APIs to DNS
+TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct anything.
 
-## What it does
+## Features
 
-PICARD takes a file, encrypts it (AES-256-GCM, Argon2id key derivation), splits the ciphertext into tagged chunks, and distributes those chunks across pluggable **adapters** — each adapter speaks one protocol or platform.  To retrieve the file, PICARD gathers the chunks, verifies them, reassembles the ciphertext, and decrypts.
-
-Currently implemented adapters:
-- **memory** — in-process dict (for tests)
-- **filesystem** — chunks as files on disk (for local testing)
-- **bluesky** — ATProto blobs on Bluesky PDS (`pip install picard[bluesky]`)
-- **reddit** — Reddit wiki pages as chunk storage (`pip install picard[reddit]`)
-- **dns** — DNS TXT records via RFC 2136 dynamic updates (`pip install picard[dns]`)
-- **cloudflare-dns** — DNS TXT records via Cloudflare API (`pip install picard[cloudflare]`)
-- **mqtt** — retained MQTT messages (`pip install picard[mqtt]`)
-- **icmp** — raw ICMP echo request/reply payloads (requires root/CAP_NET_RAW)
+- **259 protocol adapters** across 15+ categories (social, network, storage, P2P, exotic)
+- **AES-256-GCM encryption** with Argon2id key derivation (per-block salt + nonce)
+- **RAID redundancy** — levels 0/1/5/10 across adapter pools
+- **Scatter profiles** — stealth, resilient, speed, paranoid (config-driven)
+- **Full filesystem** — directories, symlinks, versioning, partial reads
+- **FUSE mount** — mount as a real filesystem (Linux/macOS/Windows)
+- **Block cache** — LRU with TTL for fast repeated reads
+- **Journaling** — crash recovery via write-ahead log
+- **fsck** — integrity checking, orphan detection, repair
+- **Streaming I/O** — handle files larger than RAM
+- **Encrypted index** — AES-256-GCM encrypted SQLite at rest
+- **Network transport** — peer-to-peer via HTTP with HMAC auth
+- **Key hierarchy** — HKDF sub-keys per adapter with version rotation
+- **Sealed envelopes** — no plaintext PCHK visible on the wire
+- **CLI** — 29 commands with progress bars, --json output, colored display
+- **Web dashboard** — browser-based adapter management and file browser
 
 ## Quickstart
 
 ```bash
-# Install in development mode
 pip install -e ".[dev]"
 
-# Run the test suite
-pytest
-
-# Use the CLI
-picard put myfile.txt --as /notes/myfile.txt
+picard put myfile.txt --as /docs/myfile.txt
+picard get /docs/myfile.txt -o recovered.txt
 picard ls
-picard get /notes/myfile.txt -o recovered.txt
-picard rm /notes/myfile.txt
+picard tree /
+picard mount /mnt/picard    # requires libfuse/WinFSP/macFUSE
 ```
 
 ## Architecture
 
 ```
-Orchestrator
-├── Crypto (AES-256-GCM + Argon2id)
-├── Chunker (split → tag → encode)
-├── Index (SQLite manifest store)
-└── Adapters
-    ├── memory
-    ├── filesystem
-    ├── bluesky
-    ├── reddit
-    ├── dns
-    ├── cloudflare-dns
-    ├── mqtt
-    └── icmp
+plaintext --> [AES-256-GCM per block] --> [PCHK chunking] --> [scatter across adapters]
+                    |                                                  |
+              Argon2id KDF                                   RAID pool / envelope seal
+              (per-block salt+nonce)                         (HKDF sub-keys per adapter)
 ```
 
-## Project structure
+Each block is independently decryptable with its own random salt (16 bytes) and nonce (12 bytes).
+Chunks are scattered round-robin across adapters. RAID pools provide redundancy.
+The sealed envelope format wraps chunks with per-adapter sub-keys and correlation tags,
+producing output indistinguishable from random data.
 
+## Adapter Categories
+
+| Category | Count | Examples |
+|----------|-------|---------|
+| Social / Messaging | 12 | Bluesky, Reddit, Discord, Telegram, Matrix, Slack |
+| Network Protocols | 20 | DNS, MQTT, gRPC, WebSocket, CoAP, TFTP, UDP |
+| Storage / KV | 11 | S3, Redis, PostgreSQL, DynamoDB, CouchDB |
+| Mail / Calendar | 4 | SMTP/IMAP, CalDAV, CardDAV, WebDAV |
+| P2P / Exotic | 10 | IPFS, BitTorrent DHT, Ethereum, QR codes, Steganography |
+| Format / Stealth | 7+ | XLSX hidden cells, EXIF metadata, PDF, ZIP comments |
+| Broadcast / Discovery | 10+ | mDNS, SSDP, BLE, NFC, WiFi beacons |
+| ... | ... | 180+ more across every protocol gap we could find |
+
+## Configuration
+
+```toml
+# picard.toml
+[general]
+block_size = 65536
+
+[[adapters]]
+name = "s3-chunks"
+type = "s3"
+enabled = true
+params = { bucket = "picard-chunks", prefix = "data/" }
+
+[[adapters]]
+name = "redis-cache"
+type = "redis"
+enabled = true
+params = { url = "redis://localhost" }
+
+[[raid]]
+level = "raid5"
+adapters = ["s3-chunks", "redis-cache", "filesystem"]
+
+[scatter.paranoid]
+raid_level = "raid10"
+min_adapters = 4
 ```
-picard/
-  pyproject.toml
-  picard/
-    __init__.py
-    crypto.py          # Encryption + key derivation
-    chunker.py         # Block → sized+tagged chunks
-    manifest.py        # Metadata model (file → blocks → chunks)
-    index.py           # SQLite manifest/chunk store
-    orchestrator.py    # put / get / ls / rm pipeline
-    cli.py             # Typer CLI
-    config.py          # TOML/env configuration loader
-    registry.py        # Adapter discovery + instantiation
-    adapters/
-      base.py          # Adapter Protocol + AdapterProfile
-      memory.py        # In-memory (tests)
-      filesystem.py    # On-disk (local testing)
-      bluesky.py       # ATProto / Bluesky PDS
-      reddit.py        # Reddit wiki pages
-      dns.py           # DNS TXT records (RFC 2136)
-      cloudflare_dns.py # DNS TXT via Cloudflare API
-      mqtt.py          # MQTT retained messages
-      icmp.py          # ICMP echo payloads
-  tests/
+
+## CLI Commands
+
+### Core
+- `picard put` / `get` / `ls` / `rm` — basic file operations
+- `picard cp` / `mv` — copy and rename
+- `picard info` / `stat` — metadata inspection
+- `picard verify` — chunk integrity check
+- `picard export` / `import` — manifest bundles
+
+### Filesystem
+- `picard mkdir` / `rmdir` — directory management (via `rm`)
+- `picard tree` / `find` — directory browsing
+- `picard ln` — symbolic links
+- `picard head` / `tail` — partial reads
+- `picard touch` — create or update timestamps
+- `picard log` — version history
+- `picard fsck` — filesystem consistency check
+- `picard mount` — FUSE mount
+
+### Infrastructure
+- `picard web` — launch web dashboard
+- `picard recover` — journal crash recovery
+- `picard demo` — scatter across all adapters
+- `picard scatter-report` — show attack surface map
+- `picard adapters` / `profiles` — list available adapters and scatter profiles
+- `picard init` — create default config.toml
+
+Most commands support `--json` for machine-readable output.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — data flow, key hierarchy, RAID, scatter
+- [Adapters](docs/adapters.md) — adapter list, writing custom adapters
+- [CLI Reference](docs/cli.md) — all commands with examples
+- [Network](docs/network.md) — transport layer, peer discovery, remote adapters
+- [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+python -m pytest --tb=short -q
 ```
 
-## Requirements
-
-- Python 3.11+
-- Core: `cryptography`, `argon2-cffi`, `typer`
-- Adapter extras: `atproto`, `praw`, `dnspython`, `httpx`, `paho-mqtt`
-- Dev: `pytest`, `pytest-asyncio`
+Python 3.11+ required. Core dependencies: `cryptography`, `argon2-cffi`, `typer`, `rich`.
 
 ## License
 
