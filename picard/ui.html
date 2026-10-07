@@ -1200,6 +1200,15 @@ function toast(msg, isError = false) {
   setTimeout(() => el.remove(), 3000);
 }
 
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function escapeAttr(s) {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 // ── Filesystem ──
 
 let fsCurrentPath = '/';
@@ -1211,7 +1220,7 @@ function fsBreadcrumb(path) {
   for (let i = 1; i < parts.length; i++) {
     accum += '/' + parts[i];
     const p = accum;
-    html += ` <span style="color:var(--text2)">/</span> <a href="#" onclick="loadFsLs('${p}');return false" style="color:var(--accent)">${parts[i]}</a>`;
+    html += ` <span style="color:var(--text2)">/</span> <a href="#" onclick="loadFsLs('${escapeAttr(p)}');return false" style="color:var(--accent)">${escapeHtml(parts[i])}</a>`;
   }
   return html;
 }
@@ -1224,7 +1233,7 @@ async function loadFsLs(path) {
     renderFsTable(files);
     loadFsTree();
   } catch (e) {
-    document.getElementById('fs-file-table').innerHTML = `<tr><td colspan="6" style="color:var(--text2);padding:16px">${e.message}</td></tr>`;
+    document.getElementById('fs-file-table').innerHTML = `<tr><td colspan="6" style="color:var(--text2);padding:16px">${escapeHtml(e.message)}</td></tr>`;
   }
 }
 
@@ -1238,8 +1247,8 @@ async function loadFsTree() {
     }
     document.getElementById('fs-tree').innerHTML = dirs.map(d => `
       <div style="padding:2px 4px;cursor:pointer;border-radius:3px;${d.path === fsCurrentPath ? 'background:var(--bg2)' : ''}"
-           onclick="loadFsLs('${d.path}')">
-        <span style="color:var(--accent2)">📁</span> ${d.name}
+           onclick="loadFsLs('${escapeAttr(d.path)}')">
+        <span style="color:var(--accent2)">📁</span> ${escapeHtml(d.name)}
       </div>
     `).join('');
   } catch { document.getElementById('fs-tree').innerHTML = '<div style="color:var(--text2)">Unavailable</div>'; }
@@ -1255,15 +1264,15 @@ function renderFsTable(files) {
     const isDir = f.type === 'directory';
     const icon = isDir ? '📁' : f.type === 'symlink' ? '🔗' : '📄';
     const nameHtml = isDir
-      ? `<a href="#" onclick="loadFsLs('${f.path}');return false" style="color:var(--accent2)">${f.name}</a>`
-      : `<a href="#" onclick="showFsStat('${f.path}');return false" style="color:var(--accent)">${f.name}</a>`;
+      ? `<a href="#" onclick="loadFsLs('${escapeAttr(f.path)}');return false" style="color:var(--accent2)">${escapeHtml(f.name)}</a>`
+      : `<a href="#" onclick="showFsStat('${escapeAttr(f.path)}');return false" style="color:var(--accent)">${escapeHtml(f.name)}</a>`;
     return `<tr>
       <td>${icon} ${nameHtml}</td>
-      <td>${f.type || '-'}</td>
+      <td>${escapeHtml(f.type || '-')}</td>
       <td>${f.size != null ? fmtSize(f.size) : '-'}</td>
       <td>${f.version ?? '-'}</td>
-      <td>${f.mtime || '-'}</td>
-      <td><button class="btn btn-sm" onclick="fsDelete('${f.path}')" style="color:var(--red)">Del</button></td>
+      <td>${escapeHtml(f.mtime || '-')}</td>
+      <td><button class="btn btn-sm" onclick="fsDelete('${escapeAttr(f.path)}')" style="color:var(--red)">Del</button></td>
     </tr>`;
   }).join('');
 }
@@ -1276,18 +1285,18 @@ async function showFsStat(path) {
     document.getElementById('fs-detail-title').textContent = path;
     document.getElementById('fs-detail-body').innerHTML = `
       <div class="grid-2" style="gap:8px;font-size:12px">
-        <div><b>Type:</b> ${s.type}</div>
+        <div><b>Type:</b> ${escapeHtml(s.type)}</div>
         <div><b>Size:</b> ${fmtSize(s.size)}</div>
         <div><b>Mode:</b> ${s.mode != null ? '0' + s.mode.toString(8) : '-'}</div>
         <div><b>Version:</b> ${s.version}</div>
         <div><b>Blocks:</b> ${s.total_blocks}</div>
         <div><b>Block size:</b> ${s.block_size}</div>
-        <div><b>Manifest:</b> <span style="font-family:monospace;font-size:11px">${s.manifest_id || '-'}</span></div>
-        <div><b>Hash:</b> <span style="font-family:monospace;font-size:11px">${s.plaintext_hash ? s.plaintext_hash.slice(0, 16) + '...' : '-'}</span></div>
-        <div><b>Symlink:</b> ${s.symlink_target || '-'}</div>
+        <div><b>Manifest:</b> <span style="font-family:monospace;font-size:11px">${escapeHtml(s.manifest_id || '-')}</span></div>
+        <div><b>Hash:</b> <span style="font-family:monospace;font-size:11px">${s.plaintext_hash ? escapeHtml(s.plaintext_hash.slice(0, 16)) + '...' : '-'}</span></div>
+        <div><b>Symlink:</b> ${escapeHtml(s.symlink_target || '-')}</div>
         <div><b>nlink:</b> ${s.nlink ?? '-'}</div>
         <div><b>uid/gid:</b> ${s.uid}/${s.gid}</div>
-        <div><b>Parent:</b> ${s.parent_path || '/'}</div>
+        <div><b>Parent:</b> ${escapeHtml(s.parent_path || '/')}</div>
       </div>
       ${versions.length > 1 ? '<h4 style="margin-top:12px">Version History</h4><table><thead><tr><th>Version</th><th>Type</th><th>Size</th><th>Created</th></tr></thead><tbody>' +
         versions.map(v => `<tr><td>v${v.version}</td><td>${v.file_type || '-'}</td><td>${fmtSize(v.original_size)}</td><td>${v.created_at || '-'}</td></tr>`).join('') +

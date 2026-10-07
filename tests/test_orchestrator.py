@@ -211,3 +211,32 @@ class TestRoundRobin:
         manifest = await orch.put("fox.txt", data, "pw")
         recovered = await orch.get("fox.txt", "pw")
         assert recovered == data
+
+
+@pytest.mark.asyncio
+class TestParentPathFixes:
+    async def test_mv_updates_parent_path(self, orch):
+        await orch.mkdir("/src", parents=True)
+        await orch.put("/src/file.txt", b"data", "pw")
+        await orch.mkdir("/dst", parents=True)
+        await orch.mv("/src/file.txt", "/dst/file.txt")
+        m = orch._index.get_manifest_by_path("/dst/file.txt")
+        assert m.parent_path == "/dst"
+
+    async def test_cp_updates_parent_path(self, orch):
+        await orch.mkdir("/a", parents=True)
+        await orch.put("/a/file.txt", b"data", "pw")
+        await orch.mkdir("/b", parents=True)
+        await orch.cp("/a/file.txt", "/b/file.txt")
+        m = orch._index.get_manifest_by_path("/b/file.txt")
+        assert m.parent_path == "/b"
+
+    async def test_rm_blocks_nonempty_directory(self, orch):
+        await orch.mkdir("/dir", parents=True)
+        await orch.put("/dir/child.txt", b"x", "pw")
+        with pytest.raises(OSError, match="not empty"):
+            await orch.rm("/dir")
+
+    async def test_rm_allows_empty_directory(self, orch):
+        await orch.mkdir("/empty", parents=True)
+        assert await orch.rm("/empty")

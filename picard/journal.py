@@ -78,10 +78,14 @@ class Journal:
 
     def commit(self, journal_id: str) -> None:
         with self._conn:
-            self._conn.execute(
-                "UPDATE journal_entries SET state=? WHERE journal_id=?",
-                (JournalState.COMMITTED.value, journal_id),
-            )
+            self._commit_raw(journal_id)
+
+    def _commit_raw(self, journal_id: str) -> None:
+        """Execute commit SQL without transaction wrapper."""
+        self._conn.execute(
+            "UPDATE journal_entries SET state=? WHERE journal_id=?",
+            (JournalState.COMMITTED.value, journal_id),
+        )
 
     def rollback(self, journal_id: str) -> None:
         with self._conn:

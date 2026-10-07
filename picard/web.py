@@ -561,21 +561,25 @@ def _categorize_adapter(type_name: str) -> str:
     return _TYPE_TO_CATEGORY.get(type_name, "other")
 
 
+def _escape_toml(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+
+
 def _save_config(cfg: PicardConfig) -> None:
     """Write PicardConfig back to config.toml."""
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     lines = ["[general]\n"]
-    lines.append(f'index_db = "{cfg.index_db}"\n')
+    lines.append(f'index_db = "{_escape_toml(str(cfg.index_db))}"\n')
     lines.append(f"block_size = {cfg.block_size}\n")
     lines.append("\n")
     for entry in cfg.adapters:
         lines.append("[[adapters]]\n")
-        lines.append(f'name = "{entry.name}"\n')
-        lines.append(f'type = "{entry.type}"\n')
+        lines.append(f'name = "{_escape_toml(entry.name)}"\n')
+        lines.append(f'type = "{_escape_toml(entry.type)}"\n')
         lines.append(f"enabled = {'true' if entry.enabled else 'false'}\n")
         for k, v in entry.params.items():
             if isinstance(v, str):
-                lines.append(f'{k} = "{v}"\n')
+                lines.append(f'{k} = "{_escape_toml(v)}"\n')
             elif isinstance(v, bool):
                 lines.append(f"{k} = {'true' if v else 'false'}\n")
             elif isinstance(v, (int, float)):
@@ -586,4 +590,18 @@ def _save_config(cfg: PicardConfig) -> None:
 
 def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
     import uvicorn
+    from picard.adapters.filesystem import FilesystemAdapter
+    from picard.journal import Journal
+
+    cfg = load_config()
+    db_path = cfg.index_db
+    if db_path.startswith("~"):
+        db_path = str(Path(db_path).expanduser())
+    index = Index(db_path)
+    store_dir = Path("~/.picard/store").expanduser()
+    store_dir.mkdir(parents=True, exist_ok=True)
+    adapters: list[Adapter] = [FilesystemAdapter(store_dir)]
+    journal = Journal(index.connection)
+    orch = Orchestrator(adapters, index, journal=journal)
+    _set_state(orch, index)
     uvicorn.run(app, host=host, port=port, log_level="info")

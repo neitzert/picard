@@ -7,7 +7,9 @@ The `refuse` package (already in pyproject.toml) handles cross-platform binding.
 from __future__ import annotations
 
 import asyncio
+import base64
 import errno
+import os
 import stat
 import threading
 import time
@@ -133,7 +135,7 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         if m is None:
             raise FuseOSError(errno.ENOENT)
         fh = self._next_fh()
-        writing = flags & (32768 | 1 | 2)  # O_RDWR, O_WRONLY, O_RDWR
+        writing = flags & (os.O_WRONLY | os.O_RDWR)
         if writing and not self._readonly:
             data = self._run(self._orch.get(path, self._passphrase))
             self._write_buffers[fh] = _WriteBuffer(path, data, m.mode)
@@ -236,7 +238,9 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         val = m.xattrs.get(name)
         if val is None:
             raise FuseOSError(ENODATA)
-        return val.encode() if isinstance(val, str) else val
+        if isinstance(val, str) and val.startswith("b64:"):
+            return base64.b64decode(val[4:])
+        return val.encode("utf-8") if isinstance(val, str) else val
 
     def setxattr(self, path, name, value, options, position=0):
         if self._readonly:
@@ -245,7 +249,13 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         if m is None:
             raise FuseOSError(errno.ENOENT)
         xattrs = dict(m.xattrs)
-        xattrs[name] = value.decode() if isinstance(value, bytes) else value
+        if isinstance(value, bytes):
+            try:
+                xattrs[name] = value.decode("utf-8")
+            except UnicodeDecodeError:
+                xattrs[name] = "b64:" + base64.b64encode(value).decode("ascii")
+        else:
+            xattrs[name] = value
         self._index.update_manifest_metadata(m.manifest_id, xattrs=xattrs)
 
     def listxattr(self, path):
@@ -342,10 +352,8 @@ def _manifest_to_stat(m) -> dict:
 
 
 def _getuid() -> int:
-    import os
     return getattr(os, "getuid", lambda: 0)()
 
 
 def _getgid() -> int:
-    import os
     return getattr(os, "getgid", lambda: 0)()

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json as json_mod
+import os
 import sys
 from pathlib import Path
 
@@ -99,12 +100,14 @@ def _make_orchestrator(
     keyfile: Path | None = None,
     passphrase: str | None = None,
     profile_name: str | None = None,
+    index_passphrase: str | None = None,
 ) -> Orchestrator:
     from picard.journal import Journal
 
     db_path.parent.mkdir(parents=True, exist_ok=True)
     adapters = _adapters_from_config(store_dir)
-    index = Index(db_path)
+    idx_pp = index_passphrase or os.environ.get("PICARD_INDEX_PASSPHRASE") or None
+    index = Index(db_path, passphrase=idx_pp)
     journal = Journal(index.connection)
 
     if profile_name:

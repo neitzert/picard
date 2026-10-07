@@ -136,54 +136,58 @@ class Index:
     def save_manifest(self, m: Manifest) -> None:
         """Insert or replace a full manifest (with blocks and chunks)."""
         with self._conn:
+            self._save_manifest_raw(m)
+
+    def _save_manifest_raw(self, m: Manifest) -> None:
+        """Execute save_manifest SQL without transaction wrapper."""
+        self._conn.execute(
+            "INSERT OR REPLACE INTO manifests "
+            "(manifest_id, path, original_size, block_size, total_blocks, "
+            "created_at, tags, plaintext_hash, file_type, mode, mtime, ctime, "
+            "atime, uid, gid, symlink_target, nlink, xattrs, version, parent_path) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                m.manifest_id,
+                m.path,
+                m.original_size,
+                m.block_size,
+                m.total_blocks,
+                m.created_at,
+                json.dumps(m.tags),
+                m.plaintext_hash,
+                m.file_type,
+                m.mode,
+                m.mtime,
+                m.ctime,
+                m.atime,
+                m.uid,
+                m.gid,
+                m.symlink_target,
+                m.nlink,
+                json.dumps(m.xattrs),
+                m.version,
+                m.parent_path,
+            ),
+        )
+        for b in m.blocks:
             self._conn.execute(
-                "INSERT OR REPLACE INTO manifests "
-                "(manifest_id, path, original_size, block_size, total_blocks, "
-                "created_at, tags, plaintext_hash, file_type, mode, mtime, ctime, "
-                "atime, uid, gid, symlink_target, nlink, xattrs, version, parent_path) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    m.manifest_id,
-                    m.path,
-                    m.original_size,
-                    m.block_size,
-                    m.total_blocks,
-                    m.created_at,
-                    json.dumps(m.tags),
-                    m.plaintext_hash,
-                    m.file_type,
-                    m.mode,
-                    m.mtime,
-                    m.ctime,
-                    m.atime,
-                    m.uid,
-                    m.gid,
-                    m.symlink_target,
-                    m.nlink,
-                    json.dumps(m.xattrs),
-                    m.version,
-                    m.parent_path,
-                ),
+                "INSERT OR REPLACE INTO blocks VALUES (?,?,?,?)",
+                (m.manifest_id, b.block_index, b.digest, b.size_bytes),
             )
-            for b in m.blocks:
+            for c in b.chunks:
                 self._conn.execute(
-                    "INSERT OR REPLACE INTO blocks VALUES (?,?,?,?)",
-                    (m.manifest_id, b.block_index, b.digest, b.size_bytes),
+                    "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        m.manifest_id,
+                        b.block_index,
+                        c.chunk_index,
+                        c.adapter_name,
+                        c.location,
+                        c.status.value,
+                        c.size_bytes,
+                        c.digest,
+                    ),
                 )
-                for c in b.chunks:
-                    self._conn.execute(
-                        "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?)",
-                        (
-                            m.manifest_id,
-                            b.block_index,
-                            c.chunk_index,
-                            c.adapter_name,
-                            c.location,
-                            c.status.value,
-                            c.size_bytes,
-                            c.digest,
-                        ),
-                    )
 
     def update_chunk_status(
         self,

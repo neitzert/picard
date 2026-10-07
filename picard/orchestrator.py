@@ -70,8 +70,7 @@ class Orchestrator:
         """Encrypt, chunk, scatter *data* and return its manifest."""
         total_blocks = max(1, math.ceil(len(data) / self._block_size))
         now = datetime.now(timezone.utc).isoformat()
-        parts = path.rsplit("/", 1)
-        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        parent = self._parent_of(path)
         version = self._index.get_next_version(path)
         manifest = Manifest(
             path=path,
@@ -102,9 +101,12 @@ class Orchestrator:
                         jid, {"blocks_written": list(range(bi + 1))}
                     )
 
-            self._index.save_manifest(manifest)
             if self._journal and jid:
-                self._journal.commit(jid)
+                with self._index.connection:
+                    self._index._save_manifest_raw(manifest)
+                    self._journal._commit_raw(jid)
+            else:
+                self._index.save_manifest(manifest)
         except Exception:
             if self._journal and jid:
                 self._journal.rollback(jid)
@@ -177,8 +179,7 @@ class Orchestrator:
     ) -> Manifest:
         """Encrypt and scatter data from an async iterator, one block at a time."""
         now = datetime.now(timezone.utc).isoformat()
-        parts = path.rsplit("/", 1)
-        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        parent = self._parent_of(path)
         version = self._index.get_next_version(path)
 
         manifest = Manifest(
@@ -227,10 +228,13 @@ class Orchestrator:
             manifest.original_size = total_size
             manifest.total_blocks = bi
             manifest.plaintext_hash = hasher.hexdigest()
-            self._index.save_manifest(manifest)
 
             if self._journal and jid:
-                self._journal.commit(jid)
+                with self._index.connection:
+                    self._index._save_manifest_raw(manifest)
+                    self._journal._commit_raw(jid)
+            else:
+                self._index.save_manifest(manifest)
 
         except Exception:
             if self._journal and jid:
@@ -262,6 +266,10 @@ class Orchestrator:
         manifest = self._index.get_manifest_by_path(path)
         if manifest is None:
             return False
+        if manifest.file_type == "directory":
+            children = self._index.list_children(path)
+            if children:
+                raise OSError(f"directory not empty: {path}")
 
         for block in manifest.blocks:
             for cr in block.chunks:
@@ -372,6 +380,7 @@ class Orchestrator:
         new_manifest = copy.deepcopy(manifest)
         new_manifest.manifest_id = uuid.uuid4().hex
         new_manifest.path = dst_path
+        new_manifest.parent_path = self._parent_of(dst_path)
         new_manifest.created_at = datetime.now(timezone.utc).isoformat()
         self._index.save_manifest(new_manifest)
         return True
@@ -382,6 +391,8 @@ class Orchestrator:
         if manifest is None:
             raise FileNotFoundError(f"no manifest for path: {src_path}")
         manifest.path = dst_path
+        manifest.parent_path = self._parent_of(dst_path)
+        self._index.delete_manifest(manifest.manifest_id)
         self._index.save_manifest(manifest)
         return True
 
@@ -433,8 +444,7 @@ class Orchestrator:
         if parents:
             self._ensure_parents(path)
         now = datetime.now(timezone.utc).isoformat()
-        parts = path.rsplit("/", 1)
-        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        parent = self._parent_of(path)
         manifest = Manifest(
             path=path,
             original_size=0,
@@ -485,8 +495,7 @@ class Orchestrator:
             existing = self._index.get_manifest_by_path(dir_path)
             if existing is None:
                 now = datetime.now(timezone.utc).isoformat()
-                dir_parts = dir_path.rsplit("/", 1)
-                parent = dir_parts[0] if len(dir_parts) > 1 and dir_parts[0] else "/"
+                parent = self._parent_of(dir_path)
                 m = Manifest(
                     path=dir_path,
                     original_size=0,
@@ -508,8 +517,7 @@ class Orchestrator:
     async def symlink(self, link_path: str, target_path: str) -> Manifest:
         """Create a symbolic link at *link_path* pointing to *target_path*."""
         now = datetime.now(timezone.utc).isoformat()
-        parts = link_path.rsplit("/", 1)
-        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        parent = self._parent_of(link_path)
         manifest = Manifest(
             path=link_path,
             original_size=0,
@@ -599,6 +607,11 @@ class Orchestrator:
         return {"recovered": len(entries), "cleaned_chunks": cleaned_chunks}
 
     # --- internal ----------------------------------------------------------
+
+    @staticmethod
+    def _parent_of(path: str) -> str:
+        parts = path.rsplit("/", 1)
+        return parts[0] if len(parts) > 1 and parts[0] else "/"
 
     def _resolve_path(
         self, path: str, follow_symlinks: bool = True,
