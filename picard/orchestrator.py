@@ -11,6 +11,7 @@ import hashlib
 import math
 import uuid
 from datetime import datetime, timezone
+from collections.abc import AsyncIterator
 from typing import Sequence
 
 from picard.adapters.base import Adapter, StoredChunkRef
@@ -95,45 +96,7 @@ class Orchestrator:
                 start = bi * self._block_size
                 end = start + self._block_size
                 plaintext_block = data[start:end]
-
-                ct = encrypt(plaintext_block, passphrase)
-                digest = block_digest(ct)
-
-                block = BlockRecord(
-                    block_index=bi,
-                    digest=digest,
-                    size_bytes=len(ct),
-                )
-
-                adapter = self._pick_adapter()
-                prof = adapter.profile()
-
-                chunks = chunkify(ct, manifest.manifest_id, bi, prof.max_chunk_bytes)
-
-                for chunk in chunks:
-                    encoded = chunk.encode()
-                    if self._key_ring:
-                        sub_key = self._key_ring.get_sub_key(prof.name)
-                        wire = seal(encoded, sub_key, manifest.manifest_id)
-                        wire_str = wire.hex()
-                    else:
-                        wire_str = encoded
-                    ref = await adapter.write_chunk(wire_str)
-                    chunk_digest = hashlib.sha256(
-                        wire_str.encode() if isinstance(wire_str, str) else wire_str
-                    ).hexdigest()
-                    block.chunks.append(
-                        ChunkRecord(
-                            chunk_index=chunk.chunk_index,
-                            adapter_name=ref.adapter_name,
-                            location=ref.location,
-                            status=ChunkStatus.STORED,
-                            size_bytes=len(wire_str),
-                            digest=chunk_digest,
-                        )
-                    )
-
-                manifest.blocks.append(block)
+                await self._scatter_block(manifest, bi, plaintext_block, passphrase)
                 if self._journal and jid:
                     self._journal.mark_in_progress(
                         jid, {"blocks_written": list(range(bi + 1))}
@@ -202,6 +165,91 @@ class Orchestrator:
             hi = min(end, blk_start + bs) - blk_start
             result.append(pt[lo:hi])
         return b"".join(result)
+
+    async def put_stream(
+        self,
+        path: str,
+        stream: AsyncIterator[bytes],
+        passphrase: str,
+        *,
+        size_hint: int = 0,
+        mode: int = 0o100644,
+    ) -> Manifest:
+        """Encrypt and scatter data from an async iterator, one block at a time."""
+        now = datetime.now(timezone.utc).isoformat()
+        parts = path.rsplit("/", 1)
+        parent = parts[0] if len(parts) > 1 and parts[0] else "/"
+        version = self._index.get_next_version(path)
+
+        manifest = Manifest(
+            path=path,
+            original_size=0,
+            block_size=self._block_size,
+            total_blocks=0,
+            created_at=now,
+            mtime=now, ctime=now, atime=now,
+            mode=mode,
+            version=version,
+            parent_path=parent,
+        )
+
+        jid = None
+        if self._journal:
+            jid = self._journal.begin("put", path, manifest.manifest_id)
+
+        try:
+            hasher = hashlib.sha256()
+            buffer = bytearray()
+            bi = 0
+            total_size = 0
+
+            async for chunk_data in stream:
+                buffer.extend(chunk_data)
+                while len(buffer) >= self._block_size:
+                    plaintext_block = bytes(buffer[: self._block_size])
+                    del buffer[: self._block_size]
+                    hasher.update(plaintext_block)
+                    total_size += len(plaintext_block)
+                    await self._scatter_block(manifest, bi, plaintext_block, passphrase)
+                    bi += 1
+                    if self._journal and jid:
+                        self._journal.mark_in_progress(
+                            jid, {"blocks_written": list(range(bi))}
+                        )
+
+            if buffer:
+                plaintext_block = bytes(buffer)
+                hasher.update(plaintext_block)
+                total_size += len(plaintext_block)
+                await self._scatter_block(manifest, bi, plaintext_block, passphrase)
+                bi += 1
+
+            manifest.original_size = total_size
+            manifest.total_blocks = bi
+            manifest.plaintext_hash = hasher.hexdigest()
+            self._index.save_manifest(manifest)
+
+            if self._journal and jid:
+                self._journal.commit(jid)
+
+        except Exception:
+            if self._journal and jid:
+                self._journal.rollback(jid)
+            raise
+
+        return manifest
+
+    async def get_stream(
+        self, path: str, passphrase: str, *, follow_symlinks: bool = True,
+    ) -> AsyncIterator[bytes]:
+        """Yield decrypted blocks one at a time as an async iterator."""
+        manifest = self._resolve_path(path, follow_symlinks)
+        if manifest is None:
+            raise FileNotFoundError(f"no manifest for path: {path}")
+        if manifest.file_type != "regular":
+            raise FileNotFoundError(f"not a regular file: {path}")
+        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
+            yield await self._decrypt_block(manifest, block, passphrase)
 
     async def ls(self, path: str = "") -> list[str]:
         """List virtual paths. With *path*, list children of that directory."""
@@ -600,6 +648,40 @@ class Orchestrator:
             self._block_cache.put(manifest.manifest_id, block.block_index, pt)
 
         return pt
+
+    async def _scatter_block(
+        self, manifest: Manifest, bi: int, plaintext_block: bytes, passphrase: str,
+    ) -> None:
+        """Encrypt, chunk, and scatter a single block, appending to manifest."""
+        ct = encrypt(plaintext_block, passphrase)
+        digest = block_digest(ct)
+        block = BlockRecord(block_index=bi, digest=digest, size_bytes=len(ct))
+        adapter = self._pick_adapter()
+        prof = adapter.profile()
+        chunks = chunkify(ct, manifest.manifest_id, bi, prof.max_chunk_bytes)
+        for chunk in chunks:
+            encoded = chunk.encode()
+            if self._key_ring:
+                sub_key = self._key_ring.get_sub_key(prof.name)
+                wire = seal(encoded, sub_key, manifest.manifest_id)
+                wire_str = wire.hex()
+            else:
+                wire_str = encoded
+            ref = await adapter.write_chunk(wire_str)
+            chunk_digest = hashlib.sha256(
+                wire_str.encode() if isinstance(wire_str, str) else wire_str
+            ).hexdigest()
+            block.chunks.append(
+                ChunkRecord(
+                    chunk_index=chunk.chunk_index,
+                    adapter_name=ref.adapter_name,
+                    location=ref.location,
+                    status=ChunkStatus.STORED,
+                    size_bytes=len(wire_str),
+                    digest=chunk_digest,
+                )
+            )
+        manifest.blocks.append(block)
 
     def _pick_adapter(self) -> Adapter:
         """Round-robin across all adapters."""

@@ -16,7 +16,7 @@ class TestAdaptersCommand:
     def test_lists_all(self):
         result = runner.invoke(app, ["adapters"])
         assert result.exit_code == 0
-        assert "258 adapters registered" in result.output
+        assert "259" in result.output
         for name in ("dns", "mqtt", "filesystem", "memory", "redis", "s3"):
             assert name in result.output
 

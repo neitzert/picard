@@ -8,10 +8,15 @@ adapter configuration; falls back to a single filesystem adapter.
 from __future__ import annotations
 
 import asyncio
+import json as json_mod
 import sys
 from pathlib import Path
 
 import typer
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+from rich import box
 
 from picard.adapters.filesystem import FilesystemAdapter
 from picard.config import load_config, resolve_params, DEFAULT_CONFIG_PATH
@@ -27,6 +32,9 @@ app = typer.Typer(
     help="Scatter encrypted data across protocol gaps.",
     add_completion=False,
 )
+
+console = Console()
+err_console = Console(stderr=True)
 
 _DEFAULT_STORE = Path.home() / ".picard" / "chunks"
 _DEFAULT_DB = Path.home() / ".picard" / "index.db"
@@ -112,6 +120,15 @@ def _make_orchestrator(
     return Orchestrator(adapters, index, key_ring=key_ring, journal=journal)
 
 
+def _spinner(description: str):
+    return Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=err_console,
+        disable=not err_console.is_terminal,
+    )
+
+
 @app.command()
 def put(
     file: Path = typer.Argument(..., help="Local file to store."),
@@ -135,8 +152,10 @@ def put(
     vpath = virtual_path or file.name
     pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp, profile_name=profile)
-    manifest = asyncio.run(orch.put(vpath, data, pp))
-    typer.echo(
+    with _spinner("Encrypting and scattering...") as progress:
+        progress.add_task("Encrypting and scattering...", total=None)
+        manifest = asyncio.run(orch.put(vpath, data, pp))
+    console.print(
         f"stored {vpath}  ({manifest.total_blocks} blocks, "
         f"{manifest.total_chunks} chunks, manifest={manifest.manifest_id})"
     )
@@ -157,26 +176,51 @@ def get(
     """Retrieve and decrypt a file."""
     pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    data = asyncio.run(orch.get(virtual_path, pp))
+    with _spinner("Fetching and decrypting...") as progress:
+        progress.add_task("Fetching and decrypting...", total=None)
+        data = asyncio.run(orch.get(virtual_path, pp))
     if output:
         output.write_bytes(data)
-        typer.echo(f"written to {output}")
+        console.print(f"written to {output}")
     else:
         sys.stdout.buffer.write(data)
 
 
 @app.command(name="ls")
 def list_files(
+    path: str = typer.Argument("", help="Directory path to list (default: all)."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
-    """List all stored virtual paths."""
+    """List stored virtual paths."""
     orch = _make_orchestrator(store_dir, db_path)
-    paths = asyncio.run(orch.ls())
+    paths = asyncio.run(orch.ls(path))
+    if as_json:
+        entries = []
+        for p in paths:
+            m = orch._index.get_manifest_by_path(p)
+            entry = {"path": p}
+            if m:
+                entry.update({
+                    "type": m.file_type,
+                    "size": m.original_size,
+                    "version": m.version,
+                })
+            entries.append(entry)
+        typer.echo(json_mod.dumps(entries, indent=2))
+        return
     if not paths:
         typer.echo("(empty)")
+        return
     for p in paths:
-        typer.echo(p)
+        m = orch._index.get_manifest_by_path(p)
+        if m and m.file_type == "directory":
+            console.print(f"[blue]{p}/[/blue]")
+        elif m and m.file_type == "symlink":
+            console.print(f"[cyan]{p}[/cyan] -> [dim]{m.symlink_target}[/dim]")
+        else:
+            console.print(p)
 
 
 @app.command()
@@ -198,27 +242,31 @@ def rm(
 @app.command()
 def info(
     virtual_path: str = typer.Argument(..., help="Virtual path to inspect."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show detailed info about a stored file."""
     orch = _make_orchestrator(store_dir, db_path)
     result = asyncio.run(orch.info(virtual_path))
-    typer.echo(f"Path:           {result['path']}")
-    typer.echo(f"Manifest ID:    {result['manifest_id']}")
-    typer.echo(f"Original size:  {result['original_size']} bytes")
-    typer.echo(f"Block size:     {result['block_size']} bytes")
-    typer.echo(f"Blocks:         {result['total_blocks']}")
-    typer.echo(f"Chunks:         {result['total_chunks']}")
-    typer.echo(f"Stored bytes:   {result['total_chunk_bytes']}")
-    typer.echo(f"Created:        {result['created_at']}")
+    if as_json:
+        typer.echo(json_mod.dumps(result, indent=2))
+        return
+    console.print(f"[dim]Path:[/dim]           {result['path']}")
+    console.print(f"[dim]Manifest ID:[/dim]    {result['manifest_id']}")
+    console.print(f"[dim]Original size:[/dim]  {result['original_size']} bytes")
+    console.print(f"[dim]Block size:[/dim]     {result['block_size']} bytes")
+    console.print(f"[dim]Blocks:[/dim]         {result['total_blocks']}")
+    console.print(f"[dim]Chunks:[/dim]         {result['total_chunks']}")
+    console.print(f"[dim]Stored bytes:[/dim]   {result['total_chunk_bytes']}")
+    console.print(f"[dim]Created:[/dim]        {result['created_at']}")
     if result.get("plaintext_hash"):
-        typer.echo(f"SHA-256:        {result['plaintext_hash']}")
-    typer.echo(f"All stored:     {result['all_stored']}")
+        console.print(f"[dim]SHA-256:[/dim]        {result['plaintext_hash']}")
+    console.print(f"[dim]All stored:[/dim]     {result['all_stored']}")
     if result["adapter_distribution"]:
-        typer.echo("Adapters:")
+        console.print("[dim]Adapters:[/dim]")
         for name, count in result["adapter_distribution"].items():
-            typer.echo(f"  {name}: {count} chunks")
+            console.print(f"  {name}: {count} chunks")
 
 
 @app.command()
@@ -235,7 +283,9 @@ def verify(
     if keyfile:
         pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    report = asyncio.run(orch.verify(virtual_path))
+    with _spinner("Verifying chunks...") as progress:
+        progress.add_task("Verifying chunks...", total=None)
+        report = asyncio.run(orch.verify(virtual_path))
     typer.echo(f"Verify: {report['path']}")
     typer.echo(f"  Blocks: {report['total_blocks']}, Chunks: {report['total_chunks']}")
     typer.echo(f"  Verified: {report['verified_chunks']}")
@@ -246,7 +296,7 @@ def verify(
     for err in report["errors"]:
         typer.echo(f"  ! {err}", err=True)
     if report["ok"]:
-        typer.echo("  OK")
+        console.print("  [bold green]OK[/bold green]")
     else:
         raise typer.Exit(1)
 
@@ -336,12 +386,16 @@ def mv(
 
 @app.command()
 def du(
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show storage usage summary."""
     orch = _make_orchestrator(store_dir, db_path)
     result = asyncio.run(orch.du())
+    if as_json:
+        typer.echo(json_mod.dumps(result, indent=2))
+        return
     typer.echo(f"Files:   {result['total_files']}")
     typer.echo(f"Chunks:  {result['total_chunks']}")
     typer.echo(f"Bytes:   {result['total_bytes']}")
@@ -359,38 +413,68 @@ def du(
 @app.command()
 def adapters(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show constructor params."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
 ) -> None:
     """List all registered adapter types."""
     types = list_adapter_types()
-    typer.echo(f"{len(types)} adapters registered:\n")
-    for t in types:
+    if as_json:
+        typer.echo(json_mod.dumps(sorted(types), indent=2))
+        return
+    table = Table(
+        title=f"Registered Adapters ({len(types)})",
+        box=box.SIMPLE,
+    )
+    table.add_column("Name", style="bold")
+    if verbose:
+        table.add_column("Class")
+        table.add_column("Params")
+    for t in sorted(types):
         if verbose:
             try:
                 cls = get_adapter_class(t)
                 import inspect
                 sig = inspect.signature(cls.__init__)
                 params = [p for p in sig.parameters if p != "self"]
-                typer.echo(f"  {t:30s}  {cls.__name__}({', '.join(params)})")
+                table.add_row(t, cls.__name__, ", ".join(params))
             except Exception:
-                typer.echo(f"  {t}")
+                table.add_row(t, "?", "")
         else:
-            typer.echo(f"  {t}")
+            table.add_row(t)
+    console.print(table)
 
 
 @app.command(name="profiles")
-def scatter_profiles_cmd() -> None:
+def scatter_profiles_cmd(
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
+) -> None:
     """List available scatter profiles."""
     cfg = load_config()
     profiles = list_profiles(cfg.scatter_profiles)
-    typer.echo(f"{len(profiles)} scatter profiles:\n")
+    if as_json:
+        data = [
+            {
+                "name": p.name,
+                "raid_level": p.raid_level,
+                "description": p.description,
+                "adapter_tags": p.adapter_tags,
+                "adapter_names": p.adapter_names,
+            }
+            for p in profiles
+        ]
+        typer.echo(json_mod.dumps(data, indent=2))
+        return
+    table = Table(
+        title=f"Scatter Profiles ({len(profiles)})",
+        box=box.SIMPLE,
+    )
+    table.add_column("Name", style="bold")
+    table.add_column("RAID")
+    table.add_column("Description")
     for p in profiles:
         raid = p.raid_level.upper().replace("RAID", "RAID ")
-        typer.echo(f"  {p.name:15s}  {raid:10s}  {p.description}")
-        if p.adapter_tags:
-            typer.echo(f"  {'':15s}  tags: {', '.join(p.adapter_tags)}")
-        if p.adapter_names:
-            typer.echo(f"  {'':15s}  adapters: {', '.join(p.adapter_names)}")
-    typer.echo(f"\nUse: picard put --profile <name> <file>")
+        table.add_row(p.name, raid, p.description)
+    console.print(table)
+    console.print(f"\nUse: picard put --profile <name> <file>")
 
 
 @app.command()
@@ -427,18 +511,16 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
     if adapter_count > 0:
         all_types = all_types[:adapter_count]
 
-    typer.echo(f"\n{'='*70}")
-    typer.echo(f"  PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data")
-    typer.echo(f"{'='*70}")
-    typer.echo(f"\n  Payload:     {name} ({len(data)} bytes)")
-    typer.echo(f"  Adapters:    {len(all_types)} protocols")
-    typer.echo(f"  Encryption:  AES-256-GCM + Argon2id KDF")
-    typer.echo(f"  Chunking:    HKDF-SHA256 sub-keys per adapter")
-    typer.echo(f"\n  Scattering...\n")
+    console.print(f"\n{'='*70}")
+    console.print(f"  [bold]PICARD[/bold] — Protocol-Introspecting Chunk Adapter for Resilient Data")
+    console.print(f"{'='*70}")
+    console.print(f"\n  Payload:     {name} ({len(data)} bytes)")
+    console.print(f"  Adapters:    {len(all_types)} protocols")
+    console.print(f"  Encryption:  AES-256-GCM + Argon2id KDF")
+    console.print(f"  Chunking:    HKDF-SHA256 sub-keys per adapter")
 
     adapters = [MemoryAdapter(name=t) for t in all_types]
 
-    # Pad payload so every adapter gets at least one chunk
     if len(data) < len(adapters):
         pad_line = b"\nProtocol security > platform security. " * (len(adapters) // 40 + 1)
         data = data + pad_line[: len(adapters) - len(data)]
@@ -447,7 +529,10 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
     index = Index(":memory:")
     orch = Orchestrator(adapters, index, block_size=1)
 
-    manifest = await orch.put(name, data, passphrase)
+    console.print(f"\n  Scattering...\n")
+    with _spinner("Scattering across adapters...") as progress:
+        progress.add_task("Scattering across adapters...", total=None)
+        manifest = await orch.put(name, data, passphrase)
 
     chunk_map: list[tuple[int, int, str]] = []
     for block in manifest.blocks:
@@ -461,34 +546,35 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
     for bi, ci, aname in chunk_map:
         typer.echo(f"  {bi:>5}  {ci:>5}  {aname}")
 
-    typer.echo(f"\n  Scattered {manifest.total_chunks} chunks across {len(protocols_used)} protocols.")
+    console.print(f"\n  Scattered {manifest.total_chunks} chunks across {len(protocols_used)} protocols.")
+    console.print(f"\n  Reassembling...\n")
 
-    typer.echo(f"\n  Reassembling...\n")
-
-    recovered = await orch.get(name, passphrase)
+    with _spinner("Reassembling...") as progress:
+        progress.add_task("Reassembling...", total=None)
+        recovered = await orch.get(name, passphrase)
     ok = recovered == data
 
     if ok:
-        typer.echo(f"  ✓ Reassembly successful — {len(recovered)} bytes, SHA-256 verified.")
+        console.print(f"  [bold green]✓[/bold green] Reassembly successful — {len(recovered)} bytes, SHA-256 verified.")
     else:
-        typer.echo(f"  ✗ Reassembly FAILED.", err=True)
+        console.print(f"  [bold red]✗[/bold red] Reassembly FAILED.", highlight=False)
         raise typer.Exit(1)
 
     report = await orch.verify(name)
-    typer.echo(f"  ✓ Integrity check: {report['verified_chunks']}/{report['total_chunks']} chunks verified.")
+    console.print(f"  [bold green]✓[/bold green] Integrity check: {report['verified_chunks']}/{report['total_chunks']} chunks verified.")
 
-    typer.echo(f"\n{'='*70}")
-    typer.echo(f"  ATTACK SURFACE REPORT")
-    typer.echo(f"{'='*70}")
-    typer.echo(f"\n  To intercept this data, a defender would need to monitor:\n")
+    console.print(f"\n{'='*70}")
+    console.print(f"  [bold]ATTACK SURFACE REPORT[/bold]")
+    console.print(f"{'='*70}")
+    console.print(f"\n  To intercept this data, a defender would need to monitor:\n")
     for i, proto in enumerate(protocols_used, 1):
         typer.echo(f"  {i:>4}. {proto}")
 
-    typer.echo(f"\n  Total protocols: {len(protocols_used)}")
-    typer.echo(f"  Total chunks:    {manifest.total_chunks}")
-    typer.echo(f"  Missing ANY one chunk makes the data unrecoverable.")
-    typer.echo(f"\n  Platform security is not protocol security.")
-    typer.echo(f"{'='*70}\n")
+    console.print(f"\n  Total protocols: {len(protocols_used)}")
+    console.print(f"  Total chunks:    {manifest.total_chunks}")
+    console.print(f"  Missing ANY one chunk makes the data unrecoverable.")
+    console.print(f"\n  [bold]Platform security is not protocol security.[/bold]")
+    console.print(f"{'='*70}\n")
 
 
 @app.command(name="scatter-report")
@@ -558,6 +644,7 @@ def mkdir(
 @app.command(name="stat")
 def stat_cmd(
     virtual_path: str = typer.Argument(..., help="Path to stat."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
@@ -567,43 +654,73 @@ def stat_cmd(
     if m is None:
         typer.echo(f"not found: {virtual_path}", err=True)
         raise typer.Exit(1)
-    typer.echo(f"  Path:    {m.path}")
-    typer.echo(f"  Type:    {m.file_type}")
-    typer.echo(f"  Mode:    {oct(m.mode)}")
-    typer.echo(f"  Size:    {m.original_size}")
-    typer.echo(f"  Version: {m.version}")
-    typer.echo(f"  UID/GID: {m.uid}/{m.gid}")
-    typer.echo(f"  mtime:   {m.mtime}")
-    typer.echo(f"  ctime:   {m.ctime}")
+    if as_json:
+        data = {
+            "path": m.path,
+            "type": m.file_type,
+            "mode": oct(m.mode),
+            "size": m.original_size,
+            "version": m.version,
+            "uid": m.uid,
+            "gid": m.gid,
+            "mtime": m.mtime,
+            "ctime": m.ctime,
+            "atime": m.atime,
+            "manifest_id": m.manifest_id,
+        }
+        if m.file_type == "symlink":
+            data["symlink_target"] = m.symlink_target
+        typer.echo(json_mod.dumps(data, indent=2))
+        return
+    console.print(f"[dim]  Path:[/dim]    {m.path}")
+    console.print(f"[dim]  Type:[/dim]    {m.file_type}")
+    console.print(f"[dim]  Mode:[/dim]    {oct(m.mode)}")
+    console.print(f"[dim]  Size:[/dim]    {m.original_size}")
+    console.print(f"[dim]  Version:[/dim] {m.version}")
+    console.print(f"[dim]  UID/GID:[/dim] {m.uid}/{m.gid}")
+    console.print(f"[dim]  mtime:[/dim]   {m.mtime}")
+    console.print(f"[dim]  ctime:[/dim]   {m.ctime}")
     if m.file_type == "symlink":
-        typer.echo(f"  Target:  {m.symlink_target}")
+        console.print(f"[dim]  Target:[/dim]  {m.symlink_target}")
 
 
 @app.command()
 def tree(
     virtual_path: str = typer.Argument("/", help="Root path for tree."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show directory tree."""
     orch = _make_orchestrator(store_dir, db_path)
     result = asyncio.run(orch.tree(virtual_path))
-    _print_tree(result, "")
+    if as_json:
+        typer.echo(json_mod.dumps(result, indent=2))
+        return
+    _print_tree_rich(result, "")
 
 
-def _print_tree(node: dict, prefix: str) -> None:
+def _print_tree_rich(node: dict, prefix: str, is_last: bool = True) -> None:
     name = node["path"].rsplit("/", 1)[-1] or "/"
-    typer.echo(f"{prefix}{name}")
+    if not prefix:
+        if "children" in node:
+            console.print(f"[blue]{name}/[/blue]")
+        else:
+            console.print(name)
+    else:
+        connector = "└── " if is_last else "├── "
+        if "children" in node:
+            console.print(f"{prefix}{connector}[blue]{name}/[/blue]")
+        else:
+            console.print(f"{prefix}{connector}{name}")
     children = node.get("children", [])
     for i, child in enumerate(children):
-        is_last = i == len(children) - 1
-        connector = "└── " if is_last else "├── "
-        if "children" in child:
-            typer.echo(f"{prefix}{connector}", nl=False)
-            _print_tree(child, prefix + ("    " if is_last else "│   "))
+        child_is_last = i == len(children) - 1
+        if prefix:
+            ext = "    " if is_last else "│   "
         else:
-            leaf = child["path"].rsplit("/", 1)[-1]
-            typer.echo(f"{prefix}{connector}{leaf}")
+            ext = ""
+        _print_tree_rich(child, prefix + ext, child_is_last)
 
 
 @app.command()
@@ -693,6 +810,7 @@ def tail(
 def fsck_cmd(
     keyfile: Path = typer.Option(None, "--keyfile", "-k"),
     no_digests: bool = typer.Option(False, "--no-digests", help="Skip digest verification."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
@@ -703,28 +821,48 @@ def fsck_cmd(
     if keyfile:
         pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    report = asyncio.run(_fsck(
-        orch._index, orch._adapters,
-        verify_digests=not no_digests,
-        key_ring=orch._key_ring,
-    ))
-    typer.echo(f"fsck: {report.total_manifests} manifests, "
-               f"{report.total_blocks} blocks, {report.total_chunks} chunks")
-    typer.echo(f"  Verified:    {report.verified_chunks}")
+    with _spinner("Checking filesystem integrity...") as progress:
+        progress.add_task("Checking filesystem integrity...", total=None)
+        report = asyncio.run(_fsck(
+            orch._index, orch._adapters,
+            verify_digests=not no_digests,
+            key_ring=orch._key_ring,
+        ))
+    if as_json:
+        data = {
+            "total_manifests": report.total_manifests,
+            "total_blocks": report.total_blocks,
+            "total_chunks": report.total_chunks,
+            "verified_chunks": report.verified_chunks,
+            "missing_chunks": report.missing_chunks,
+            "corrupt_blocks": report.corrupt_blocks,
+            "orphan_chunks": report.orphan_chunks,
+            "directory_errors": report.directory_errors,
+            "symlink_errors": report.symlink_errors,
+            "version_gaps": report.version_gaps,
+            "journal_incomplete": report.journal_incomplete,
+            "errors": report.errors,
+            "ok": report.ok,
+        }
+        typer.echo(json_mod.dumps(data, indent=2))
+        return
+    console.print(f"fsck: {report.total_manifests} manifests, "
+                   f"{report.total_blocks} blocks, {report.total_chunks} chunks")
+    console.print(f"  Verified:    {report.verified_chunks}")
     if report.missing_chunks:
-        typer.echo(f"  Missing:     {report.missing_chunks}", err=True)
+        console.print(f"  [red]Missing:     {report.missing_chunks}[/red]")
     if report.corrupt_blocks:
-        typer.echo(f"  Corrupt:     {report.corrupt_blocks}", err=True)
+        console.print(f"  [red]Corrupt:     {report.corrupt_blocks}[/red]")
     if report.directory_errors:
-        typer.echo(f"  Dir errors:  {report.directory_errors}", err=True)
+        console.print(f"  [red]Dir errors:  {report.directory_errors}[/red]")
     if report.symlink_errors:
-        typer.echo(f"  Link errors: {report.symlink_errors}", err=True)
+        console.print(f"  [red]Link errors: {report.symlink_errors}[/red]")
     if report.journal_incomplete:
-        typer.echo(f"  Journal:     {report.journal_incomplete} incomplete", err=True)
+        console.print(f"  [yellow]Journal:     {report.journal_incomplete} incomplete[/yellow]")
     for err in report.errors:
-        typer.echo(f"  ! {err}", err=True)
+        console.print(f"  [red]![/red] {err}")
     if report.ok:
-        typer.echo("  OK")
+        console.print("  [bold green]OK[/bold green] — no errors found")
     else:
         raise typer.Exit(1)
 
@@ -732,12 +870,16 @@ def fsck_cmd(
 @app.command()
 def log(
     virtual_path: str = typer.Argument(..., help="Path to show history for."),
+    as_json: bool = typer.Option(False, "--json", help="Output as JSON."),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show version history for a path."""
     orch = _make_orchestrator(store_dir, db_path)
     versions = asyncio.run(orch.list_versions(virtual_path))
+    if as_json:
+        typer.echo(json_mod.dumps(versions, indent=2))
+        return
     if not versions:
         typer.echo(f"no versions for {virtual_path}")
         return
