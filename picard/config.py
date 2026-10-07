@@ -33,6 +33,7 @@ class AdapterEntry:
     type: str
     enabled: bool = True
     params: dict[str, Any] = field(default_factory=dict)
+    tor_proxy: bool = False
 
 
 @dataclass
@@ -85,13 +86,14 @@ def load_config(path: Path | None = None) -> PicardConfig:
     )
 
     for entry in raw.get("adapters", []):
-        params = {k: v for k, v in entry.items() if k not in ("name", "type", "enabled")}
+        params = {k: v for k, v in entry.items() if k not in ("name", "type", "enabled", "tor_proxy")}
         cfg.adapters.append(
             AdapterEntry(
                 name=entry["name"],
                 type=entry["type"],
                 enabled=entry.get("enabled", True),
                 params=params,
+                tor_proxy=entry.get("tor_proxy", False),
             )
         )
 

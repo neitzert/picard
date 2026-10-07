@@ -895,7 +895,7 @@ function renderAdapters() {
               `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${p.name}${p.required ? '*' : ''}</span>`
             ).join(', ')}
         </td>
-        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}</td>
+        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}${(() => { const ce = configuredData.find(c => c.type === a.type); return ce && ce.tor_proxy ? ' <span class="badge" style="background:var(--purple);color:#fff;font-size:9px">TOR</span>' : ''; })()}</td>
         <td style="text-align:right">
           <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;")})'>${isConfigured ? 'Edit' : 'Add'}</button>
         </td>
@@ -919,6 +919,7 @@ function openConfigure(adapter) {
   const name = existing ? existing.name : adapter.type;
   const enabled = existing ? existing.enabled : true;
   const params = existing ? existing.params : {};
+  const torProxy = existing ? (existing.tor_proxy || false) : false;
 
   document.getElementById('modal-title').textContent = `Configure: ${adapter.type}`;
   document.getElementById('modal-body').innerHTML = `
@@ -932,6 +933,11 @@ function openConfigure(adapter) {
         <option value="true" ${enabled ? 'selected' : ''}>Yes</option>
         <option value="false" ${!enabled ? 'selected' : ''}>No</option>
       </select>
+    </div>
+    <div class="form-group" style="display:flex;align-items:center;gap:8px">
+      <input type="checkbox" id="cfg-tor-proxy" ${torProxy ? 'checked' : ''} style="width:auto;accent-color:var(--purple)">
+      <label for="cfg-tor-proxy" style="margin:0;cursor:pointer;color:var(--purple)">Route via Tor</label>
+      <span style="color:var(--text2);font-size:10px;margin-left:4px">SOCKS5 proxy &mdash; hides your IP from this adapter's service</span>
     </div>
     ${adapter.params.length > 0 ? '<hr style="border-color:var(--border);margin:16px 0"><h4 style="font-size:12px;color:var(--text2);margin-bottom:12px">PARAMETERS</h4>' : ''}
     ${adapter.params.map(p => `
@@ -972,9 +978,10 @@ async function saveAdapter() {
       }
     }
 
+    const torProxy = document.getElementById('cfg-tor-proxy').checked;
     await api('/adapters/configure', {
       method: 'POST',
-      body: { name, type: editingAdapter.type, enabled, params },
+      body: { name, type: editingAdapter.type, enabled, params, tor_proxy: torProxy },
     });
     closeModal('modal-configure');
     toast(`Adapter "${name}" saved`);

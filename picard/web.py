@@ -83,6 +83,7 @@ class AdapterConfigRequest(BaseModel):
     type: str
     enabled: bool = True
     params: dict[str, Any] = {}
+    tor_proxy: bool = False
 
 
 class RaidPoolRequest(BaseModel):
@@ -150,6 +151,7 @@ async def list_configured():
             "type": e.type,
             "enabled": e.enabled,
             "params": mask_secrets(e.params),
+            "tor_proxy": getattr(e, "tor_proxy", False),
         }
         for e in cfg.adapters
     ]
@@ -164,12 +166,14 @@ async def configure_adapter(req: AdapterConfigRequest):
         existing.type = req.type
         existing.enabled = req.enabled
         existing.params = req.params
+        existing.tor_proxy = req.tor_proxy
     else:
         cfg.adapters.append(AdapterEntry(
             name=req.name,
             type=req.type,
             enabled=req.enabled,
             params=req.params,
+            tor_proxy=req.tor_proxy,
         ))
     _save_config(cfg)
     return {"status": "ok", "adapter": req.name}
@@ -641,6 +645,8 @@ def _save_config(cfg: PicardConfig) -> None:
         lines.append(f'name = "{_escape_toml(entry.name)}"\n')
         lines.append(f'type = "{_escape_toml(entry.type)}"\n')
         lines.append(f"enabled = {'true' if entry.enabled else 'false'}\n")
+        if getattr(entry, "tor_proxy", False):
+            lines.append("tor_proxy = true\n")
         for k, v in entry.params.items():
             lines.append(f"{_format_toml_key(k)} = {_toml_value(v)}\n")
         lines.append("\n")
