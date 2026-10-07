@@ -37,6 +37,25 @@ app = FastAPI(title="PICARD", docs_url=None, redoc_url=None)
 
 _UI_HTML = (Path(__file__).parent / "ui.html").read_text(encoding="utf-8")
 
+_orch: Orchestrator | None = None
+_index: Index | None = None
+
+
+def _set_state(orch: Orchestrator | None, index: Index | None) -> None:
+    global _orch, _index
+    _orch = orch
+    _index = index
+
+
+def _ensure_index() -> Index:
+    if _index is not None:
+        return _index
+    cfg = load_config()
+    db_path = cfg.index_db
+    if db_path.startswith("~"):
+        db_path = str(Path(db_path).expanduser())
+    return Index(db_path)
+
 
 # ── models ────────────────────────────────────────────────────────────────
 
@@ -313,6 +332,159 @@ async def system_stats():
         "block_size": cfg.block_size,
         "config_path": str(DEFAULT_CONFIG_PATH),
     }
+
+
+# ── filesystem API ────────────────────────────────────────────────────────
+
+
+@app.get("/api/fs/tree")
+async def fs_tree(path: str = "/"):
+    if _orch is None:
+        raise HTTPException(503, "orchestrator not initialized")
+    return await _orch.tree(path)
+
+
+@app.get("/api/fs/ls")
+async def fs_ls(path: str = ""):
+    idx = _ensure_index()
+    if path:
+        children = idx.list_children(path)
+    else:
+        children = idx.list_paths()
+    result = []
+    for p in children:
+        m = idx.get_manifest_by_path(p)
+        if m:
+            result.append({
+                "path": p,
+                "name": p.rsplit("/", 1)[-1],
+                "type": m.file_type,
+                "size": m.original_size,
+                "version": m.version,
+                "mtime": m.mtime,
+                "mode": m.mode,
+            })
+        else:
+            result.append({"path": p, "name": p.rsplit("/", 1)[-1]})
+    return result
+
+
+@app.get("/api/fs/stat")
+async def fs_stat(path: str):
+    idx = _ensure_index()
+    m = idx.get_manifest_by_path(path)
+    if m is None:
+        raise HTTPException(404, f"not found: {path}")
+    return {
+        "path": m.path,
+        "type": m.file_type,
+        "size": m.original_size,
+        "mode": m.mode,
+        "mtime": m.mtime,
+        "ctime": m.ctime,
+        "atime": m.atime,
+        "uid": m.uid,
+        "gid": m.gid,
+        "version": m.version,
+        "nlink": m.nlink,
+        "symlink_target": m.symlink_target,
+        "manifest_id": m.manifest_id,
+        "plaintext_hash": m.plaintext_hash,
+        "block_size": m.block_size,
+        "total_blocks": m.total_blocks,
+        "parent_path": m.parent_path,
+    }
+
+
+@app.get("/api/fs/versions")
+async def fs_versions(path: str):
+    idx = _ensure_index()
+    return idx.list_versions(path)
+
+
+@app.post("/api/fs/mkdir")
+async def fs_mkdir(body: dict):
+    if _orch is None:
+        raise HTTPException(503, "orchestrator not initialized")
+    path = body.get("path", "")
+    parents = body.get("parents", False)
+    if not path:
+        raise HTTPException(400, "path required")
+    m = await _orch.mkdir(path, parents=parents)
+    return {"path": m.path, "manifest_id": m.manifest_id}
+
+
+@app.delete("/api/fs/rm")
+async def fs_rm(path: str):
+    if _orch is None:
+        raise HTTPException(503, "orchestrator not initialized")
+    result = await _orch.rm(path)
+    return {"deleted": result, "path": path}
+
+
+# ── peers API ─────────────────────────────────────────────────────────────
+
+
+@app.get("/api/peers")
+async def api_list_peers():
+    idx = _ensure_index()
+    from picard.peer import PeerRegistry
+    registry = PeerRegistry(idx.connection)
+    peers = registry.list_peers()
+    return [
+        {"url": p.url, "adapters": p.adapters, "status": p.status, "last_seen": p.last_seen}
+        for p in peers
+    ]
+
+
+@app.post("/api/peers")
+async def api_add_peer(body: dict):
+    idx = _ensure_index()
+    from picard.peer import PeerRegistry
+    url = body.get("url", "")
+    if not url:
+        raise HTTPException(400, "url required")
+    registry = PeerRegistry(idx.connection)
+    registry.add(url, body.get("adapters", []))
+    return {"added": url}
+
+
+@app.delete("/api/peers")
+async def api_remove_peer(url: str):
+    idx = _ensure_index()
+    from picard.peer import PeerRegistry
+    registry = PeerRegistry(idx.connection)
+    result = registry.remove(url)
+    return {"removed": result, "url": url}
+
+
+# ── journal API ───────────────────────────────────────────────────────────
+
+
+@app.get("/api/journal")
+async def journal_status():
+    idx = _ensure_index()
+    from picard.journal import Journal
+    journal = Journal(idx.connection)
+    entries = journal.get_incomplete()
+    return [
+        {
+            "journal_id": e.journal_id,
+            "operation": e.operation,
+            "path": e.path,
+            "state": e.state.value,
+            "created_at": e.created_at,
+        }
+        for e in entries
+    ]
+
+
+@app.post("/api/recover")
+async def run_recover():
+    if _orch is None:
+        raise HTTPException(503, "orchestrator not initialized")
+    result = await _orch.recover()
+    return result
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
