@@ -12,10 +12,11 @@ from __future__ import annotations
 import asyncio
 import inspect
 import importlib
+import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -34,6 +35,21 @@ from picard.raid import RaidLevel
 from picard.registry import get_adapter_class, list_adapter_types
 
 app = FastAPI(title="PICARD", docs_url=None, redoc_url=None)
+
+_SAFE_ORIGINS = ("http://127.0.0.1", "http://localhost", "http://[::1]")
+
+
+@app.middleware("http")
+async def _security_middleware(request: Request, call_next):
+    client = request.client
+    if client and client.host not in ("127.0.0.1", "::1", "testclient"):
+        return JSONResponse(status_code=403, content={"error": "local access only"})
+    if request.method in ("POST", "PUT", "DELETE"):
+        origin = request.headers.get("origin", "")
+        if origin and not any(origin.startswith(o) for o in _SAFE_ORIGINS):
+            return JSONResponse(status_code=403, content={"error": "CSRF rejected"})
+    return await call_next(request)
+
 
 _UI_HTML = (Path(__file__).parent / "ui.html").read_text(encoding="utf-8")
 
@@ -54,7 +70,8 @@ def _ensure_index() -> Index:
     db_path = cfg.index_db
     if db_path.startswith("~"):
         db_path = str(Path(db_path).expanduser())
-    return Index(db_path)
+    pp = os.environ.get("PICARD_INDEX_PASSPHRASE") or None
+    return Index(db_path, passphrase=pp)
 
 
 # ── models ────────────────────────────────────────────────────────────────
@@ -565,9 +582,48 @@ def _escape_toml(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
+def _format_toml_key(k: str) -> str:
+    if all(c.isalnum() or c in "-_" for c in k) and k:
+        return k
+    return '"' + _escape_toml(k) + '"'
+
+
 def _save_config(cfg: PicardConfig) -> None:
-    """Write PicardConfig back to config.toml."""
+    """Write PicardConfig back to config.toml, preserving raid/scatter sections."""
     DEFAULT_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+    preserved_sections: list[str] = []
+    if DEFAULT_CONFIG_PATH.is_file():
+        try:
+            import tomllib
+            existing = tomllib.loads(DEFAULT_CONFIG_PATH.read_text(encoding="utf-8"))
+            if "raid" in existing:
+                raw = existing["raid"]
+                entries = raw if isinstance(raw, list) else [raw]
+                for entry in entries:
+                    section = ["[[raid]]\n"]
+                    for rk, rv in entry.items():
+                        if isinstance(rv, list):
+                            section.append(f"{_format_toml_key(rk)} = {rv}\n")
+                        elif isinstance(rv, str):
+                            section.append(f'{_format_toml_key(rk)} = "{_escape_toml(rv)}"\n')
+                        elif isinstance(rv, (int, float)):
+                            section.append(f"{_format_toml_key(rk)} = {rv}\n")
+                    preserved_sections.append("".join(section))
+            if "scatter" in existing:
+                for name, profile in existing["scatter"].items():
+                    section = [f"[scatter.{_format_toml_key(name)}]\n"]
+                    for sk, sv in profile.items():
+                        if isinstance(sv, str):
+                            section.append(f'{_format_toml_key(sk)} = "{_escape_toml(sv)}"\n')
+                        elif isinstance(sv, list):
+                            section.append(f"{_format_toml_key(sk)} = {sv}\n")
+                        elif isinstance(sv, (int, float)):
+                            section.append(f"{_format_toml_key(sk)} = {sv}\n")
+                    preserved_sections.append("".join(section))
+        except Exception:
+            pass
+
     lines = ["[general]\n"]
     lines.append(f'index_db = "{_escape_toml(str(cfg.index_db))}"\n')
     lines.append(f"block_size = {cfg.block_size}\n")
@@ -578,12 +634,16 @@ def _save_config(cfg: PicardConfig) -> None:
         lines.append(f'type = "{_escape_toml(entry.type)}"\n')
         lines.append(f"enabled = {'true' if entry.enabled else 'false'}\n")
         for k, v in entry.params.items():
+            key = _format_toml_key(k)
             if isinstance(v, str):
-                lines.append(f'{k} = "{_escape_toml(v)}"\n')
+                lines.append(f'{key} = "{_escape_toml(v)}"\n')
             elif isinstance(v, bool):
-                lines.append(f"{k} = {'true' if v else 'false'}\n")
+                lines.append(f"{key} = {'true' if v else 'false'}\n")
             elif isinstance(v, (int, float)):
-                lines.append(f"{k} = {v}\n")
+                lines.append(f"{key} = {v}\n")
+        lines.append("\n")
+    for section in preserved_sections:
+        lines.append(section)
         lines.append("\n")
     DEFAULT_CONFIG_PATH.write_text("".join(lines), encoding="utf-8")
 
@@ -591,16 +651,50 @@ def _save_config(cfg: PicardConfig) -> None:
 def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
     import uvicorn
     from picard.adapters.filesystem import FilesystemAdapter
+    from picard.config import resolve_params
     from picard.journal import Journal
+    from picard.raid import RaidLevel, RaidPool
+    from picard.registry import instantiate
 
     cfg = load_config()
     db_path = cfg.index_db
     if db_path.startswith("~"):
         db_path = str(Path(db_path).expanduser())
-    index = Index(db_path)
-    store_dir = Path("~/.picard/store").expanduser()
-    store_dir.mkdir(parents=True, exist_ok=True)
-    adapters: list[Adapter] = [FilesystemAdapter(store_dir)]
+    pp = os.environ.get("PICARD_INDEX_PASSPHRASE") or None
+    index = Index(db_path, passphrase=pp)
+
+    store_dir = Path("~/.picard/chunks").expanduser()
+    by_name: dict[str, Adapter] = {}
+    adapters: list[Adapter] = []
+    for entry in cfg.adapters:
+        if not entry.enabled:
+            continue
+        try:
+            params = resolve_params(entry.params)
+            adapter = instantiate(entry.type, **params)
+            adapters.append(adapter)
+            by_name[entry.name] = adapter
+        except Exception:
+            pass
+    if cfg.raid:
+        pooled_names: set[str] = set()
+        pools: list[Adapter] = []
+        for raid_entry in cfg.raid:
+            pool_adapters = [by_name[n] for n in raid_entry.adapters if n in by_name]
+            if len(pool_adapters) < 2:
+                continue
+            level = RaidLevel(raid_entry.level)
+            pool = RaidPool(pool_adapters, level, mirror_count=raid_entry.mirror_count)
+            pools.append(pool)
+            pooled_names.update(raid_entry.adapters)
+        remaining = [a for a in adapters if not any(
+            name in pooled_names for name, obj in by_name.items() if obj is a
+        )]
+        adapters = pools + remaining
+    if not adapters:
+        store_dir.mkdir(parents=True, exist_ok=True)
+        adapters = [FilesystemAdapter(store_dir)]
+
     journal = Journal(index.connection)
     orch = Orchestrator(adapters, index, journal=journal)
     _set_state(orch, index)

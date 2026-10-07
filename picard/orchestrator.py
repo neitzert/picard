@@ -68,7 +68,7 @@ class Orchestrator:
         mode: int = 0o100644,
     ) -> Manifest:
         """Encrypt, chunk, scatter *data* and return its manifest."""
-        total_blocks = max(1, math.ceil(len(data) / self._block_size))
+        total_blocks = math.ceil(len(data) / self._block_size) if data else 0
         now = datetime.now(timezone.utc).isoformat()
         parent = self._parent_of(path)
         version = self._index.get_next_version(path)
@@ -224,6 +224,10 @@ class Orchestrator:
                 total_size += len(plaintext_block)
                 await self._scatter_block(manifest, bi, plaintext_block, passphrase)
                 bi += 1
+                if self._journal and jid:
+                    self._journal.mark_in_progress(
+                        jid, {"blocks_written": list(range(bi))}
+                    )
 
             manifest.original_size = total_size
             manifest.total_blocks = bi
@@ -392,7 +396,6 @@ class Orchestrator:
             raise FileNotFoundError(f"no manifest for path: {src_path}")
         manifest.path = dst_path
         manifest.parent_path = self._parent_of(dst_path)
-        self._index.delete_manifest(manifest.manifest_id)
         self._index.save_manifest(manifest)
         return True
 

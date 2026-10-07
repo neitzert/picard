@@ -26,6 +26,7 @@ except (ImportError, OSError):
         from refuse.high import FUSE, FuseOSError, Operations
 
 ENODATA = getattr(errno, "ENODATA", 61)
+_XATTR_BIN_PREFIX = "\x00picard:b64:"
 
 if TYPE_CHECKING:
     from picard.cache import BlockCache
@@ -238,8 +239,8 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         val = m.xattrs.get(name)
         if val is None:
             raise FuseOSError(ENODATA)
-        if isinstance(val, str) and val.startswith("b64:"):
-            return base64.b64decode(val[4:])
+        if isinstance(val, str) and val.startswith(_XATTR_BIN_PREFIX):
+            return base64.b64decode(val[len(_XATTR_BIN_PREFIX):])
         return val.encode("utf-8") if isinstance(val, str) else val
 
     def setxattr(self, path, name, value, options, position=0):
@@ -253,7 +254,7 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
             try:
                 xattrs[name] = value.decode("utf-8")
             except UnicodeDecodeError:
-                xattrs[name] = "b64:" + base64.b64encode(value).decode("ascii")
+                xattrs[name] = _XATTR_BIN_PREFIX + base64.b64encode(value).decode("ascii")
         else:
             xattrs[name] = value
         self._index.update_manifest_metadata(m.manifest_id, xattrs=xattrs)

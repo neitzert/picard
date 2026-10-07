@@ -1206,7 +1206,15 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 function escapeAttr(s) {
-  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;')
+    .replace(/\\/g, '\\\\');
 }
 
 // ── Filesystem ──
@@ -1299,7 +1307,7 @@ async function showFsStat(path) {
         <div><b>Parent:</b> ${escapeHtml(s.parent_path || '/')}</div>
       </div>
       ${versions.length > 1 ? '<h4 style="margin-top:12px">Version History</h4><table><thead><tr><th>Version</th><th>Type</th><th>Size</th><th>Created</th></tr></thead><tbody>' +
-        versions.map(v => `<tr><td>v${v.version}</td><td>${v.file_type || '-'}</td><td>${fmtSize(v.original_size)}</td><td>${v.created_at || '-'}</td></tr>`).join('') +
+        versions.map(v => `<tr><td>v${v.version}</td><td>${escapeHtml(v.file_type || '-')}</td><td>${fmtSize(v.original_size)}</td><td>${escapeHtml(v.created_at || '-')}</td></tr>`).join('') +
         '</tbody></table>' : ''}
     `;
     detail.style.display = 'block';
@@ -1337,11 +1345,11 @@ async function loadPeers() {
       return;
     }
     tbody.innerHTML = peers.map(p => `<tr>
-      <td><span class="badge badge-${p.status === 'online' ? 'cloud' : 'storage'}">${p.status}</span></td>
-      <td style="font-family:monospace;font-size:12px">${p.url}</td>
+      <td><span class="badge badge-${p.status === 'online' ? 'cloud' : 'storage'}">${escapeHtml(p.status)}</span></td>
+      <td style="font-family:monospace;font-size:12px">${escapeHtml(p.url)}</td>
       <td>${(p.adapters || []).length}</td>
-      <td>${p.last_seen ? new Date(p.last_seen).toLocaleString() : '-'}</td>
-      <td><button class="btn btn-sm" onclick="removePeer('${p.url}')" style="color:var(--red)">Remove</button></td>
+      <td>${p.last_seen ? new Date(p.last_seen * 1000).toLocaleString() : '-'}</td>
+      <td><button class="btn btn-sm" onclick="removePeer(decodeURIComponent('${encodeURIComponent(p.url)}'))" style="color:var(--red)">Remove</button></td>
     </tr>`).join('');
   } catch { document.getElementById('peers-table').innerHTML = '<tr><td colspan="5" style="color:var(--text2);padding:16px">Unavailable</td></tr>'; }
 }
@@ -1377,7 +1385,7 @@ async function loadJournal() {
       return;
     }
     el.innerHTML = `<span style="color:var(--yellow)">${entries.length} incomplete entries</span><br>` +
-      entries.map(e => `<div style="margin-top:4px"><code>${e.path}</code> — ${e.state} (${e.operation})</div>`).join('');
+      entries.map(e => `<div style="margin-top:4px"><code>${escapeHtml(e.path)}</code> — ${escapeHtml(e.state)} (${escapeHtml(e.operation)})</div>`).join('');
   } catch { document.getElementById('journal-status').textContent = 'Unavailable'; }
 }
 

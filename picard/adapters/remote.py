@@ -22,16 +22,21 @@ class RemoteAdapter(Adapter):
         *,
         secret: str = "",
         timeout: float = 30.0,
+        max_chunk_bytes: int = 64 * 1024,
     ) -> None:
         self._peer_url = peer_url.rstrip("/")
         self._adapter_name = adapter_name
         self._secret = secret
         self._timeout = timeout
+        self._max_chunk_bytes = max_chunk_bytes
+        self._client = httpx.AsyncClient(
+            base_url=self._peer_url, timeout=self._timeout,
+        )
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
             name=f"remote:{self._adapter_name}@{self._peer_url}",
-            max_chunk_bytes=64 * 1024,
+            max_chunk_bytes=self._max_chunk_bytes,
             tags={"remote": "true", "peer": self._peer_url},
         )
 
@@ -46,81 +51,75 @@ class RemoteAdapter(Adapter):
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         payload = {"adapter": self._adapter_name, "data": encoded_chunk}
         body = json.dumps(payload).encode()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._peer_url}/transport/v1/write_chunk",
-                content=body,
-                headers={"content-type": "application/json", **self._sign(body)},
-            )
-            resp.raise_for_status()
-            result = resp.json()
-            return StoredChunkRef(
-                adapter_name=result["adapter"],
-                location=result["location"],
-            )
+        resp = await self._client.post(
+            "/transport/v1/write_chunk",
+            content=body,
+            headers={"content-type": "application/json", **self._sign(body)},
+        )
+        resp.raise_for_status()
+        result = resp.json()
+        return StoredChunkRef(
+            adapter_name=result["adapter"],
+            location=result["location"],
+        )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         payload = {"adapter": self._adapter_name, "ref": ref.location}
         body = json.dumps(payload).encode()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._peer_url}/transport/v1/read_chunk",
-                content=body,
-                headers={"content-type": "application/json", **self._sign(body)},
-            )
-            resp.raise_for_status()
-            return resp.json()["data"]
+        resp = await self._client.post(
+            "/transport/v1/read_chunk",
+            content=body,
+            headers={"content-type": "application/json", **self._sign(body)},
+        )
+        resp.raise_for_status()
+        return resp.json()["data"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         payload = {"adapter": self._adapter_name, "ref": ref.location}
         body = json.dumps(payload).encode()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._peer_url}/transport/v1/delete_chunk",
-                content=body,
-                headers={"content-type": "application/json", **self._sign(body)},
-            )
-            resp.raise_for_status()
-            return resp.json().get("deleted", False)
+        resp = await self._client.post(
+            "/transport/v1/delete_chunk",
+            content=body,
+            headers={"content-type": "application/json", **self._sign(body)},
+        )
+        resp.raise_for_status()
+        return resp.json().get("deleted", False)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         payload = {"adapter": self._adapter_name, "manifest_id": manifest_id}
         body = json.dumps(payload).encode()
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._peer_url}/transport/v1/list_chunks",
-                content=body,
-                headers={"content-type": "application/json", **self._sign(body)},
-            )
-            resp.raise_for_status()
-            return [
-                StoredChunkRef(adapter_name=r["adapter"], location=r["location"])
-                for r in resp.json().get("refs", [])
-            ]
+        resp = await self._client.post(
+            "/transport/v1/list_chunks",
+            content=body,
+            headers={"content-type": "application/json", **self._sign(body)},
+        )
+        resp.raise_for_status()
+        return [
+            StoredChunkRef(adapter_name=r["adapter"], location=r["location"])
+            for r in resp.json().get("refs", [])
+        ]
 
     async def health_check(self) -> bool:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(f"{self._peer_url}/transport/v1/health")
-                return resp.status_code == 200
+            resp = await self._client.get("/transport/v1/health")
+            return resp.status_code == 200
         except Exception:
             return False
 
     async def capacity(self) -> dict[str, int | None]:
         try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(f"{self._peer_url}/transport/v1/health")
-                data = resp.json()
-                caps = data.get("capacities", {})
-                remote_cap = caps.get(self._adapter_name)
-                if isinstance(remote_cap, dict):
-                    return remote_cap
-                return {
-                    "used_bytes": None,
-                    "free_bytes": None,
-                    "total_bytes": None,
-                    "chunk_count": None,
-                }
+            resp = await self._client.get("/transport/v1/health")
+            data = resp.json()
+            caps = data.get("capacities", {})
+            remote_cap = caps.get(self._adapter_name)
+            if isinstance(remote_cap, dict):
+                return remote_cap
+            return {
+                "used_bytes": None,
+                "free_bytes": None,
+                "total_bytes": None,
+                "chunk_count": None,
+            }
         except Exception:
             return {
                 "used_bytes": None,
@@ -128,3 +127,6 @@ class RemoteAdapter(Adapter):
                 "total_bytes": None,
                 "chunk_count": None,
             }
+
+    async def close(self) -> None:
+        await self._client.aclose()

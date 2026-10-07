@@ -22,6 +22,14 @@ class TestRemoteAdapterProfile:
         ra = RemoteAdapter("http://peer:8471/", "memory")
         assert ra._peer_url == "http://peer:8471"
 
+    def test_custom_max_chunk_bytes(self):
+        ra = RemoteAdapter("http://peer:8471", "dns", max_chunk_bytes=4096)
+        assert ra.profile().max_chunk_bytes == 4096
+
+    def test_default_max_chunk_bytes(self):
+        ra = RemoteAdapter("http://peer:8471", "memory")
+        assert ra.profile().max_chunk_bytes == 64 * 1024
+
 
 class TestRemoteAdapterHMAC:
     def test_sign_empty_without_secret(self):
