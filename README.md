@@ -22,8 +22,9 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **Network transport** — peer-to-peer via HTTP with HMAC auth
 - **Key hierarchy** — HKDF sub-keys per adapter with version rotation
 - **Sealed envelopes** — no plaintext PCHK visible on the wire
-- **CLI** — 29 commands with progress bars, --json output, colored display
+- **CLI** — 30+ commands with progress bars, --json output, colored display
 - **Web dashboard** — browser-based adapter management and file browser
+- **MCP server** — agent-accessible storage tools for any MCP-compatible client
 
 ## Quickstart
 
@@ -127,6 +128,7 @@ Most commands support `--json` for machine-readable output.
 - [Architecture](docs/architecture.md) — data flow, key hierarchy, RAID, scatter
 - [Adapters](docs/adapters.md) — adapter list, writing custom adapters
 - [CLI Reference](docs/cli.md) — all commands with examples
+- [MCP Server](docs/mcp.md) — agent storage interface, setup, tools
 - [Network](docs/network.md) — transport layer, peer discovery, remote adapters
 - [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
 
