@@ -11,6 +11,7 @@ All commands that access stored files accept:
 - `--db PATH` — index database path (default: `~/.picard/index.db`)
 - `--keyfile PATH` — master key file for envelope sealing
 - `--profile NAME` — scatter profile (stealth, resilient, speed, paranoid, or custom)
+- `--index-passphrase TEXT` — passphrase for encrypted index database (or set `PICARD_INDEX_PASSPHRASE` env var)
 
 ## Core Commands
 
@@ -259,6 +260,26 @@ Create a default `picard.toml` configuration file.
 
 ```bash
 picard init
+```
+
+### encrypt-index
+
+Encrypt an existing plain SQLite index database with AES-256-GCM (PCIX format).
+
+```bash
+picard encrypt-index
+picard encrypt-index --db /path/to/index.db
+```
+
+Prompts for a passphrase interactively.
+
+### decrypt-index
+
+Decrypt an encrypted index database back to plain SQLite.
+
+```bash
+picard decrypt-index
+picard decrypt-index --db /path/to/index.db
 ```
 
 ## JSON Output

@@ -69,7 +69,7 @@ umount /mnt/picard
 | Chown | `chown` | Updates manifest uid/gid |
 | Set timestamps | `utimens` | Updates manifest atime/mtime |
 | Get xattr | `getxattr` | Reads from manifest xattrs |
-| Set xattr | `setxattr` | Updates manifest xattrs |
+| Set xattr | `setxattr` | Updates manifest xattrs (binary values base64-encoded) |
 | List xattrs | `listxattr` | Returns xattr keys |
 | Remove xattr | `removexattr` | Deletes xattr key |
 | Filesystem stats | `statfs` | Synthetic stats from du() |

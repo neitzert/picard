@@ -118,6 +118,7 @@ min_adapters = 4
 - `picard scatter-report` — show attack surface map
 - `picard adapters` / `profiles` — list available adapters and scatter profiles
 - `picard init` — create default config.toml
+- `picard encrypt-index` / `decrypt-index` — encrypt or decrypt the index database
 
 Most commands support `--json` for machine-readable output.
 

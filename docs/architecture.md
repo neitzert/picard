@@ -141,6 +141,8 @@ directory listing, tree traversal, and version lookup.
 The index can be encrypted at rest using the PCIX format: the entire database
 is dumped to SQL, encrypted with AES-256-GCM, and written with a `PCIX` magic header.
 On open, the encrypted blob is decrypted into an in-memory database.
+Activate via `--index-passphrase` on any CLI command or set `PICARD_INDEX_PASSPHRASE`.
+Use `picard encrypt-index` / `picard decrypt-index` to convert existing databases.
 
 ## RAID Levels
 
@@ -191,7 +193,8 @@ An LRU cache for decrypted plaintext blocks:
 ### Journaling
 
 A write-ahead log (WAL) in the same SQLite database as the index:
-- `put()` creates a PENDING entry, updates to IN_PROGRESS after each block, COMMITTED after save
+- `put()` creates a PENDING entry, updates to IN_PROGRESS after each block
+- `save_manifest` and `journal.commit` execute in a single SQLite transaction for atomicity
 - On failure: entry is ROLLED_BACK, orphan chunks can be cleaned
 - `recover()` scans for incomplete entries and cleans up
 - `fsck` checks for incomplete journal entries
