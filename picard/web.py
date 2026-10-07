@@ -16,7 +16,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request
+import time
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -84,6 +86,7 @@ class AdapterConfigRequest(BaseModel):
     enabled: bool = True
     params: dict[str, Any] = {}
     tor_proxy: bool = False
+    browser_mode: str = "api"
 
 
 class RaidPoolRequest(BaseModel):
@@ -152,6 +155,7 @@ async def list_configured():
             "enabled": e.enabled,
             "params": mask_secrets(e.params),
             "tor_proxy": getattr(e, "tor_proxy", False),
+            "browser_mode": getattr(e, "browser_mode", "api"),
         }
         for e in cfg.adapters
     ]
@@ -167,6 +171,7 @@ async def configure_adapter(req: AdapterConfigRequest):
         existing.enabled = req.enabled
         existing.params = req.params
         existing.tor_proxy = req.tor_proxy
+        existing.browser_mode = req.browser_mode
     else:
         cfg.adapters.append(AdapterEntry(
             name=req.name,
@@ -174,6 +179,7 @@ async def configure_adapter(req: AdapterConfigRequest):
             enabled=req.enabled,
             params=req.params,
             tor_proxy=req.tor_proxy,
+            browser_mode=req.browser_mode,
         ))
     _save_config(cfg)
     return {"status": "ok", "adapter": req.name}
@@ -445,6 +451,78 @@ async def fs_rm(path: str):
     return {"deleted": result, "path": path}
 
 
+@app.post("/api/fs/write")
+async def fs_write(file: UploadFile = File(...), path: str = Form("/")):
+    if _orch is None:
+        raise HTTPException(503, "orchestrator not initialized")
+    passphrase = os.environ.get("PICARD_PASSPHRASE") or os.environ.get("PICARD_INDEX_PASSPHRASE")
+    if not passphrase:
+        raise HTTPException(500, "PICARD_PASSPHRASE env var not set")
+    data = await file.read()
+    if not data:
+        raise HTTPException(400, "empty file")
+    filename = file.filename or "upload"
+    full_path = path.rstrip("/") + "/" + filename if path != "/" else "/" + filename
+    manifest = await _orch.put(full_path, data, passphrase)
+    return {
+        "path": manifest.path,
+        "manifest_id": manifest.manifest_id,
+        "size": manifest.original_size,
+        "blocks": manifest.total_blocks,
+    }
+
+
+# ── health API ───────────────────────────────────────────────────────────
+
+
+@app.get("/api/health")
+async def storage_health():
+    cfg = load_config()
+    results = []
+    for entry in cfg.adapters:
+        status = {"name": entry.name, "type": entry.type, "enabled": entry.enabled}
+        if not entry.enabled:
+            status.update({"status": "disabled", "latency_ms": None, "error": None})
+            results.append(status)
+            continue
+        try:
+            from picard.config import resolve_params
+            from picard.registry import instantiate
+            params = resolve_params(entry.params)
+            adapter = instantiate(entry.type, **params)
+            t0 = time.monotonic()
+            refs = await adapter.list()
+            latency = (time.monotonic() - t0) * 1000
+            await adapter.close()
+            status.update({
+                "status": "healthy",
+                "latency_ms": round(latency, 1),
+                "chunks": len(refs),
+                "error": None,
+            })
+        except Exception as e:
+            status.update({
+                "status": "error",
+                "latency_ms": None,
+                "chunks": 0,
+                "error": str(e),
+            })
+        results.append(status)
+    total = len(results)
+    healthy = sum(1 for r in results if r["status"] == "healthy")
+    errors = sum(1 for r in results if r["status"] == "error")
+    disabled = sum(1 for r in results if r["status"] == "disabled")
+    return {
+        "adapters": results,
+        "summary": {
+            "total": total,
+            "healthy": healthy,
+            "errors": errors,
+            "disabled": disabled,
+        },
+    }
+
+
 # ── peers API ─────────────────────────────────────────────────────────────
 
 
@@ -647,6 +725,9 @@ def _save_config(cfg: PicardConfig) -> None:
         lines.append(f"enabled = {'true' if entry.enabled else 'false'}\n")
         if getattr(entry, "tor_proxy", False):
             lines.append("tor_proxy = true\n")
+        bm = getattr(entry, "browser_mode", "api")
+        if bm != "api":
+            lines.append(f'browser_mode = "{_escape_toml(bm)}"\n')
         for k, v in entry.params.items():
             lines.append(f"{_format_toml_key(k)} = {_toml_value(v)}\n")
         lines.append("\n")

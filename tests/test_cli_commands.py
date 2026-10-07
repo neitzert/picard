@@ -44,8 +44,8 @@ class TestDemoCommand:
     def test_reassembly(self):
         assert "Reassembly successful" in self._result.output
 
-    def test_attack_surface_report(self):
-        assert "ATTACK SURFACE REPORT" in self._result.output
+    def test_storage_surface_report(self):
+        assert "STORAGE SURFACE REPORT" in self._result.output
 
     def test_tagline(self):
         assert "Platform security is not protocol security" in self._result.output

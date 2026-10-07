@@ -202,12 +202,28 @@ Requires libfuse (Linux), macFUSE (macOS), or WinFSP (Windows).
 
 ### web
 
-Launch the web dashboard.
+Launch the web dashboard with dark/light theme, drag-and-drop uploads, storage health
+monitoring, per-adapter Tor/VPN routing, and browser mode configuration.
 
 ```bash
 picard web                    # http://localhost:8471
 picard web --port 9000
 ```
+
+### webdav
+
+Mount PICARD as a WebDAV network drive for native OS drag-and-drop.
+
+```bash
+picard webdav                           # http://localhost:8472
+picard webdav --port 8472 --read-only
+picard webdav --passphrase secret
+```
+
+Connect from your OS file manager:
+- **Windows:** Map Network Drive → `http://localhost:8472`
+- **macOS:** Finder → Go → Connect to Server → `http://localhost:8472`
+- **Linux:** `gio mount dav://localhost:8472` or Nautilus address bar
 
 ### recover
 
@@ -230,7 +246,7 @@ picard demo --profile paranoid
 
 ### scatter-report
 
-Show the attack surface map — how data is distributed.
+Show the storage surface map — how data is distributed.
 
 ```bash
 picard scatter-report /docs/myfile.txt

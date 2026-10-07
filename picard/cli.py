@@ -567,7 +567,7 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
     console.print(f"  [bold green]✓[/bold green] Integrity check: {report['verified_chunks']}/{report['total_chunks']} chunks verified.")
 
     console.print(f"\n{'='*70}")
-    console.print(f"  [bold]ATTACK SURFACE REPORT[/bold]")
+    console.print(f"  [bold]STORAGE SURFACE REPORT[/bold]")
     console.print(f"{'='*70}")
     console.print(f"\n  To intercept this data, a defender would need to monitor:\n")
     for i, proto in enumerate(protocols_used, 1):
@@ -586,7 +586,7 @@ def scatter_report(
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
-    """Show the attack surface map for a stored file."""
+    """Show the storage surface map for a stored file."""
     orch = _make_orchestrator(store_dir, db_path)
     result = asyncio.run(orch.info(virtual_path))
 
@@ -629,6 +629,22 @@ def web(
     from picard.web import serve
     typer.echo(f"PICARD dashboard → http://{host}:{port}")
     serve(host=host, port=port)
+
+
+@app.command(name="webdav")
+def webdav_cmd(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    port: int = typer.Option(8472, "--port", "-p", help="Port."),
+    passphrase: str = typer.Option("", "--passphrase", envvar="PICARD_PASSPHRASE", help="Encryption passphrase."),
+    index_passphrase: str = typer.Option("", "--index-passphrase", envvar="PICARD_INDEX_PASSPHRASE", help="Index encryption passphrase."),
+    read_only: bool = typer.Option(False, "--read-only", help="Mount as read-only."),
+) -> None:
+    """Start a WebDAV server for native OS file manager access."""
+    from picard.webdav_server import serve_webdav
+    mode = " (read-only)" if read_only else ""
+    typer.echo(f"PICARD WebDAV → http://{host}:{port}{mode}")
+    serve_webdav(host=host, port=port, passphrase=passphrase,
+                 index_passphrase=index_passphrase or None, read_only=read_only)
 
 
 @app.command()

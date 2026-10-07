@@ -3,17 +3,18 @@
 > A push for protocol security and away from platforms for the integrity of compute.
 
 PICARD encrypts your data with AES-256-GCM, splits it into blocks, chunks each block,
-and scatters the chunks across 259 protocol adapters — from social media APIs to DNS
+and scatters the chunks across 260 protocol adapters — from social media APIs to DNS
 TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct anything.
 
 ## Features
 
-- **259 protocol adapters** across 15+ categories (social, network, storage, P2P, exotic)
+- **260 protocol adapters** across 15+ categories (social, network, storage, P2P, exotic)
 - **AES-256-GCM encryption** with Argon2id key derivation (per-block salt + nonce)
 - **RAID redundancy** — levels 0/1/5/10 across adapter pools
 - **Scatter profiles** — stealth, resilient, speed, paranoid (config-driven)
 - **Full filesystem** — directories, symlinks, versioning, partial reads
 - **FUSE mount** — mount as a real filesystem (Linux/macOS/Windows)
+- **WebDAV server** — mount as a network drive for native OS drag-and-drop
 - **Block cache** — LRU with TTL for fast repeated reads
 - **Journaling** — crash recovery via write-ahead log
 - **fsck** — integrity checking, orphan detection, repair
@@ -22,10 +23,12 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **Network transport** — peer-to-peer via HTTP with HMAC auth
 - **Key hierarchy** — HKDF sub-keys per adapter with version rotation
 - **Sealed envelopes** — no plaintext PCHK visible on the wire
-- **CLI** — 30+ commands with progress bars, --json output, colored display
-- **Web dashboard** — browser-based adapter management and file browser
+- **CLI** — 35+ commands with progress bars, --json output, colored display
+- **Web dashboard** — dark/light theme, drag-and-drop upload, storage health, per-adapter privacy routing
 - **MCP server** — agent-accessible storage tools for any MCP-compatible client
-- **Tor integration** — route traffic through Tor, expose as hidden service, connect to .onion peers
+- **Tor integration** — per-adapter or global SOCKS5 routing, hidden services, .onion peers
+- **Browser automation** — Playwright headless/headed fallback when API keys unavailable
+- **VPN device binding** — route adapter traffic through specific network interfaces
 
 ## Quickstart
 
@@ -77,13 +80,16 @@ block_size = 65536
 name = "s3-chunks"
 type = "s3"
 enabled = true
+tor_proxy = true              # route through Tor SOCKS5
+browser_mode = "headless"     # api | headless | headed
 params = { bucket = "picard-chunks", prefix = "data/" }
 
 [[adapters]]
-name = "redis-cache"
-type = "redis"
+name = "reddit-stash"
+type = "reddit"
 enabled = true
-params = { url = "redis://localhost" }
+browser_mode = "headed"       # visible browser for login
+params = { subreddit = "u_myuser" }
 
 [[raid]]
 level = "raid5"
@@ -114,10 +120,11 @@ min_adapters = 4
 - `picard mount` — FUSE mount
 
 ### Infrastructure
-- `picard web` — launch web dashboard
+- `picard web` — launch web dashboard (dark/light theme, drag-and-drop, health monitoring)
+- `picard webdav` — mount as a WebDAV network drive
 - `picard recover` — journal crash recovery
 - `picard demo` — scatter across all adapters
-- `picard scatter-report` — show attack surface map
+- `picard scatter-report` — show storage surface map
 - `picard adapters` / `profiles` — list available adapters and scatter profiles
 - `picard init` — create default config.toml
 - `picard encrypt-index` / `decrypt-index` — encrypt or decrypt the index database
@@ -134,6 +141,7 @@ Most commands support `--json` for machine-readable output.
 - [Network](docs/network.md) — transport layer, peer discovery, remote adapters
 - [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
 - [Tor](docs/tor.md) — anonymity, hidden services, .onion peers
+- [WebDAV](docs/webdav.md) — network drive mounting, native OS drag-and-drop
 
 ## Development
 
