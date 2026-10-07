@@ -1,100 +1,150 @@
-"""Tests for the Solana adapter."""
+"""Tests for the Solana adapter -- mocked, no network calls."""
+
+from __future__ import annotations
 
 import base64
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
+from picard.adapters.base import StoredChunkRef
 from picard.adapters.solana_adapter import SolanaAdapter
+from picard.chunker import Chunk
 
 
-@pytest.fixture
-def adapter():
-    return SolanaAdapter(rpc_url="https://test.solana.com", keypair_path="/tmp/key.json")
+def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> str:
+    return Chunk(
+        version=1,
+        manifest_id=manifest_id,
+        block_index=block,
+        chunk_index=idx,
+        total_chunks=1,
+        payload=b"test-payload",
+    ).encode()
+
+
+def _make_adapter(**kwargs) -> SolanaAdapter:
+    defaults = dict(
+        rpc_url="https://api.mainnet-beta.solana.com",
+        keypair_path=None,
+    )
+    defaults.update(kwargs)
+    return SolanaAdapter(**defaults)
 
 
 @pytest.mark.asyncio
-class TestSolanaProfile:
-    async def test_name(self, adapter):
-        assert adapter.profile().name == "solana"
+class TestSolanaAdapter:
+    async def test_profile_name(self):
+        a = _make_adapter()
+        p = a.profile()
+        assert p.name == "solana"
 
-    async def test_persistent(self, adapter):
-        assert adapter.profile().persistent is True
+    async def test_profile_limits(self):
+        a = _make_adapter()
+        p = a.profile()
+        assert p.max_chunk_bytes == 566
+        assert p.persistent is True
+        assert p.ordered is False
+        assert p.rate_limit_per_min == 30
 
-    async def test_max_chunk(self, adapter):
-        assert adapter.profile().max_chunk_bytes == 566
+    async def test_write_chunk(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "txsig123"})
+        enc = _sample_encoded()
 
-    async def test_rate_limit(self, adapter):
-        assert adapter.profile().rate_limit_per_min == 30
+        ref = await a.write_chunk(enc)
 
-
-@pytest.mark.asyncio
-class TestSolanaWriteRead:
-    async def test_write_returns_ref(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": "txhash123"})
-        ref = await adapter.write_chunk("test-chunk-data")
         assert ref.adapter_name == "solana"
         assert ref.location.startswith("sol://")
+        a._rpc.assert_awaited_once()
+        call_args = a._rpc.call_args
+        assert call_args[0][0] == "sendTransaction"
 
-    async def test_read_extracts_memo(self, adapter):
-        chunk = "hello-picard"
-        encoded = base64.b64encode(chunk.encode()).decode()
-        adapter._rpc = AsyncMock(return_value={
+    async def test_read_chunk(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        memo_b64 = base64.b64encode(enc.encode()).decode()
+
+        a._rpc = AsyncMock(return_value={
             "result": {
                 "transaction": {
                     "message": {
                         "instructions": [
                             {
                                 "programId": SolanaAdapter.MEMO_PROGRAM_ID,
-                                "data": encoded,
+                                "data": memo_b64,
                             }
                         ]
                     }
                 }
             }
         })
-        result = await adapter.read_chunk(
-            type("Ref", (), {"adapter_name": "solana", "location": "sol://abc123"})()
-        )
-        assert result == chunk
 
-    async def test_read_missing_tx_raises(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": None})
-        with pytest.raises(ValueError, match="not found"):
-            await adapter.read_chunk(
-                type("Ref", (), {"adapter_name": "solana", "location": "sol://missing"})()
-            )
+        ref = StoredChunkRef(adapter_name="solana", location="sol://txsig123")
+        result = await a.read_chunk(ref)
+        assert result == enc
 
-    async def test_read_no_memo_raises(self, adapter):
-        adapter._rpc = AsyncMock(return_value={
+    async def test_read_chunk_not_found(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": None})
+
+        ref = StoredChunkRef(adapter_name="solana", location="sol://missing")
+        with pytest.raises(ValueError, match="transaction not found"):
+            await a.read_chunk(ref)
+
+    async def test_read_chunk_no_memo(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={
             "result": {
-                "transaction": {"message": {"instructions": []}}
+                "transaction": {
+                    "message": {
+                        "instructions": [
+                            {"programId": "SomeOtherProgram", "data": "abc"}
+                        ]
+                    }
+                }
             }
         })
-        with pytest.raises(ValueError, match="no memo"):
-            await adapter.read_chunk(
-                type("Ref", (), {"adapter_name": "solana", "location": "sol://nope"})()
-            )
 
+        ref = StoredChunkRef(adapter_name="solana", location="sol://txsig456")
+        with pytest.raises(ValueError, match="no memo instruction"):
+            await a.read_chunk(ref)
 
-@pytest.mark.asyncio
-class TestSolanaOps:
-    async def test_delete_returns_false(self, adapter):
-        ref = type("Ref", (), {"adapter_name": "solana", "location": "sol://tx1"})()
-        assert await adapter.delete_chunk(ref) is False
+    async def test_delete_chunk_always_false(self):
+        a = _make_adapter()
+        ref = StoredChunkRef(adapter_name="solana", location="sol://txsig123")
+        assert await a.delete_chunk(ref) is False
 
-    async def test_list_chunks_empty(self, adapter):
-        assert await adapter.list_chunks("manifest1") == []
+    async def test_list_chunks_empty(self):
+        a = _make_adapter()
+        refs = await a.list_chunks("m1")
+        assert refs == []
 
-    async def test_health_check_ok(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": "ok"})
-        assert await adapter.health_check() is True
+    async def test_health_check_ok(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "ok"})
+        assert await a.health_check() is True
 
-    async def test_health_check_fail(self, adapter):
-        adapter._rpc = AsyncMock(side_effect=Exception("connection refused"))
-        assert await adapter.health_check() is False
+    async def test_health_check_fail(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "behind"})
+        assert await a.health_check() is False
 
-    async def test_capacity(self, adapter):
-        cap = await adapter.capacity()
-        assert cap["used_bytes"] is None
-        assert cap["chunk_count"] is None
+    async def test_health_check_exception(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(side_effect=Exception("connection refused"))
+        assert await a.health_check() is False
+
+    async def test_capacity(self):
+        a = _make_adapter()
+        cap = await a.capacity()
+        assert cap == {
+            "used_bytes": None,
+            "free_bytes": None,
+            "total_bytes": None,
+            "chunk_count": None,
+        }
+
+    async def test_custom_program_id(self):
+        a = _make_adapter(program_id="CustomMemoProgram123")
+        assert a._program_id == "CustomMemoProgram123"

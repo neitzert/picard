@@ -1,180 +1,201 @@
-"""Tests for OSM Notes adapter — uses in-memory mock."""
+"""Tests for the OpenStreetMap Notes adapter -- mocked, no network calls."""
 
 from __future__ import annotations
 
-import json
-import sys
-import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
-# Stub aiohttp before importing the adapter
-_aiohttp = types.ModuleType("aiohttp")
-_aiohttp.BasicAuth = MagicMock()
-_aiohttp.ClientSession = MagicMock
-
-
-class _FakeResponse:
-    def __init__(self, data: dict, status: int = 200):
-        self._data = data
-        self.status = status
-
-    def raise_for_status(self):
-        pass
-
-    async def json(self):
-        return self._data
-
-    async def text(self):
-        return json.dumps(self._data)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        pass
-
-
-class _FakeSession:
-    def __init__(self):
-        self._note_counter = 0
-        self._notes: dict[str, dict] = {}
-
-    async def post(self, url, **kwargs):
-        if "notes.json" in url and "close" not in url:
-            self._note_counter += 1
-            nid = str(self._note_counter)
-            text = kwargs.get("params", {}).get("text", "")
-            self._notes[nid] = {
-                "properties": {
-                    "id": int(nid),
-                    "comments": [{"text": text}],
-                }
-            }
-            return _FakeResponse(self._notes[nid]["properties"] | {"properties": self._notes[nid]["properties"]})
-        if "close" in url:
-            nid = url.split("/")[-2]
-            self._notes.pop(nid, None)
-            return _FakeResponse({})
-        return _FakeResponse({})
-
-    async def get(self, url, **kwargs):
-        if "capabilities" in url:
-            return _FakeResponse({}, 200)
-        for nid, data in self._notes.items():
-            if nid in url:
-                return _FakeResponse(data)
-        return _FakeResponse({}, 404)
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *a):
-        pass
-
-
-sys.modules.setdefault("aiohttp", _aiohttp)
-
+from picard.adapters.base import StoredChunkRef
 from picard.adapters.osm_adapter import OsmAdapter
+from picard.chunker import Chunk
 
 
-@pytest.fixture
-def adapter():
-    return OsmAdapter(max_chunk_bytes=8192)
+def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> str:
+    return Chunk(
+        version=1,
+        manifest_id=manifest_id,
+        block_index=block,
+        chunk_index=idx,
+        total_chunks=1,
+        payload=b"test-payload",
+    ).encode()
 
 
-@pytest.fixture
-def fake_session():
-    return _FakeSession()
+def _make_adapter(**kwargs) -> OsmAdapter:
+    defaults: dict = dict(
+        api_url="https://api.openstreetmap.org",
+        username="testuser",
+        password="testpass",
+    )
+    defaults.update(kwargs)
+    return OsmAdapter(**defaults)
 
 
-class TestProfile:
-    def test_name(self, adapter):
-        p = adapter.profile()
+def _mock_session(response_mock):
+    """Build an async-context-manager mock for aiohttp.ClientSession."""
+    session = AsyncMock()
+    session.post.return_value = response_mock
+    session.get.return_value = response_mock
+
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=session)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm, session
+
+
+@pytest.mark.asyncio
+class TestOsmAdapter:
+    def test_profile(self):
+        a = _make_adapter()
+        p = a.profile()
         assert p.name == "osm-notes"
+        assert p.max_chunk_bytes == 4096
+        assert p.persistent is True
+        assert p.ordered is False
+        assert p.rate_limit_per_min == 10
 
-    def test_max_chunk(self, adapter):
-        assert adapter.profile().max_chunk_bytes == 8192
+    def test_key_to_latlon_deterministic(self):
+        lat1, lon1 = OsmAdapter._key_to_latlon("test-key")
+        lat2, lon2 = OsmAdapter._key_to_latlon("test-key")
+        assert lat1 == lat2
+        assert lon1 == lon2
 
-    def test_rate_limit(self, adapter):
-        assert adapter.profile().rate_limit_per_min == 10
+    def test_key_to_latlon_different_keys(self):
+        r1 = OsmAdapter._key_to_latlon("key-a")
+        r2 = OsmAdapter._key_to_latlon("key-b")
+        assert r1 != r2
 
+    def test_key_to_latlon_range(self):
+        lat, lon = OsmAdapter._key_to_latlon("range-check")
+        assert -90.0 <= lat <= 90.0
+        assert -180.0 <= lon <= 180.0
 
-class TestWriteRead:
-    @pytest.mark.asyncio
-    async def test_roundtrip(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            ref = await adapter.write_chunk("testdata123")
-            assert ref.adapter_name == "osm-notes"
-            assert ref.location.startswith("osm://notes/")
-            result = await adapter.read_chunk(ref)
-            assert result == "testdata123"
+    def test_auth_with_credentials(self):
+        a = _make_adapter(username="u", password="p")
+        auth = a._auth()
+        assert auth is not None
+        assert isinstance(auth, aiohttp.BasicAuth)
 
-    @pytest.mark.asyncio
-    async def test_multiple_chunks(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            refs = []
-            for i in range(3):
-                refs.append(await adapter.write_chunk(f"chunk{i}"))
-            for i, ref in enumerate(refs):
-                assert await adapter.read_chunk(ref) == f"chunk{i}"
+    def test_auth_without_credentials(self):
+        a = _make_adapter(username=None, password=None)
+        assert a._auth() is None
 
+    async def test_write_chunk(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
 
-class TestDelete:
-    @pytest.mark.asyncio
-    async def test_delete(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            ref = await adapter.write_chunk("todelete")
-            result = await adapter.delete_chunk(ref)
-            assert result is True
+        resp = AsyncMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = AsyncMock(return_value={"properties": {"id": 12345}})
+        cm, session = _mock_session(resp)
 
+        with patch("aiohttp.ClientSession", return_value=cm):
+            ref = await a.write_chunk(enc)
 
-class TestListChunks:
-    @pytest.mark.asyncio
-    async def test_list(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            adapter._cache["osm://notes/1"] = "data"
-            adapter._cache["osm://notes/2"] = "data"
-            chunks = await adapter.list_chunks("notes")
-            assert len(chunks) == 2
+        assert ref.adapter_name == "osm-notes"
+        assert ref.location == "osm://notes/12345"
+        assert ref.location in a._cache
 
+    async def test_read_chunk_from_cache(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        loc = "osm://notes/99"
+        a._cache[loc] = enc
 
-class TestHealth:
-    @pytest.mark.asyncio
-    async def test_healthy(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            assert await adapter.health_check() is True
+        ref = StoredChunkRef(adapter_name="osm-notes", location=loc)
+        result = await a.read_chunk(ref)
+        assert result == enc
 
+    async def test_read_chunk_from_api(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
 
-class TestCapacity:
-    @pytest.mark.asyncio
-    async def test_empty(self, adapter):
-        cap = await adapter.capacity()
-        assert cap["chunk_count"] == 0
-        assert cap["used_bytes"] == 0
+        resp = AsyncMock()
+        resp.raise_for_status = MagicMock()
+        resp.json = AsyncMock(return_value={
+            "properties": {
+                "comments": [{"text": f"PICARD:key:{enc}"}]
+            }
+        })
+        cm, session = _mock_session(resp)
 
-    @pytest.mark.asyncio
-    async def test_with_data(self, adapter, fake_session):
-        with patch("aiohttp.ClientSession", return_value=fake_session):
-            await adapter.write_chunk("somedata")
-            cap = await adapter.capacity()
-            assert cap["chunk_count"] == 1
-            assert cap["used_bytes"] > 0
+        ref = StoredChunkRef(adapter_name="osm-notes", location="osm://notes/42")
 
+        with patch("aiohttp.ClientSession", return_value=cm):
+            result = await a.read_chunk(ref)
 
-class TestKeyToLatLon:
-    def test_deterministic(self):
-        a = OsmAdapter._key_to_latlon("key1")
-        b = OsmAdapter._key_to_latlon("key1")
-        assert a == b
+        assert result == enc
 
-    def test_different_keys(self):
-        a = OsmAdapter._key_to_latlon("key1")
-        b = OsmAdapter._key_to_latlon("key2")
-        assert a != b
+    async def test_delete_chunk_success(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        loc = "osm://notes/55"
+        a._cache[loc] = enc
 
-    def test_valid_range(self):
-        lat, lon = OsmAdapter._key_to_latlon("test")
-        assert -90 <= lat <= 90
-        assert -180 <= lon <= 180
+        resp = AsyncMock()
+        resp.raise_for_status = MagicMock()
+        cm, session = _mock_session(resp)
+
+        ref = StoredChunkRef(adapter_name="osm-notes", location=loc)
+
+        with patch("aiohttp.ClientSession", return_value=cm):
+            result = await a.delete_chunk(ref)
+
+        assert result is True
+        assert loc not in a._cache
+
+    async def test_delete_chunk_failure(self):
+        a = _make_adapter()
+
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(side_effect=Exception("forbidden"))
+        cm.__aexit__ = AsyncMock(return_value=False)
+
+        ref = StoredChunkRef(adapter_name="osm-notes", location="osm://notes/99")
+
+        with patch("aiohttp.ClientSession", return_value=cm):
+            result = await a.delete_chunk(ref)
+
+        assert result is False
+
+    async def test_list_chunks(self):
+        a = _make_adapter()
+        a._cache["osm://notes/1"] = "data-with-m1"
+        a._cache["osm://notes/2"] = "other-data"
+
+        refs = await a.list_chunks("1")
+        assert len(refs) == 1
+        assert refs[0].location == "osm://notes/1"
+
+    async def test_health_check_ok(self):
+        a = _make_adapter()
+
+        resp = AsyncMock()
+        resp.status = 200
+        cm, session = _mock_session(resp)
+
+        with patch("aiohttp.ClientSession", return_value=cm):
+            assert await a.health_check() is True
+
+    async def test_health_check_fail(self):
+        a = _make_adapter()
+
+        resp = AsyncMock()
+        resp.status = 503
+        cm, session = _mock_session(resp)
+
+        with patch("aiohttp.ClientSession", return_value=cm):
+            assert await a.health_check() is False
+
+    async def test_capacity(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        a._cache["osm://notes/1"] = enc
+
+        cap = await a.capacity()
+        assert cap["used_bytes"] == len(enc.encode())
+        assert cap["free_bytes"] is None
+        assert cap["total_bytes"] is None
+        assert cap["chunk_count"] == 1

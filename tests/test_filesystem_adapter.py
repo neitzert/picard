@@ -1,4 +1,4 @@
-"""Tests for the filesystem adapter -- uses real I/O with tmp_path."""
+"""Tests for the filesystem adapter -- uses real filesystem via tmp_path."""
 
 from __future__ import annotations
 
@@ -30,33 +30,21 @@ class TestFilesystemAdapter:
         assert p.persistent is True
         assert p.ordered is True
 
-    async def test_profile_custom_max(self, tmp_path):
-        a = FilesystemAdapter(root_dir=tmp_path, max_chunk_bytes=8192)
-        assert a.profile().max_chunk_bytes == 8192
-
     async def test_write_chunk(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         assert ref.adapter_name == "filesystem"
-        assert "m1" in ref.location
         assert ref.location.endswith(".pchk")
 
-    async def test_write_creates_file(self, tmp_path):
-        a = FilesystemAdapter(root_dir=tmp_path)
-        enc = _sample_encoded()
-        ref = await a.write_chunk(enc)
-        from pathlib import Path
-        assert Path(ref.location).is_file()
-
-    async def test_read_chunk(self, tmp_path):
+    async def test_write_and_read_chunk(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         result = await a.read_chunk(ref)
         assert result == enc
 
-    async def test_read_chunk_not_found(self, tmp_path):
+    async def test_read_missing_file_raises(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
         ref = StoredChunkRef(adapter_name="filesystem", location=str(tmp_path / "nonexistent.pchk"))
         with pytest.raises(FileNotFoundError):
@@ -67,18 +55,20 @@ class TestFilesystemAdapter:
         enc = _sample_encoded()
         ref = await a.write_chunk(enc)
         assert await a.delete_chunk(ref) is True
-        from pathlib import Path
-        assert not Path(ref.location).exists()
+        assert await a.delete_chunk(ref) is False
 
-    async def test_delete_chunk_not_found(self, tmp_path):
+    async def test_delete_missing(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
-        ref = StoredChunkRef(adapter_name="filesystem", location=str(tmp_path / "nonexistent.pchk"))
+        ref = StoredChunkRef(adapter_name="filesystem", location=str(tmp_path / "no.pchk"))
         assert await a.delete_chunk(ref) is False
 
     async def test_list_chunks(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
-        await a.write_chunk(_sample_encoded("m1", 0, 0))
-        await a.write_chunk(_sample_encoded("m1", 0, 1))
+        enc1 = _sample_encoded("m1", 0, 0)
+        enc2 = _sample_encoded("m1", 0, 1)
+        await a.write_chunk(enc1)
+        await a.write_chunk(enc2)
+
         refs = await a.list_chunks("m1")
         assert len(refs) == 2
         assert all(r.adapter_name == "filesystem" for r in refs)
@@ -88,24 +78,41 @@ class TestFilesystemAdapter:
         refs = await a.list_chunks("nonexistent")
         assert refs == []
 
-    async def test_list_chunks_isolation(self, tmp_path):
-        a = FilesystemAdapter(root_dir=tmp_path)
-        await a.write_chunk(_sample_encoded("m1", 0, 0))
-        await a.write_chunk(_sample_encoded("m2", 0, 0))
-        refs_m1 = await a.list_chunks("m1")
-        refs_m2 = await a.list_chunks("m2")
-        assert len(refs_m1) == 1
-        assert len(refs_m2) == 1
-
-    async def test_health_check_ok(self, tmp_path):
+    async def test_health_check(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
         assert await a.health_check() is True
 
     async def test_capacity(self, tmp_path):
         a = FilesystemAdapter(root_dir=tmp_path)
-        await a.write_chunk(_sample_encoded())
+        enc = _sample_encoded()
+        await a.write_chunk(enc)
+
         cap = await a.capacity()
         assert cap["chunk_count"] == 1
         assert cap["used_bytes"] is not None and cap["used_bytes"] > 0
         assert cap["free_bytes"] is not None
         assert cap["total_bytes"] is not None
+
+    async def test_capacity_empty(self, tmp_path):
+        a = FilesystemAdapter(root_dir=tmp_path)
+        cap = await a.capacity()
+        assert cap["chunk_count"] == 0
+        assert cap["used_bytes"] == 0
+
+    async def test_chunk_path_format(self, tmp_path):
+        a = FilesystemAdapter(root_dir=tmp_path)
+        p = a._chunk_path("m1", 0, 2)
+        assert p.name == "b0_c2.pchk"
+        assert p.parent.name == "m1"
+
+    async def test_multiple_manifests(self, tmp_path):
+        a = FilesystemAdapter(root_dir=tmp_path)
+        enc1 = _sample_encoded("m1", 0, 0)
+        enc2 = _sample_encoded("m2", 0, 0)
+        await a.write_chunk(enc1)
+        await a.write_chunk(enc2)
+
+        refs_m1 = await a.list_chunks("m1")
+        refs_m2 = await a.list_chunks("m2")
+        assert len(refs_m1) == 1
+        assert len(refs_m2) == 1

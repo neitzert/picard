@@ -96,9 +96,9 @@ class TestListChunks:
     @pytest.mark.asyncio
     async def test_list_filters_by_manifest(self, adapter):
         from picard.chunker import Chunk
-        c1 = Chunk(manifest_id="m1", block_index=0, chunk_index=0, data=b"a")
-        c2 = Chunk(manifest_id="m1", block_index=0, chunk_index=1, data=b"b")
-        c3 = Chunk(manifest_id="m2", block_index=0, chunk_index=0, data=b"c")
+        c1 = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=0, total_chunks=2, payload=b"a")
+        c2 = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=1, total_chunks=2, payload=b"b")
+        c3 = Chunk(version=1, manifest_id="m2", block_index=0, chunk_index=0, total_chunks=1, payload=b"c")
         await adapter.write_chunk(c1.encode())
         await adapter.write_chunk(c2.encode())
         await adapter.write_chunk(c3.encode())

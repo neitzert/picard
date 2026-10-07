@@ -1,85 +1,137 @@
-"""Tests for the Polygon adapter."""
+"""Tests for the Polygon adapter -- mocked, no network calls."""
 
-from unittest.mock import AsyncMock
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from picard.adapters.base import StoredChunkRef
 from picard.adapters.polygon_adapter import PolygonAdapter
+from picard.chunker import Chunk
 
 
-@pytest.fixture
-def adapter():
-    return PolygonAdapter(rpc_url="https://test-polygon.rpc", private_key="0xdeadbeef")
+def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> str:
+    return Chunk(
+        version=1,
+        manifest_id=manifest_id,
+        block_index=block,
+        chunk_index=idx,
+        total_chunks=1,
+        payload=b"test-payload",
+    ).encode()
+
+
+def _make_adapter(**kwargs) -> PolygonAdapter:
+    defaults: dict = dict(
+        rpc_url="https://polygon-rpc.com",
+        private_key="0x" + "ab" * 32,
+    )
+    defaults.update(kwargs)
+    return PolygonAdapter(**defaults)
 
 
 @pytest.mark.asyncio
-class TestPolygonProfile:
-    async def test_name(self, adapter):
-        assert adapter.profile().name == "polygon"
+class TestPolygonAdapter:
+    def test_profile(self):
+        a = _make_adapter()
+        p = a.profile()
+        assert p.name == "polygon"
+        assert p.max_chunk_bytes == 32_768
+        assert p.persistent is True
+        assert p.ordered is False
+        assert p.rate_limit_per_min == 30
 
-    async def test_persistent(self, adapter):
-        assert adapter.profile().persistent is True
+    def test_custom_chain_id(self):
+        a = _make_adapter(chain_id=80001)
+        assert a._chain_id == 80001
 
-    async def test_max_chunk(self, adapter):
-        assert adapter.profile().max_chunk_bytes == 32_768
+    async def test_write_chunk(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "0xtxhash"})
+        enc = _sample_encoded()
 
-    async def test_chain_id(self, adapter):
-        assert adapter._chain_id == 137
+        ref = await a.write_chunk(enc)
 
-
-@pytest.mark.asyncio
-class TestPolygonWriteRead:
-    async def test_write_returns_ref(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": "0xhash"})
-        ref = await adapter.write_chunk("test-data")
         assert ref.adapter_name == "polygon"
-        assert ref.location.startswith("polygon://")
+        assert ref.location.startswith("polygon://0x")
+        a._rpc.assert_awaited_once()
+        args = a._rpc.call_args
+        assert args[0][0] == "eth_sendRawTransaction"
 
-    async def test_read_extracts_calldata(self, adapter):
-        chunk = "hidden-payload"
-        hex_data = "0x" + chunk.encode().hex()
-        adapter._rpc = AsyncMock(return_value={
-            "result": {"input": hex_data}
+    async def test_write_chunk_calldata_hex(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "0xtxhash"})
+        enc = _sample_encoded()
+
+        await a.write_chunk(enc)
+
+        call_params = a._rpc.call_args[0][1]
+        calldata = call_params[0]
+        assert calldata.startswith("0x")
+        decoded = bytes.fromhex(calldata[2:]).decode()
+        assert decoded == enc
+
+    async def test_read_chunk(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        hex_input = "0x" + enc.encode().hex()
+
+        a._rpc = AsyncMock(return_value={
+            "result": {"input": hex_input}
         })
-        result = await adapter.read_chunk(
-            type("R", (), {"adapter_name": "polygon", "location": "polygon://0xabc"})()
-        )
-        assert result == chunk
 
-    async def test_read_missing_tx_raises(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": None})
-        with pytest.raises(ValueError, match="not found"):
-            await adapter.read_chunk(
-                type("R", (), {"adapter_name": "polygon", "location": "polygon://0xmissing"})()
-            )
+        ref = StoredChunkRef(adapter_name="polygon", location="polygon://0xtxhash123")
+        result = await a.read_chunk(ref)
 
-    async def test_read_empty_calldata_raises(self, adapter):
-        adapter._rpc = AsyncMock(return_value={
-            "result": {"input": "0x"}
-        })
+        assert result == enc
+        a._rpc.assert_awaited_once_with("eth_getTransactionByHash", ["0xtxhash123"])
+
+    async def test_read_chunk_not_found(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": None})
+
+        ref = StoredChunkRef(adapter_name="polygon", location="polygon://0xmissing")
+        with pytest.raises(ValueError, match="transaction not found"):
+            await a.read_chunk(ref)
+
+    async def test_read_chunk_no_calldata(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": {"input": "0x"}})
+
+        ref = StoredChunkRef(adapter_name="polygon", location="polygon://0xempty")
         with pytest.raises(ValueError, match="no calldata"):
-            await adapter.read_chunk(
-                type("R", (), {"adapter_name": "polygon", "location": "polygon://0xempty"})()
-            )
+            await a.read_chunk(ref)
 
+    async def test_delete_chunk_always_false(self):
+        a = _make_adapter()
+        ref = StoredChunkRef(adapter_name="polygon", location="polygon://0xtxhash")
+        assert await a.delete_chunk(ref) is False
 
-@pytest.mark.asyncio
-class TestPolygonOps:
-    async def test_delete_returns_false(self, adapter):
-        ref = type("R", (), {"adapter_name": "polygon", "location": "polygon://0x1"})()
-        assert await adapter.delete_chunk(ref) is False
+    async def test_list_chunks_empty(self):
+        a = _make_adapter()
+        refs = await a.list_chunks("m1")
+        assert refs == []
 
-    async def test_list_chunks_empty(self, adapter):
-        assert await adapter.list_chunks("m1") == []
+    async def test_health_check_ok(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": "0x1234"})
+        assert await a.health_check() is True
 
-    async def test_health_check_ok(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": "0x123"})
-        assert await adapter.health_check() is True
+    async def test_health_check_fail(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"error": "not synced"})
+        assert await a.health_check() is False
 
-    async def test_health_check_fail(self, adapter):
-        adapter._rpc = AsyncMock(side_effect=Exception("timeout"))
-        assert await adapter.health_check() is False
+    async def test_health_check_exception(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(side_effect=Exception("connection refused"))
+        assert await a.health_check() is False
 
-    async def test_capacity(self, adapter):
-        cap = await adapter.capacity()
-        assert all(v is None for v in cap.values())
+    async def test_capacity(self):
+        a = _make_adapter()
+        cap = await a.capacity()
+        assert cap["used_bytes"] is None
+        assert cap["free_bytes"] is None
+        assert cap["total_bytes"] is None
+        assert cap["chunk_count"] is None

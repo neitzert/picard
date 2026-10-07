@@ -10,6 +10,10 @@ import pytest
 from picard.adapters.multicast_adapter import MulticastAdapter
 
 
+async def _fake_to_thread(fn, *args, **kwargs):
+    return fn(*args, **kwargs)
+
+
 @pytest.fixture
 def adapter():
     return MulticastAdapter(group="239.255.42.42", port=5007)
@@ -36,32 +40,32 @@ class TestProfile:
 class TestWriteChunk:
     @pytest.mark.asyncio
     async def test_write_returns_ref(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("test-data")
             assert ref.adapter_name == "multicast"
 
     @pytest.mark.asyncio
     async def test_write_caches_data(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("payload")
             assert adapter._cache[ref.location] == "payload"
 
     @pytest.mark.asyncio
     async def test_write_with_chunk_format(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             from picard.chunker import Chunk
-            chunk = Chunk(manifest_id="m1", block_index=0, chunk_index=0, data=b"x")
+            chunk = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=0, total_chunks=1, payload=b"x")
             ref = await adapter.write_chunk(chunk.encode())
             assert ref.location == "m1_0_0"
 
     @pytest.mark.asyncio
     async def test_write_sends_json(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_inst = MagicMock()
-            mock_sock.return_value = mock_inst
+        mock_inst = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=mock_inst):
             await adapter.write_chunk("test-data")
             mock_inst.sendto.assert_called_once()
             args = mock_inst.sendto.call_args
@@ -74,8 +78,8 @@ class TestWriteChunk:
 class TestReadChunk:
     @pytest.mark.asyncio
     async def test_roundtrip(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("multicast-data")
             result = await adapter.read_chunk(ref)
             assert result == "multicast-data"
@@ -91,8 +95,8 @@ class TestReadChunk:
 class TestDeleteChunk:
     @pytest.mark.asyncio
     async def test_delete_existing(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("data")
             assert await adapter.delete_chunk(ref) is True
 
@@ -106,11 +110,11 @@ class TestDeleteChunk:
 class TestListChunks:
     @pytest.mark.asyncio
     async def test_list_filters(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             from picard.chunker import Chunk
-            c1 = Chunk(manifest_id="m1", block_index=0, chunk_index=0, data=b"a")
-            c2 = Chunk(manifest_id="m2", block_index=0, chunk_index=0, data=b"b")
+            c1 = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=0, total_chunks=1, payload=b"a")
+            c2 = Chunk(version=1, manifest_id="m2", block_index=0, chunk_index=0, total_chunks=1, payload=b"b")
             await adapter.write_chunk(c1.encode())
             await adapter.write_chunk(c2.encode())
             result = await adapter.list_chunks("m1")
@@ -142,8 +146,8 @@ class TestCapacity:
 
     @pytest.mark.asyncio
     async def test_capacity_after_write(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.multicast_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             await adapter.write_chunk("data")
             cap = await adapter.capacity()
             assert cap["chunk_count"] == 1

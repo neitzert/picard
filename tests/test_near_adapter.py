@@ -1,92 +1,133 @@
-"""Tests for the NEAR Protocol adapter."""
+"""Tests for the NEAR Protocol adapter -- mocked, no network calls."""
+
+from __future__ import annotations
 
 import json
 from unittest.mock import AsyncMock
 
 import pytest
 
+from picard.adapters.base import StoredChunkRef
 from picard.adapters.near_adapter import NearAdapter
+from picard.chunker import Chunk
 
 
-@pytest.fixture
-def adapter():
-    return NearAdapter(
-        rpc_url="https://test.near.org",
-        account_id="test.near",
-        private_key="ed25519:test",
-        contract_id="store.near",
+def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> str:
+    return Chunk(
+        version=1,
+        manifest_id=manifest_id,
+        block_index=block,
+        chunk_index=idx,
+        total_chunks=1,
+        payload=b"test-payload",
+    ).encode()
+
+
+def _make_adapter(**kwargs) -> NearAdapter:
+    defaults = dict(
+        rpc_url="https://rpc.testnet.near.org",
+        account_id="test.testnet",
+        private_key="ed25519:testkey",
+        contract_id="store.testnet",
     )
+    defaults.update(kwargs)
+    return NearAdapter(**defaults)
 
 
 @pytest.mark.asyncio
-class TestNearProfile:
-    async def test_name(self, adapter):
-        assert adapter.profile().name == "near"
+class TestNearAdapter:
+    async def test_profile(self):
+        a = _make_adapter()
+        p = a.profile()
+        assert p.name == "near"
+        assert p.max_chunk_bytes == 4_194_304
+        assert p.persistent is True
+        assert p.ordered is False
+        assert p.rate_limit_per_min == 30
 
-    async def test_persistent(self, adapter):
-        assert adapter.profile().persistent is True
+    async def test_write_chunk(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
+        enc = _sample_encoded()
 
-    async def test_max_chunk(self, adapter):
-        assert adapter.profile().max_chunk_bytes == 4_194_304
+        ref = await a.write_chunk(enc)
 
-    async def test_rate_limit(self, adapter):
-        assert adapter.profile().rate_limit_per_min == 30
-
-
-@pytest.mark.asyncio
-class TestNearWriteRead:
-    async def test_write_returns_ref(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
-        ref = await adapter.write_chunk("near-chunk-data")
         assert ref.adapter_name == "near"
         assert ref.location.startswith("near://")
+        a._rpc.assert_awaited_once()
+        call_args = a._rpc.call_args
+        assert call_args[0][0] == "broadcast_tx_commit"
 
-    async def test_read_extracts_chunk(self, adapter):
-        payload = json.dumps({"data": "recovered-chunk"})
-        raw_bytes = list(payload.encode())
-        adapter._rpc = AsyncMock(return_value={
-            "result": {"result": raw_bytes}
+    async def test_read_chunk(self):
+        a = _make_adapter()
+        enc = _sample_encoded()
+        payload = json.dumps({"data": enc}).encode()
+
+        a._rpc = AsyncMock(return_value={
+            "result": {"result": list(payload)}
         })
-        result = await adapter.read_chunk(
-            type("R", (), {"adapter_name": "near", "location": "near://key123"})()
-        )
-        assert result == "recovered-chunk"
 
-    async def test_read_empty_raises(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": {"result": []}})
+        ref = StoredChunkRef(adapter_name="near", location="near://abc123")
+        result = await a.read_chunk(ref)
+        assert result == enc
+
+    async def test_read_chunk_not_found(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": {"result": []}})
+
+        ref = StoredChunkRef(adapter_name="near", location="near://missing")
         with pytest.raises(ValueError, match="no chunk data"):
-            await adapter.read_chunk(
-                type("R", (), {"adapter_name": "near", "location": "near://missing"})()
-            )
+            await a.read_chunk(ref)
 
+    async def test_delete_chunk(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
 
-@pytest.mark.asyncio
-class TestNearOps:
-    async def test_delete_success(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
-        ref = type("R", (), {"adapter_name": "near", "location": "near://key1"})()
-        assert await adapter.delete_chunk(ref) is True
+        ref = StoredChunkRef(adapter_name="near", location="near://abc123")
+        assert await a.delete_chunk(ref) is True
+        a._rpc.assert_awaited_once()
+        call_args = a._rpc.call_args
+        assert call_args[0][0] == "broadcast_tx_commit"
 
-    async def test_delete_failure(self, adapter):
-        adapter._rpc = AsyncMock(side_effect=Exception("tx failed"))
-        ref = type("R", (), {"adapter_name": "near", "location": "near://key2"})()
-        assert await adapter.delete_chunk(ref) is False
+    async def test_delete_chunk_failure(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(side_effect=Exception("tx failed"))
 
-    async def test_list_chunks_empty(self, adapter):
-        assert await adapter.list_chunks("m1") == []
+        ref = StoredChunkRef(adapter_name="near", location="near://abc123")
+        assert await a.delete_chunk(ref) is False
 
-    async def test_health_check_ok(self, adapter):
-        adapter._rpc = AsyncMock(return_value={"result": {"chain_id": "mainnet"}})
-        assert await adapter.health_check() is True
+    async def test_list_chunks_empty(self):
+        a = _make_adapter()
+        refs = await a.list_chunks("m1")
+        assert refs == []
 
-    async def test_health_check_fail(self, adapter):
-        adapter._rpc = AsyncMock(side_effect=Exception("unreachable"))
-        assert await adapter.health_check() is False
+    async def test_health_check_ok(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"result": {"version": {"build": "1.0"}}})
+        assert await a.health_check() is True
 
-    async def test_capacity(self, adapter):
-        cap = await adapter.capacity()
-        assert all(v is None for v in cap.values())
+    async def test_health_check_fail(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(return_value={"error": "not synced"})
+        assert await a.health_check() is False
 
-    async def test_contract_defaults_to_account(self):
-        a = NearAdapter(account_id="me.near")
-        assert a._contract_id == "me.near"
+    async def test_health_check_exception(self):
+        a = _make_adapter()
+        a._rpc = AsyncMock(side_effect=Exception("connection refused"))
+        assert await a.health_check() is False
+
+    async def test_capacity(self):
+        a = _make_adapter()
+        cap = await a.capacity()
+        assert cap["used_bytes"] is None
+        assert cap["free_bytes"] is None
+        assert cap["total_bytes"] is None
+        assert cap["chunk_count"] is None
+
+    async def test_contract_id_defaults_to_account_id(self):
+        a = NearAdapter(
+            rpc_url="https://rpc.testnet.near.org",
+            account_id="myaccount.testnet",
+            private_key="ed25519:testkey",
+        )
+        assert a._contract_id == "myaccount.testnet"

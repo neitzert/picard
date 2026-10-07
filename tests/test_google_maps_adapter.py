@@ -3,16 +3,9 @@
 from __future__ import annotations
 
 import json
-import sys
-import types
 from unittest.mock import patch
 
 import pytest
-
-# Stub aiohttp
-_aiohttp = types.ModuleType("aiohttp")
-_aiohttp.ClientSession = type("ClientSession", (), {})
-sys.modules.setdefault("aiohttp", _aiohttp)
 
 from picard.adapters.google_maps_reviews import GoogleMapsAdapter
 

@@ -60,7 +60,7 @@ class NtpExtAdapter(Adapter):
         ref_id = 0
         now = int(time.time()) + 2208988800  # NTP epoch offset
         header = struct.pack(
-            "!BBBbIIIQQQQ",
+            "!BBBBIIIQQQQ",
             li_vn_mode, stratum, poll, precision,
             root_delay, root_dispersion, ref_id,
             now << 32, now << 32, now << 32, now << 32,

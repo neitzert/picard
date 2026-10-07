@@ -2,15 +2,9 @@
 
 from __future__ import annotations
 
-import sys
-import types
 from unittest.mock import patch
 
 import pytest
-
-_aiohttp = types.ModuleType("aiohttp")
-_aiohttp.ClientSession = type("ClientSession", (), {})
-sys.modules.setdefault("aiohttp", _aiohttp)
 
 from picard.adapters.fandom_adapter import FandomAdapter
 

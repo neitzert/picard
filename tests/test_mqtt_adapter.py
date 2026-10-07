@@ -12,6 +12,10 @@ from picard.adapters.mqtt import MqttAdapter
 from picard.chunker import Chunk
 
 
+async def _fake_to_thread(fn, *args, **kwargs):
+    return fn(*args, **kwargs)
+
+
 def _sample_encoded(manifest_id: str = "m1", block: int = 0, idx: int = 0) -> str:
     return Chunk(
         version=1,
@@ -39,6 +43,11 @@ def _mock_client() -> MagicMock:
 
 @pytest.mark.asyncio
 class TestMqttAdapter:
+    @pytest.fixture(autouse=True)
+    def _patch_to_thread(self):
+        with patch("picard.adapters.mqtt.asyncio.to_thread", _fake_to_thread):
+            yield
+
     async def test_profile(self):
         a = _make_adapter()
         p = a.profile()
@@ -101,8 +110,14 @@ class TestMqttAdapter:
         client.unsubscribe = MagicMock()
         client.message_callback_remove = MagicMock()
 
-        with pytest.raises(TimeoutError, match="no retained message"):
-            await a.read_chunk(ref)
+        orig_wait = threading.Event.wait
+
+        def fast_wait(self, timeout=None):
+            return orig_wait(self, timeout=0.01)
+
+        with patch.object(threading.Event, "wait", fast_wait):
+            with pytest.raises(TimeoutError, match="no retained message"):
+                await a.read_chunk(ref)
 
     async def test_delete_chunk(self):
         a = _make_adapter()
@@ -162,8 +177,14 @@ class TestMqttAdapter:
         client.unsubscribe = MagicMock()
         client.message_callback_remove = MagicMock()
 
-        refs = await a.list_chunks("m1")
-        assert refs == []
+        orig_wait = threading.Event.wait
+
+        def fast_wait(self, timeout=None):
+            return orig_wait(self, timeout=0.01)
+
+        with patch.object(threading.Event, "wait", fast_wait):
+            refs = await a.list_chunks("m1")
+            assert refs == []
 
     async def test_health_check_ok(self):
         a = _make_adapter()

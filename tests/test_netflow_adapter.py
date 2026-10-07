@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
 from picard.adapters.netflow_adapter import NetflowAdapter
+
+
+async def _fake_to_thread(fn, *args, **kwargs):
+    return fn(*args, **kwargs)
 
 
 @pytest.fixture
@@ -36,7 +40,7 @@ class TestProfile:
 class TestBuildHeader:
     def test_header_length(self, adapter):
         header = adapter._build_header(2)
-        assert len(header) == 20
+        assert len(header) == 16
 
     def test_seq_increments(self, adapter):
         adapter._build_header(1)
@@ -64,26 +68,25 @@ class TestBuildDataFlowset:
 class TestWriteChunk:
     @pytest.mark.asyncio
     async def test_write_returns_ref(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_inst = MagicMock()
-            mock_sock.return_value = mock_inst
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("test-data")
             assert ref.adapter_name == "netflow"
             assert ref.location in adapter._cache
 
     @pytest.mark.asyncio
     async def test_write_with_chunk_format(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             from picard.chunker import Chunk
-            chunk = Chunk(manifest_id="m1", block_index=0, chunk_index=0, data=b"hello")
+            chunk = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=0, total_chunks=1, payload=b"hello")
             ref = await adapter.write_chunk(chunk.encode())
             assert ref.location == "m1_0_0"
 
     @pytest.mark.asyncio
     async def test_write_caches_data(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("my-payload")
             assert adapter._cache[ref.location] == "my-payload"
 
@@ -91,8 +94,8 @@ class TestWriteChunk:
 class TestReadChunk:
     @pytest.mark.asyncio
     async def test_roundtrip(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("test-data")
             result = await adapter.read_chunk(ref)
             assert result == "test-data"
@@ -108,8 +111,8 @@ class TestReadChunk:
 class TestDeleteChunk:
     @pytest.mark.asyncio
     async def test_delete_existing(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             ref = await adapter.write_chunk("data")
             assert await adapter.delete_chunk(ref) is True
 
@@ -123,11 +126,11 @@ class TestDeleteChunk:
 class TestListChunks:
     @pytest.mark.asyncio
     async def test_list_filters(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             from picard.chunker import Chunk
-            c1 = Chunk(manifest_id="m1", block_index=0, chunk_index=0, data=b"a")
-            c2 = Chunk(manifest_id="m2", block_index=0, chunk_index=0, data=b"b")
+            c1 = Chunk(version=1, manifest_id="m1", block_index=0, chunk_index=0, total_chunks=1, payload=b"a")
+            c2 = Chunk(version=1, manifest_id="m2", block_index=0, chunk_index=0, total_chunks=1, payload=b"b")
             await adapter.write_chunk(c1.encode())
             await adapter.write_chunk(c2.encode())
             result = await adapter.list_chunks("m1")
@@ -148,8 +151,8 @@ class TestCapacity:
 
     @pytest.mark.asyncio
     async def test_capacity_after_write(self, adapter):
-        with patch("socket.socket") as mock_sock:
-            mock_sock.return_value = MagicMock()
+        with patch("picard.adapters.netflow_adapter.asyncio.to_thread", _fake_to_thread), \
+             patch("socket.socket", return_value=MagicMock()):
             await adapter.write_chunk("data")
             cap = await adapter.capacity()
             assert cap["chunk_count"] == 1

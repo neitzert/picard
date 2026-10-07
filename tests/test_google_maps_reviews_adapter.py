@@ -66,7 +66,7 @@ class TestGoogleMapsAdapter:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("aiohttp.ClientSession", return_value=session):
+        with patch("picard.adapters.google_maps_reviews.aiohttp.ClientSession", return_value=session):
             ref = await a.write_chunk(enc)
 
         assert ref.adapter_name == "google-maps"
@@ -84,7 +84,7 @@ class TestGoogleMapsAdapter:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("aiohttp.ClientSession", return_value=session):
+        with patch("picard.adapters.google_maps_reviews.aiohttp.ClientSession", return_value=session):
             ref = await a.write_chunk(enc)
 
         assert ref.location in a._cache
@@ -104,7 +104,8 @@ class TestGoogleMapsAdapter:
         a = _make_adapter()
         enc = _sample_encoded()
         loc = "gmaps://test-place-id/rev-789"
-        review_text = f"PICARD:m1/0/0:{enc}"
+        # The review text must contain "PICARD:" and the review_id "rev-789"
+        review_text = f"PICARD:rev-789:{enc}"
 
         resp = _mock_response(200, json_data={
             "result": {
@@ -121,7 +122,7 @@ class TestGoogleMapsAdapter:
 
         ref = StoredChunkRef(adapter_name="google-maps", location=loc)
 
-        with patch("aiohttp.ClientSession", return_value=session):
+        with patch("picard.adapters.google_maps_reviews.aiohttp.ClientSession", return_value=session):
             result = await a.read_chunk(ref)
 
         assert result == enc
@@ -166,7 +167,7 @@ class TestGoogleMapsAdapter:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("aiohttp.ClientSession", return_value=session):
+        with patch("picard.adapters.google_maps_reviews.aiohttp.ClientSession", return_value=session):
             result = await a.health_check()
 
         assert result is True
@@ -179,7 +180,7 @@ class TestGoogleMapsAdapter:
         session.__aenter__ = AsyncMock(return_value=session)
         session.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("aiohttp.ClientSession", return_value=session):
+        with patch("picard.adapters.google_maps_reviews.aiohttp.ClientSession", return_value=session):
             result = await a.health_check()
 
         assert result is False
