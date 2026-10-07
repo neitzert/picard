@@ -183,3 +183,31 @@ class TestDu:
         assert result["total_chunks"] >= 2
         assert result["total_bytes"] > 0
         assert "memory" in result["adapters"]
+
+
+@pytest.mark.asyncio
+class TestRoundRobin:
+    async def test_chunks_distributed_across_adapters(self):
+        adapters = [MemoryAdapter(name=f"a{i}") for i in range(4)]
+        index = Index()
+        orch = Orchestrator(adapters, index, block_size=1)
+        manifest = await orch.put("rr.txt", b"ABCDEFGH", "pw")
+        names = [cr.adapter_name for b in manifest.blocks for cr in b.chunks]
+        assert set(names) == {"a0", "a1", "a2", "a3"}
+
+    async def test_round_robin_cycles(self):
+        adapters = [MemoryAdapter(name=f"n{i}") for i in range(3)]
+        index = Index()
+        orch = Orchestrator(adapters, index, block_size=1)
+        manifest = await orch.put("cycle.txt", b"123456", "pw")
+        names = [cr.adapter_name for b in manifest.blocks for cr in b.chunks]
+        assert names == ["n0", "n1", "n2", "n0", "n1", "n2"]
+
+    async def test_roundtrip_multi_adapter(self):
+        adapters = [MemoryAdapter(name=f"m{i}") for i in range(5)]
+        index = Index()
+        orch = Orchestrator(adapters, index, block_size=4)
+        data = b"The quick brown fox jumps"
+        manifest = await orch.put("fox.txt", data, "pw")
+        recovered = await orch.get("fox.txt", "pw")
+        assert recovered == data
