@@ -933,5 +933,173 @@ def mount_cmd(
     fuse_mount(orch, pp, mountpoint, block_cache=cache, readonly=readonly)
 
 
+@app.command(name="tor-check")
+def tor_check(
+    socks_port: int = typer.Option(9050, "--socks-port", help="Tor SOCKS port."),
+) -> None:
+    """Check if Tor is running and traffic is routed through it."""
+    from picard.tor_proxy import TorProxyConfig, check_tor
+
+    cfg = TorProxyConfig(socks_port=socks_port)
+
+    with console.status("[bold cyan]Checking Tor connection..."):
+        result = asyncio.run(check_tor(cfg))
+
+    if result["tor"]:
+        console.print(f"[bold green]✓[/] Connected to Tor")
+        console.print(f"  Exit IP: {result['ip']}")
+        console.print(f"  Proxy:   {result['socks_proxy']}")
+    else:
+        console.print(f"[bold red]✗[/] Not connected to Tor")
+        if "error" in result:
+            console.print(f"  Error: {result['error']}")
+        console.print(f"  [dim]Make sure Tor is running on port {socks_port}[/]")
+
+
+@app.command(name="tor-peer")
+def tor_peer(
+    onion_url: str = typer.Argument(..., help="Onion URL of the remote PICARD peer."),
+    adapter_name: str = typer.Option("filesystem", "--adapter", "-a", help="Remote adapter name to use."),
+    secret: str = typer.Option("", "--secret", envvar="PICARD_TRANSPORT_SECRET", help="HMAC shared secret."),
+    socks_port: int = typer.Option(9050, "--socks-port", help="Local Tor SOCKS port."),
+) -> None:
+    """Test connectivity to a .onion PICARD peer over Tor."""
+    from picard.adapters.tor import TorAdapter
+
+    if ".onion" not in onion_url:
+        console.print("[red]Error:[/] URL must be a .onion address")
+        raise typer.Exit(1)
+
+    if not onion_url.startswith("http"):
+        onion_url = f"http://{onion_url}"
+
+    adapter = TorAdapter(
+        onion_url,
+        adapter_name,
+        secret=secret,
+        socks_proxy=f"socks5://127.0.0.1:{socks_port}",
+    )
+
+    with console.status(f"[bold cyan]Connecting to peer via Tor..."):
+        healthy = asyncio.run(adapter.health_check())
+
+    if healthy:
+        console.print(f"[bold green]✓[/] Peer reachable")
+        console.print(f"  Onion: {onion_url}")
+    else:
+        console.print(f"[bold red]✗[/] Peer unreachable")
+        console.print(f"  Onion: {onion_url}")
+        console.print("  [dim]Check that Tor is running and the .onion service is active[/]")
+
+    asyncio.run(adapter.close())
+
+
+@app.command(name="tor-serve")
+def tor_serve(
+    port: int = typer.Option(8471, "--port", "-p", help="Local port to expose."),
+    control_port: int = typer.Option(9051, "--control-port", help="Tor control port."),
+    socks_port: int = typer.Option(9050, "--socks-port", help="Tor SOCKS port."),
+    persistent: bool = typer.Option(False, "--persistent", help="Persistent .onion address across restarts."),
+    existing_tor: bool = typer.Option(False, "--existing-tor", help="Use already-running Tor process."),
+    secret: str = typer.Option("", "--secret", envvar="PICARD_TRANSPORT_SECRET", help="HMAC shared secret."),
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+    index_passphrase: str = typer.Option("", "--index-passphrase", envvar="PICARD_INDEX_PASSPHRASE"),
+) -> None:
+    """Expose PICARD as a Tor hidden service (.onion).
+
+    Starts the transport API on a local port and creates a .onion address
+    that forwards to it. Other PICARD nodes connect via TorAdapter.
+    """
+    from picard.tor import TorConfig, TorManager
+    from picard.transport import configure
+    from picard.web import serve
+
+    orch = _make_orchestrator(store_dir, db_path, index_passphrase=index_passphrase or None)
+    adapter_map = {a.profile().name: a for a in orch._adapters}
+    configure(adapter_map, secret)
+
+    tor_config = TorConfig(
+        socks_port=socks_port,
+        control_port=control_port,
+        existing_tor=existing_tor,
+    )
+
+    with console.status("[bold cyan]Starting Tor..."):
+        tor = TorManager(tor_config)
+        tor.start()
+
+    with console.status("[bold cyan]Creating hidden service..."):
+        if persistent:
+            hs = tor.create_persistent_hidden_service(port)
+        else:
+            hs = tor.create_hidden_service(port)
+
+    console.print(f"\n[bold green]✓[/] PICARD hidden service active")
+    console.print(f"  Onion: http://{hs.onion_address}")
+    console.print(f"  Local: http://127.0.0.1:{port}")
+    console.print(f"  [dim]Press Ctrl+C to stop[/]\n")
+
+    try:
+        serve(host="127.0.0.1", port=port)
+    finally:
+        tor.stop()
+
+
+@app.command(name="tor-mount")
+def tor_mount(
+    onion_url: str = typer.Argument(..., help="Onion URL of the remote PICARD peer."),
+    mountpoint: str = typer.Argument(..., help="Local mount point."),
+    passphrase: str = typer.Option("", "--passphrase", envvar="PICARD_PASSPHRASE"),
+    adapter_name: str = typer.Option("filesystem", "--adapter", "-a", help="Remote adapter name."),
+    secret: str = typer.Option("", "--secret", envvar="PICARD_TRANSPORT_SECRET"),
+    socks_port: int = typer.Option(9050, "--socks-port", help="Local Tor SOCKS port."),
+    readonly: bool = typer.Option(False, "--readonly", help="Mount read-only."),
+) -> None:
+    """Mount a remote PICARD node's filesystem over Tor via FUSE.
+
+    Connects to a .onion PICARD peer, routes all traffic through Tor,
+    and exposes the remote filesystem at the local mount point.
+    """
+    from picard.adapters.tor import TorAdapter
+    from picard.fuse_mount import mount
+    from picard.index import Index
+    from picard.orchestrator import Orchestrator
+
+    if not passphrase:
+        import getpass
+        passphrase = getpass.getpass("Passphrase: ")
+
+    if not onion_url.startswith("http"):
+        onion_url = f"http://{onion_url}"
+
+    adapter = TorAdapter(
+        onion_url,
+        adapter_name,
+        secret=secret,
+        socks_proxy=f"socks5://127.0.0.1:{socks_port}",
+    )
+
+    with console.status(f"[bold cyan]Connecting to peer via Tor..."):
+        healthy = asyncio.run(adapter.health_check())
+
+    if not healthy:
+        console.print(f"[bold red]✗[/] Peer unreachable: {onion_url}")
+        raise typer.Exit(1)
+
+    import tempfile
+    tmp_db = Path(tempfile.mkdtemp()) / "remote_index.db"
+    idx = Index(tmp_db)
+    orch = Orchestrator([adapter], idx)
+
+    console.print(f"[bold green]✓[/] Mounting {onion_url} at {mountpoint}")
+    console.print(f"  [dim]All traffic routed through Tor[/]")
+
+    try:
+        mount(orch, passphrase, mountpoint, readonly=readonly)
+    finally:
+        asyncio.run(adapter.close())
+
+
 if __name__ == "__main__":
     app()

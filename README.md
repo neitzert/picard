@@ -25,6 +25,7 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **CLI** — 30+ commands with progress bars, --json output, colored display
 - **Web dashboard** — browser-based adapter management and file browser
 - **MCP server** — agent-accessible storage tools for any MCP-compatible client
+- **Tor integration** — route traffic through Tor, expose as hidden service, connect to .onion peers
 
 ## Quickstart
 
@@ -120,6 +121,7 @@ min_adapters = 4
 - `picard adapters` / `profiles` — list available adapters and scatter profiles
 - `picard init` — create default config.toml
 - `picard encrypt-index` / `decrypt-index` — encrypt or decrypt the index database
+- `picard tor-check` — verify Tor connectivity
 
 Most commands support `--json` for machine-readable output.
 
@@ -131,6 +133,7 @@ Most commands support `--json` for machine-readable output.
 - [MCP Server](docs/mcp.md) — agent storage interface, setup, tools
 - [Network](docs/network.md) — transport layer, peer discovery, remote adapters
 - [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
+- [Tor](docs/tor.md) — anonymity, hidden services, .onion peers
 
 ## Development
 
