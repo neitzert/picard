@@ -48,6 +48,7 @@ class Orchestrator:
         self._index = index
         self._block_size = block_size
         self._key_ring = key_ring
+        self._next_adapter: int = 0
 
     # --- public API --------------------------------------------------------
 
@@ -318,11 +319,10 @@ class Orchestrator:
     # --- internal ----------------------------------------------------------
 
     def _pick_adapter(self) -> Adapter:
-        """Simple strategy: use the first healthy adapter.
-
-        Future: round-robin, capacity-aware, multi-adapter scatter.
-        """
-        return self._adapters[0]
+        """Round-robin across all adapters."""
+        adapter = self._adapters[self._next_adapter % len(self._adapters)]
+        self._next_adapter += 1
+        return adapter
 
     def _adapter_by_name(self, name: str) -> Adapter:
         for a in self._adapters:
