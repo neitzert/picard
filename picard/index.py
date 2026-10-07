@@ -17,6 +17,8 @@ from picard.manifest import (
     Manifest,
 )
 
+_PCIX_MAGIC = b"PCIX\x01"
+
 _SCHEMA = """\
 CREATE TABLE IF NOT EXISTS manifests (
     manifest_id    TEXT PRIMARY KEY,
@@ -92,8 +94,35 @@ _MIGRATIONS = [
 class Index:
     """Thin wrapper around a SQLite database for manifest bookkeeping."""
 
-    def __init__(self, db_path: str | Path = ":memory:") -> None:
-        self._conn = sqlite3.connect(str(db_path))
+    def __init__(
+        self, db_path: str | Path = ":memory:", *, passphrase: str | None = None,
+    ) -> None:
+        self._db_path = str(db_path)
+        self._passphrase = passphrase
+        self._encrypted = False
+
+        if str(db_path) == ":memory:" or passphrase is None:
+            self._conn = sqlite3.connect(self._db_path)
+        else:
+            p = Path(db_path)
+            if p.exists() and p.stat().st_size > 0:
+                raw = p.read_bytes()
+                if raw[: len(_PCIX_MAGIC)] == _PCIX_MAGIC:
+                    from picard.crypto import decrypt
+                    sql_bytes = decrypt(raw[len(_PCIX_MAGIC) :], passphrase)
+                    self._conn = sqlite3.connect(":memory:")
+                    self._conn.executescript(sql_bytes.decode("utf-8"))
+                    self._encrypted = True
+                else:
+                    self._conn = sqlite3.connect(":memory:")
+                    file_conn = sqlite3.connect(str(db_path))
+                    file_conn.backup(self._conn)
+                    file_conn.close()
+                    self._encrypted = True
+            else:
+                self._conn = sqlite3.connect(":memory:")
+                self._encrypted = True
+
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
         for migration in _MIGRATIONS:
@@ -361,5 +390,19 @@ class Index:
     def connection(self) -> sqlite3.Connection:
         return self._conn
 
+    def flush(self) -> None:
+        """Write current database state to disk (encrypted if passphrase set)."""
+        if self._db_path == ":memory:" or not self._encrypted:
+            return
+        self._write_encrypted()
+
+    def _write_encrypted(self) -> None:
+        from picard.crypto import encrypt
+        sql_text = "\n".join(self._conn.iterdump()) + "\n"
+        ct = encrypt(sql_text.encode("utf-8"), self._passphrase)
+        Path(self._db_path).write_bytes(_PCIX_MAGIC + ct)
+
     def close(self) -> None:
+        if self._encrypted and self._db_path != ":memory:":
+            self._write_encrypted()
         self._conn.close()

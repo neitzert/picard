@@ -92,9 +92,12 @@ def _make_orchestrator(
     passphrase: str | None = None,
     profile_name: str | None = None,
 ) -> Orchestrator:
+    from picard.journal import Journal
+
     db_path.parent.mkdir(parents=True, exist_ok=True)
     adapters = _adapters_from_config(store_dir)
     index = Index(db_path)
+    journal = Journal(index.connection)
 
     if profile_name:
         cfg = load_config()
@@ -106,7 +109,7 @@ def _make_orchestrator(
         mk = load_master_key(passphrase=passphrase, keyfile=keyfile)
         key_ring = KeyRing(mk)
 
-    return Orchestrator(adapters, index, key_ring=key_ring)
+    return Orchestrator(adapters, index, key_ring=key_ring, journal=journal)
 
 
 @app.command()
@@ -741,6 +744,18 @@ def log(
     for v in versions:
         typer.echo(f"  v{v['version']}  {v['created_at']}  "
                    f"{v['original_size']} bytes  {v['manifest_id'][:12]}...")
+
+
+@app.command(name="recover")
+def recover_cmd(
+    store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
+    db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
+) -> None:
+    """Recover from crashed operations using the journal."""
+    orch = _make_orchestrator(store_dir, db_path)
+    result = asyncio.run(orch.recover())
+    typer.echo(f"Recovered {result['recovered']} incomplete operations")
+    typer.echo(f"Cleaned {result['cleaned_chunks']} orphan chunks")
 
 
 @app.command(name="mount")

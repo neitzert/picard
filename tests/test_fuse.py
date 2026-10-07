@@ -124,6 +124,59 @@ class TestStatfs:
         assert "f_namemax" in result
 
 
+class TestFuseXattr:
+    def test_setxattr_getxattr_roundtrip(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        fs.setxattr("/test.txt", "user.tag", b"important", 0)
+        val = fs.getxattr("/test.txt", "user.tag")
+        assert val == b"important"
+
+    def test_listxattr_empty(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        result = fs.listxattr("/test.txt")
+        assert result == []
+
+    def test_listxattr_with_attrs(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        fs.setxattr("/test.txt", "user.a", b"1", 0)
+        fs.setxattr("/test.txt", "user.b", b"2", 0)
+        result = fs.listxattr("/test.txt")
+        assert sorted(result) == ["user.a", "user.b"]
+
+    def test_removexattr(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        fs.setxattr("/test.txt", "user.tag", b"val", 0)
+        fs.removexattr("/test.txt", "user.tag")
+        assert fs.listxattr("/test.txt") == []
+
+    def test_getxattr_missing_raises(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        from refuse.high import FuseOSError
+
+        with pytest.raises(FuseOSError):
+            fs.getxattr("/test.txt", "user.nonexistent")
+
+    def test_removexattr_missing_raises(self, fs):
+        fs._run(fs._orch.put("/test.txt", b"hello", "pw"))
+        from refuse.high import FuseOSError
+
+        with pytest.raises(FuseOSError):
+            fs.removexattr("/test.txt", "user.nonexistent")
+
+
+class TestFuseFsync:
+    def test_fsync_flushes_write_buffer(self, fs):
+        fh = fs.create("/sync.txt", 0o100644)
+        fs.write("/sync.txt", b"synced data", 0, fh)
+        fs.fsync("/sync.txt", False, fh)
+        m = fs._orch._index.get_manifest_by_path("/sync.txt")
+        assert m is not None
+        fs.release("/sync.txt", fh)
+
+    def test_fsync_noop_without_buffer(self, fs):
+        fs.fsync("/nonexistent.txt", False, 9999)
+
+
 class TestReadonly:
     def test_write_blocked(self):
         adapter = MemoryAdapter(max_chunk_bytes=256)

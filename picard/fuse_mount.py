@@ -23,6 +23,8 @@ except (ImportError, OSError):
     if TYPE_CHECKING:
         from refuse.high import FUSE, FuseOSError, Operations
 
+ENODATA = getattr(errno, "ENODATA", 61)
+
 if TYPE_CHECKING:
     from picard.cache import BlockCache
     from picard.index import Index
@@ -214,6 +216,55 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         self._index.update_manifest_metadata(
             m.manifest_id, atime=atime, mtime=mtime,
         )
+
+    def fsync(self, path, datasync, fh):
+        if self._readonly:
+            raise FuseOSError(errno.EROFS)
+        wb = self._write_buffers.get(fh)
+        if wb is not None:
+            wb.buf.seek(0)
+            data = wb.buf.read()
+            if data:
+                self._run(
+                    self._orch.put(wb.path, data, self._passphrase, mode=wb.mode)
+                )
+
+    def getxattr(self, path, name, position=0):
+        m = self._index.get_manifest_by_path(path)
+        if m is None:
+            raise FuseOSError(errno.ENOENT)
+        val = m.xattrs.get(name)
+        if val is None:
+            raise FuseOSError(ENODATA)
+        return val.encode() if isinstance(val, str) else val
+
+    def setxattr(self, path, name, value, options, position=0):
+        if self._readonly:
+            raise FuseOSError(errno.EROFS)
+        m = self._index.get_manifest_by_path(path)
+        if m is None:
+            raise FuseOSError(errno.ENOENT)
+        xattrs = dict(m.xattrs)
+        xattrs[name] = value.decode() if isinstance(value, bytes) else value
+        self._index.update_manifest_metadata(m.manifest_id, xattrs=xattrs)
+
+    def listxattr(self, path):
+        m = self._index.get_manifest_by_path(path)
+        if m is None:
+            raise FuseOSError(errno.ENOENT)
+        return list(m.xattrs.keys())
+
+    def removexattr(self, path, name):
+        if self._readonly:
+            raise FuseOSError(errno.EROFS)
+        m = self._index.get_manifest_by_path(path)
+        if m is None:
+            raise FuseOSError(errno.ENOENT)
+        xattrs = dict(m.xattrs)
+        if name not in xattrs:
+            raise FuseOSError(ENODATA)
+        del xattrs[name]
+        self._index.update_manifest_metadata(m.manifest_id, xattrs=xattrs)
 
     def statfs(self, path):
         du = self._run(self._orch.du())

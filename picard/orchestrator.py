@@ -19,6 +19,7 @@ from picard.chunker import Chunk, chunkify, reassemble
 from picard.crypto import decrypt, encrypt
 from picard.envelope import seal, unseal
 from picard.index import Index
+from picard.journal import Journal
 from picard.keys import KeyRing
 from picard.manifest import (
     BlockRecord,
@@ -43,6 +44,7 @@ class Orchestrator:
         block_size: int = DEFAULT_BLOCK_SIZE,
         key_ring: KeyRing | None = None,
         block_cache: BlockCache | None = None,
+        journal: Journal | None = None,
     ) -> None:
         if not adapters:
             raise ValueError("need at least one adapter")
@@ -51,6 +53,7 @@ class Orchestrator:
         self._block_size = block_size
         self._key_ring = key_ring
         self._block_cache = block_cache
+        self._journal = journal
         self._next_adapter: int = 0
 
     # --- public API --------------------------------------------------------
@@ -84,52 +87,65 @@ class Orchestrator:
             parent_path=parent,
         )
 
-        for bi in range(total_blocks):
-            start = bi * self._block_size
-            end = start + self._block_size
-            plaintext_block = data[start:end]
+        jid = None
+        if self._journal:
+            jid = self._journal.begin("put", path, manifest.manifest_id)
+        try:
+            for bi in range(total_blocks):
+                start = bi * self._block_size
+                end = start + self._block_size
+                plaintext_block = data[start:end]
 
-            ct = encrypt(plaintext_block, passphrase)
-            digest = block_digest(ct)
+                ct = encrypt(plaintext_block, passphrase)
+                digest = block_digest(ct)
 
-            block = BlockRecord(
-                block_index=bi,
-                digest=digest,
-                size_bytes=len(ct),
-            )
-
-            # Pick the adapter with the most capacity for this block
-            adapter = self._pick_adapter()
-            prof = adapter.profile()
-
-            chunks = chunkify(ct, manifest.manifest_id, bi, prof.max_chunk_bytes)
-
-            for chunk in chunks:
-                encoded = chunk.encode()
-                if self._key_ring:
-                    sub_key = self._key_ring.get_sub_key(prof.name)
-                    wire = seal(encoded, sub_key, manifest.manifest_id)
-                    wire_str = wire.hex()
-                else:
-                    wire_str = encoded
-                ref = await adapter.write_chunk(wire_str)
-                chunk_digest = hashlib.sha256(
-                    wire_str.encode() if isinstance(wire_str, str) else wire_str
-                ).hexdigest()
-                block.chunks.append(
-                    ChunkRecord(
-                        chunk_index=chunk.chunk_index,
-                        adapter_name=ref.adapter_name,
-                        location=ref.location,
-                        status=ChunkStatus.STORED,
-                        size_bytes=len(wire_str),
-                        digest=chunk_digest,
-                    )
+                block = BlockRecord(
+                    block_index=bi,
+                    digest=digest,
+                    size_bytes=len(ct),
                 )
 
-            manifest.blocks.append(block)
+                adapter = self._pick_adapter()
+                prof = adapter.profile()
 
-        self._index.save_manifest(manifest)
+                chunks = chunkify(ct, manifest.manifest_id, bi, prof.max_chunk_bytes)
+
+                for chunk in chunks:
+                    encoded = chunk.encode()
+                    if self._key_ring:
+                        sub_key = self._key_ring.get_sub_key(prof.name)
+                        wire = seal(encoded, sub_key, manifest.manifest_id)
+                        wire_str = wire.hex()
+                    else:
+                        wire_str = encoded
+                    ref = await adapter.write_chunk(wire_str)
+                    chunk_digest = hashlib.sha256(
+                        wire_str.encode() if isinstance(wire_str, str) else wire_str
+                    ).hexdigest()
+                    block.chunks.append(
+                        ChunkRecord(
+                            chunk_index=chunk.chunk_index,
+                            adapter_name=ref.adapter_name,
+                            location=ref.location,
+                            status=ChunkStatus.STORED,
+                            size_bytes=len(wire_str),
+                            digest=chunk_digest,
+                        )
+                    )
+
+                manifest.blocks.append(block)
+                if self._journal and jid:
+                    self._journal.mark_in_progress(
+                        jid, {"blocks_written": list(range(bi + 1))}
+                    )
+
+            self._index.save_manifest(manifest)
+            if self._journal and jid:
+                self._journal.commit(jid)
+        except Exception:
+            if self._journal and jid:
+                self._journal.rollback(jid)
+            raise
         return manifest
 
     async def get(
@@ -507,6 +523,32 @@ class Orchestrator:
         new.mtime = new.created_at
         self._index.save_manifest(new)
         return new
+
+    # --- recovery ----------------------------------------------------------
+
+    async def recover(self) -> dict:
+        """Clean up incomplete journal entries from crashed operations."""
+        if self._journal is None:
+            return {"recovered": 0, "cleaned_chunks": 0}
+        entries = self._journal.get_incomplete()
+        cleaned_chunks = 0
+        for entry in entries:
+            manifest = self._index.get_manifest(entry.manifest_id)
+            if manifest is not None:
+                for block in manifest.blocks:
+                    for cr in block.chunks:
+                        try:
+                            adapter = self._adapter_by_name(cr.adapter_name)
+                            ref = StoredChunkRef(
+                                adapter_name=cr.adapter_name, location=cr.location,
+                            )
+                            await adapter.delete_chunk(ref)
+                            cleaned_chunks += 1
+                        except Exception:
+                            pass
+                self._index.delete_manifest(manifest.manifest_id)
+            self._journal.rollback(entry.journal_id)
+        return {"recovered": len(entries), "cleaned_chunks": cleaned_chunks}
 
     # --- internal ----------------------------------------------------------
 
