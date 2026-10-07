@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PICARD Control</title>
+<style>
+:root {
+  --bg: #0a0e14;
+  --bg2: #111820;
+  --bg3: #1a2230;
+  --border: #2a3545;
+  --text: #c5cdd8;
+  --text2: #8892a0;
+  --accent: #00e5ff;
+  --accent2: #00b8d4;
+  --green: #4caf50;
+  --red: #f44336;
+  --orange: #ff9800;
+  --yellow: #ffeb3b;
+  --purple: #bb86fc;
+  --font: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.header {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.header h1 {
+  font-size: 16px;
+  color: var(--accent);
+  letter-spacing: 3px;
+  font-weight: 400;
+}
+.header .subtitle {
+  color: var(--text2);
+  font-size: 11px;
+}
+.header .stats {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  font-size: 11px;
+}
+.header .stat-val { color: var(--accent); font-weight: bold; }
+
+.tabs {
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  padding: 0 16px;
+}
+.tab {
+  padding: 10px 20px;
+  color: var(--text2);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+  font-family: var(--font);
+  font-size: 12px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.content { padding: 20px 24px; max-width: 1400px; }
+
+.panel {
+  display: none;
+}
+.panel.active { display: block; }
+
+/* Cards */
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+.card-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card-header h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.card-body { padding: 16px; }
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--text2);
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(0, 229, 255, 0.03); }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-network { background: #1a237e; color: #64b5f6; }
+.badge-social { background: #311b92; color: #b388ff; }
+.badge-storage { background: #1b5e20; color: #81c784; }
+.badge-cloud { background: #e65100; color: #ffb74d; }
+.badge-cicd { background: #263238; color: #80cbc4; }
+.badge-industrial { background: #4a148c; color: #ce93d8; }
+.badge-radio { background: #880e4f; color: #f48fb1; }
+.badge-blockchain { background: #f57f17; color: #fff176; }
+.badge-steganography { background: #004d40; color: #80cbc4; }
+.badge-identity { background: #bf360c; color: #ffab91; }
+.badge-packages { background: #33691e; color: #aed581; }
+.badge-os-level { background: #3e2723; color: #bcaaa4; }
+.badge-enterprise { background: #0d47a1; color: #90caf9; }
+.badge-misc { background: #37474f; color: #b0bec5; }
+.badge-other { background: #37474f; color: #b0bec5; }
+
+.badge-enabled { background: #1b5e20; color: #81c784; }
+.badge-disabled { background: #b71c1c; color: #ef9a9a; }
+
+/* Buttons */
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg3);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary {
+  background: var(--accent2);
+  color: var(--bg);
+  border-color: var(--accent2);
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--accent); border-color: var(--accent); }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: var(--red); color: #fff; }
+.btn-sm { padding: 3px 8px; font-size: 11px; }
+
+/* Forms */
+.form-group {
+  margin-bottom: 12px;
+}
+.form-group label {
+  display: block;
+  color: var(--text2);
+  font-size: 11px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+input, select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+}
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+input[type="password"] {
+  letter-spacing: 2px;
+}
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 80px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-header h3 { font-size: 14px; }
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 18px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Search/filter */
+.search-bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.search-bar input {
+  max-width: 300px;
+}
+.filter-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text2);
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.pill:hover, .pill.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 229, 255, 0.08);
+}
+
+/* Grid */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* RAID visual */
+.raid-visual {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  height: 100px;
+  margin: 12px 0;
+}
+.raid-disk {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text2);
+  position: relative;
+  overflow: hidden;
+}
+.raid-disk .fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 229, 255, 0.15);
+  transition: height 0.3s;
+}
+.raid-disk .label {
+  position: relative;
+  z-index: 1;
+}
+
+/* Credential lock icon */
+.lock { color: var(--orange); }
+.unlock { color: var(--green); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  background: var(--bg2);
+  border: 1px solid var(--green);
+  border-radius: 4px;
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 12px;
+  z-index: 200;
+  animation: slideIn 0.2s ease;
+}
+.toast.error { border-color: var(--red); color: var(--red); }
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text2); }
+
+/* Overview stat cards */
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 20px;
+  text-align: center;
+}
+.stat-card .number {
+  font-size: 32px;
+  font-weight: bold;
+  color: var(--accent);
+}
+.stat-card .label {
+  font-size: 11px;
+  color: var(--text2);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>&#9655; PICARD</h1>
+  <span class="subtitle">Protocol-Introspecting Chunk Adapter for Resilient Data</span>
+  <div class="stats">
+    <span>Adapters: <span class="stat-val" id="hdr-total">--</span></span>
+    <span>Configured: <span class="stat-val" id="hdr-configured">--</span></span>
+    <span>Enabled: <span class="stat-val" id="hdr-enabled">--</span></span>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-panel="overview">Overview</button>
+  <button class="tab" data-panel="adapters">Adapters</button>
+  <button class="tab" data-panel="credentials">Credentials</button>
+  <button class="tab" data-panel="raid">RAID</button>
+  <button class="tab" data-panel="files">Files</button>
+  <button class="tab" data-panel="config">Config</button>
+</div>
+
+<div class="content">
+  <!-- Overview -->
+  <div class="panel active" id="panel-overview">
+    <div class="grid-3" id="overview-stats" style="margin-bottom:24px"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><h3>Attack Surface by Category</h3></div>
+        <div class="card-body" id="category-chart"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Configured Adapters</h3></div>
+        <div class="card-body" id="configured-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Adapters -->
+  <div class="panel" id="panel-adapters">
+    <div class="search-bar">
+      <input type="text" id="adapter-search" placeholder="Search adapters...">
+      <div class="filter-pills" id="category-filters"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>Adapter Registry</h3>
+        <span id="adapter-count" style="color:var(--text2);font-size:11px;margin-left:auto"></span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Category</th>
+              <th>Parameters</th>
+              <th>Status</th>
+              <th style="width:140px"></th>
+            </tr>
+          </thead>
+          <tbody id="adapter-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credentials -->
+  <div class="panel" id="panel-credentials">
+    <div class="card">
+      <div class="card-header">
+        <h3>Credential Manager</h3>
+        <span style="color:var(--text2);font-size:11px;margin-left:auto">
+          Credentials are stored in the OS keyring, referenced by config.toml
+        </span>
+      </div>
+      <div class="card-body" id="credentials-body">
+        <p style="color:var(--text2)">Select a configured adapter to manage its credentials.</p>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Configured Adapters with Credential Fields</h3></div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>Adapter</th>
+              <th>Type</th>
+              <th>Credential Fields</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="cred-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- RAID -->
+  <div class="panel" id="panel-raid">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><h3>RAID Configuration</h3></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>RAID Level</label>
+            <select id="raid-level">
+              <option value="raid0">RAID 0 - Striping</option>
+              <option value="raid1">RAID 1 - Mirroring</option>
+              <option value="raid5">RAID 5 - Parity</option>
+              <option value="raid10">RAID 10 - Striped Mirrors</option>
+            </select>
+          </div>
+          <div id="raid-desc" style="color:var(--text2);font-size:12px;margin:12px 0"></div>
+          <div class="form-group">
+            <label>Adapters in Pool</label>
+            <div id="raid-adapter-list" style="max-height:200px;overflow-y:auto"></div>
+          </div>
+          <div id="raid-mirror-group" style="display:none">
+            <div class="form-group">
+              <label>Mirror Count</label>
+              <input type="number" id="raid-mirror-count" value="2" min="2" max="10" style="width:80px">
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Pool Visualization</h3></div>
+        <div class="card-body">
+          <div id="raid-visual" class="raid-visual"></div>
+          <div id="raid-info" style="color:var(--text2);font-size:12px;margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>RAID Levels Reference</h3></div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead><tr><th>Level</th><th>Strategy</th><th>Min Adapters</th><th>Redundancy</th><th>Storage Overhead</th></tr></thead>
+          <tbody>
+            <tr><td style="color:var(--accent)">RAID 0</td><td>Striping</td><td>2</td><td>None</td><td>0%</td></tr>
+            <tr><td style="color:var(--accent)">RAID 1</td><td>Mirroring</td><td>2</td><td>Full</td><td>(N-1)x</td></tr>
+            <tr><td style="color:var(--accent)">RAID 5</td><td>Striping + Parity</td><td>3</td><td>1 adapter failure</td><td>1/N</td></tr>
+            <tr><td style="color:var(--accent)">RAID 10</td><td>Striped Mirrors</td><td>4 (even)</td><td>1 per mirror group</td><td>50%</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Files -->
+  <div class="panel" id="panel-files">
+    <div class="card">
+      <div class="card-header">
+        <h3>Stored Files</h3>
+        <span style="color:var(--text2);font-size:11px;margin-left:auto">Virtual filesystem mount-points</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <table>
+          <thead>
+            <tr>
+              <th>Virtual Path</th>
+              <th>Size</th>
+              <th>Blocks</th>
+              <th>Chunks</th>
+              <th>Adapters</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="files-table"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Config -->
+  <div class="panel" id="panel-config">
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><h3>General Settings</h3></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label>Block Size (bytes)</label>
+            <input type="number" id="cfg-block-size" value="65536" min="1">
+          </div>
+          <div class="form-group">
+            <label>Index Database Path</label>
+            <input type="text" id="cfg-index-db">
+          </div>
+          <div class="form-group">
+            <label>Config File</label>
+            <input type="text" id="cfg-path" disabled style="opacity:0.5">
+          </div>
+          <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Quick Setup</h3></div>
+        <div class="card-body">
+          <p style="color:var(--text2);margin-bottom:16px">
+            Initialize default configuration or reset to defaults.
+          </p>
+          <button class="btn" onclick="initConfig()" id="init-btn">Initialize Config</button>
+          <div style="margin-top:16px;color:var(--text2);font-size:11px">
+            Creates <code>~/.picard/config.toml</code> with default settings.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Configure Adapter Modal -->
+<div class="modal-overlay" id="modal-configure">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Configure Adapter</h3>
+      <button class="modal-close" onclick="closeModal('modal-configure')">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-configure')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAdapter()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Credential Modal -->
+<div class="modal-overlay" id="modal-credential">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="cred-modal-title">Set Credential</h3>
+      <button class="modal-close" onclick="closeModal('modal-credential')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Adapter</label>
+        <input type="text" id="cred-adapter" disabled>
+      </div>
+      <div class="form-group">
+        <label>Parameter</label>
+        <input type="text" id="cred-param" disabled>
+      </div>
+      <div class="form-group">
+        <label>Value</label>
+        <input type="password" id="cred-value" placeholder="Enter credential value...">
+      </div>
+      <div style="color:var(--text2);font-size:11px;margin-top:8px">
+        Stored securely in the OS keyring. Config.toml will reference it as
+        <code>keyring:picard/&lt;adapter&gt;/&lt;param&gt;</code>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-credential')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCredential()">Save to Keyring</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let registryData = [];
+let configuredData = [];
+let statsData = {};
+let currentFilter = 'all';
+let editingAdapter = null;
+
+// ── Init ──
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => switchTab(tab.dataset.panel));
+  });
+  loadAll();
+});
+
+function switchTab(panel) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelector(`[data-panel="${panel}"]`).classList.add('active');
+  document.getElementById(`panel-${panel}`).classList.add('active');
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadRegistry(), loadConfigured(), loadConfig(), loadFiles()]);
+  renderOverview();
+  renderAdapters();
+  renderCredentials();
+  renderRaid();
+}
+
+// ── API ──
+
+async function api(path, opts = {}) {
+  const res = await fetch(`/api${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+async function loadStats() {
+  statsData = await api('/stats');
+  document.getElementById('hdr-total').textContent = statsData.total_adapters;
+  document.getElementById('hdr-configured').textContent = statsData.configured_adapters;
+  document.getElementById('hdr-enabled').textContent = statsData.enabled_adapters;
+}
+
+async function loadRegistry() {
+  registryData = await api('/adapters/registry');
+}
+
+async function loadConfigured() {
+  configuredData = await api('/adapters/configured');
+}
+
+async function loadConfig() {
+  const cfg = await api('/config');
+  document.getElementById('cfg-block-size').value = cfg.block_size;
+  document.getElementById('cfg-index-db').value = cfg.index_db;
+  document.getElementById('cfg-path').value = cfg.config_path;
+}
+
+async function loadFiles() {
+  try {
+    const files = await api('/files');
+    renderFiles(files);
+  } catch { renderFiles([]); }
+}
+
+// ── Render Overview ──
+
+function renderOverview() {
+  const cats = statsData.categories || {};
+  const catEntries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+
+  document.getElementById('overview-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="number">${statsData.total_adapters}</div>
+      <div class="label">Protocol Adapters</div>
+    </div>
+    <div class="stat-card">
+      <div class="number">${catEntries.length}</div>
+      <div class="label">Attack Categories</div>
+    </div>
+    <div class="stat-card">
+      <div class="number">${statsData.block_size.toLocaleString()}</div>
+      <div class="label">Block Size (bytes)</div>
+    </div>
+  `;
+
+  const maxCount = Math.max(...catEntries.map(([, c]) => c));
+  document.getElementById('category-chart').innerHTML = catEntries.map(([cat, count]) => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+      <span class="badge badge-${cat}" style="min-width:90px;text-align:center">${cat}</span>
+      <div style="flex:1;height:16px;background:var(--bg);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${(count/maxCount*100).toFixed(0)}%;background:var(--accent2);border-radius:2px;transition:width 0.3s"></div>
+      </div>
+      <span style="color:var(--accent);min-width:24px;text-align:right">${count}</span>
+    </div>
+  `).join('');
+
+  if (configuredData.length === 0) {
+    document.getElementById('configured-list').innerHTML =
+      '<p style="color:var(--text2)">No adapters configured yet. Go to the Adapters tab to add some.</p>';
+  } else {
+    document.getElementById('configured-list').innerHTML = configuredData.map(a => `
+      <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+        <span class="badge ${a.enabled ? 'badge-enabled' : 'badge-disabled'}">${a.enabled ? 'ON' : 'OFF'}</span>
+        <span style="color:var(--accent)">${a.name}</span>
+        <span style="color:var(--text2);margin-left:auto">${a.type}</span>
+      </div>
+    `).join('');
+  }
+}
+
+// ── Render Adapters ──
+
+function renderAdapters() {
+  const categories = [...new Set(registryData.map(a => a.category))].sort();
+  const filtersEl = document.getElementById('category-filters');
+  filtersEl.innerHTML = `<span class="pill ${currentFilter === 'all' ? 'active' : ''}" onclick="filterAdapters('all')">all</span>` +
+    categories.map(c => `<span class="pill ${currentFilter === c ? 'active' : ''}" onclick="filterAdapters('${c}')">${c}</span>`).join('');
+
+  const search = (document.getElementById('adapter-search').value || '').toLowerCase();
+  let filtered = registryData;
+  if (currentFilter !== 'all') filtered = filtered.filter(a => a.category === currentFilter);
+  if (search) filtered = filtered.filter(a => a.type.includes(search) || a.class.includes(search));
+
+  document.getElementById('adapter-count').textContent = `${filtered.length} / ${registryData.length}`;
+
+  const configuredNames = new Set(configuredData.map(c => c.type));
+
+  document.getElementById('adapter-table').innerHTML = filtered.map(a => {
+    const isConfigured = configuredNames.has(a.type);
+    const credParams = a.params.filter(p => p.is_credential);
+    const reqParams = a.params.filter(p => p.required);
+    return `
+      <tr>
+        <td style="color:var(--accent);font-weight:600">${a.type}</td>
+        <td><span class="badge badge-${a.category}">${a.category}</span></td>
+        <td>
+          ${a.params.length === 0 ? '<span style="color:var(--text2)">none</span>' :
+            a.params.map(p =>
+              `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${p.name}${p.required ? '*' : ''}</span>`
+            ).join(', ')}
+        </td>
+        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;")})'>${isConfigured ? 'Edit' : 'Add'}</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('adapter-search').addEventListener('input', renderAdapters);
+
+function filterAdapters(cat) {
+  currentFilter = cat;
+  renderAdapters();
+}
+
+// ── Configure Modal ──
+
+function openConfigure(adapter) {
+  editingAdapter = adapter;
+  const existing = configuredData.find(c => c.type === adapter.type);
+  const name = existing ? existing.name : adapter.type;
+  const enabled = existing ? existing.enabled : true;
+  const params = existing ? existing.params : {};
+
+  document.getElementById('modal-title').textContent = `Configure: ${adapter.type}`;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Instance Name</label>
+      <input type="text" id="cfg-name" value="${name}">
+    </div>
+    <div class="form-group">
+      <label>Enabled</label>
+      <select id="cfg-enabled">
+        <option value="true" ${enabled ? 'selected' : ''}>Yes</option>
+        <option value="false" ${!enabled ? 'selected' : ''}>No</option>
+      </select>
+    </div>
+    ${adapter.params.length > 0 ? '<hr style="border-color:var(--border);margin:16px 0"><h4 style="font-size:12px;color:var(--text2);margin-bottom:12px">PARAMETERS</h4>' : ''}
+    ${adapter.params.map(p => `
+      <div class="form-group">
+        <label>${p.name} ${p.required ? '<span style="color:var(--red)">*</span>' : ''} ${p.is_credential ? '<span class="lock">&#128274;</span>' : ''}</label>
+        <input type="${p.is_credential ? 'password' : 'text'}"
+               id="param-${p.name}"
+               value="${params[p.name] || (p.default && !p.required ? p.default.replace(/^'|'$/g, '') : '')}"
+               placeholder="${p.is_credential ? 'Stored in OS keyring' : (p.default || '')}">
+        ${p.annotation ? `<span style="color:var(--text2);font-size:10px">${p.annotation}</span>` : ''}
+      </div>
+    `).join('')}
+  `;
+
+  document.getElementById('modal-configure').classList.add('active');
+}
+
+async function saveAdapter() {
+  const name = document.getElementById('cfg-name').value.trim();
+  const enabled = document.getElementById('cfg-enabled').value === 'true';
+  if (!name) { toast('Name is required', true); return; }
+
+  const params = {};
+  editingAdapter.params.forEach(p => {
+    const val = document.getElementById(`param-${p.name}`).value;
+    if (val) params[p.name] = val;
+  });
+
+  try {
+    // Store credential params in keyring
+    for (const p of editingAdapter.params) {
+      if (p.is_credential && params[p.name] && !params[p.name].startsWith('keyring:') && params[p.name] !== '***') {
+        await api('/credentials', {
+          method: 'POST',
+          body: { adapter_name: name, param_name: p.name, value: params[p.name] },
+        });
+        params[p.name] = `keyring:picard/${name}/${p.name}`;
+      }
+    }
+
+    await api('/adapters/configure', {
+      method: 'POST',
+      body: { name, type: editingAdapter.type, enabled, params },
+    });
+    closeModal('modal-configure');
+    toast(`Adapter "${name}" saved`);
+    await Promise.all([loadConfigured(), loadStats()]);
+    renderOverview();
+    renderAdapters();
+    renderCredentials();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ── Credentials ──
+
+function renderCredentials() {
+  const rows = [];
+  for (const cfg of configuredData) {
+    const reg = registryData.find(r => r.type === cfg.type);
+    if (!reg) continue;
+    const credFields = reg.params.filter(p => p.is_credential);
+    if (credFields.length === 0) continue;
+    rows.push({ cfg, credFields });
+  }
+
+  if (rows.length === 0) {
+    document.getElementById('cred-table').innerHTML =
+      '<tr><td colspan="4" style="color:var(--text2);text-align:center;padding:20px">No configured adapters with credential fields.</td></tr>';
+    return;
+  }
+
+  document.getElementById('cred-table').innerHTML = rows.map(({ cfg, credFields }) => `
+    <tr>
+      <td style="color:var(--accent)">${cfg.name}</td>
+      <td>${cfg.type}</td>
+      <td>${credFields.map(f => {
+        const hasValue = cfg.params[f.name] && (cfg.params[f.name] === '***' || cfg.params[f.name].startsWith('keyring:'));
+        return `<span style="color:${hasValue ? 'var(--green)' : 'var(--orange)'}">${hasValue ? '&#9679;' : '&#9675;'} ${f.name}</span>`;
+      }).join('&nbsp;&nbsp;')}</td>
+      <td style="text-align:right">
+        ${credFields.map(f => `<button class="btn btn-sm" onclick="openCredential('${cfg.name}','${f.name}')">Set ${f.name}</button>`).join(' ')}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openCredential(adapterName, paramName) {
+  document.getElementById('cred-adapter').value = adapterName;
+  document.getElementById('cred-param').value = paramName;
+  document.getElementById('cred-value').value = '';
+  document.getElementById('cred-modal-title').textContent = `Set Credential: ${adapterName} / ${paramName}`;
+  document.getElementById('modal-credential').classList.add('active');
+}
+
+async function saveCredential() {
+  const adapterName = document.getElementById('cred-adapter').value;
+  const paramName = document.getElementById('cred-param').value;
+  const value = document.getElementById('cred-value').value;
+  if (!value) { toast('Value is required', true); return; }
+
+  try {
+    await api('/credentials', {
+      method: 'POST',
+      body: { adapter_name: adapterName, param_name: paramName, value },
+    });
+    closeModal('modal-credential');
+    toast(`Credential saved to keyring`);
+    await loadConfigured();
+    renderCredentials();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ── RAID ──
+
+const raidDescs = {
+  raid0: 'Round-robin striping across adapters. Maximum throughput, zero redundancy. Losing any adapter loses data.',
+  raid1: 'Mirror every chunk to all adapters. Full redundancy. Storage = N copies.',
+  raid5: 'Stripe with single parity block per stripe. Survives one adapter failure. ~1/N storage overhead.',
+  raid10: 'Striped mirror groups. Each group mirrors data, groups are striped. Requires even adapter count.',
+};
+
+function renderRaid() {
+  const levelEl = document.getElementById('raid-level');
+  levelEl.addEventListener('change', updateRaidVis);
+
+  const listEl = document.getElementById('raid-adapter-list');
+  if (configuredData.length === 0) {
+    listEl.innerHTML = '<span style="color:var(--text2)">Configure adapters first to build a RAID pool.</span>';
+  } else {
+    listEl.innerHTML = configuredData.map(a => `
+      <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">
+        <input type="checkbox" class="raid-adapter-cb" value="${a.name}" ${a.enabled ? 'checked' : ''}>
+        <span style="color:var(--accent)">${a.name}</span>
+        <span style="color:var(--text2);font-size:11px">(${a.type})</span>
+      </label>
+    `).join('');
+  }
+
+  document.querySelectorAll('.raid-adapter-cb').forEach(cb => cb.addEventListener('change', updateRaidVis));
+  updateRaidVis();
+}
+
+function updateRaidVis() {
+  const level = document.getElementById('raid-level').value;
+  document.getElementById('raid-desc').textContent = raidDescs[level] || '';
+
+  const mirrorGroup = document.getElementById('raid-mirror-group');
+  mirrorGroup.style.display = (level === 'raid1' || level === 'raid10') ? 'block' : 'none';
+
+  const selected = [...document.querySelectorAll('.raid-adapter-cb:checked')].map(cb => cb.value);
+  const vis = document.getElementById('raid-visual');
+  const info = document.getElementById('raid-info');
+
+  if (selected.length < 2) {
+    vis.innerHTML = '<span style="color:var(--text2)">Select at least 2 adapters</span>';
+    info.textContent = '';
+    return;
+  }
+
+  let labels = [];
+  if (level === 'raid0') {
+    labels = selected.map((n, i) => ({ name: n, role: `D${i}`, color: 'var(--accent)' }));
+  } else if (level === 'raid1') {
+    labels = selected.map(n => ({ name: n, role: 'Mirror', color: 'var(--green)' }));
+  } else if (level === 'raid5') {
+    labels = selected.map((n, i) => ({
+      name: n,
+      role: i === selected.length - 1 ? 'Parity' : `D${i}`,
+      color: i === selected.length - 1 ? 'var(--orange)' : 'var(--accent)',
+    }));
+  } else if (level === 'raid10') {
+    labels = selected.map((n, i) => ({
+      name: n,
+      role: `G${Math.floor(i / 2)}-M${i % 2}`,
+      color: i % 2 === 0 ? 'var(--accent)' : 'var(--green)',
+    }));
+  }
+
+  vis.innerHTML = labels.map(l => `
+    <div class="raid-disk">
+      <div class="fill" style="height:60%"></div>
+      <div class="label">
+        <div style="color:${l.color};font-weight:bold;font-size:11px">${l.role}</div>
+        <div style="font-size:9px;margin-top:4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${l.name}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const minReq = { raid0: 2, raid1: 2, raid5: 3, raid10: 4 }[level];
+  const valid = selected.length >= minReq && (level !== 'raid10' || selected.length % 2 === 0);
+  const storageNote = {
+    raid0: `${selected.length} adapters striped, 0% overhead`,
+    raid1: `${selected.length} mirrors, ${((selected.length - 1) * 100).toFixed(0)}% overhead`,
+    raid5: `${selected.length - 1} data + 1 parity, ${(100 / selected.length).toFixed(0)}% overhead`,
+    raid10: `${selected.length / 2} mirror groups, 50% overhead`,
+  }[level];
+  info.innerHTML = valid
+    ? `<span style="color:var(--green)">&#10003;</span> Valid configuration: ${storageNote}`
+    : `<span style="color:var(--red)">&#10007;</span> Need at least ${minReq} adapters${level === 'raid10' ? ' (even count)' : ''}`;
+}
+
+// ── Files ──
+
+function renderFiles(files) {
+  const tbody = document.getElementById('files-table');
+  if (files.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2);text-align:center;padding:20px">No files stored yet. Use <code>picard put</code> to scatter a file.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = files.map(f => `
+    <tr>
+      <td style="color:var(--accent)">${f.path}</td>
+      <td>${formatBytes(f.original_size)}</td>
+      <td>${f.total_blocks}</td>
+      <td>${f.total_chunks}</td>
+      <td>${f.adapters.map(a => `<span class="badge badge-${getCat(a)}" style="margin:1px">${a}</span>`).join(' ')}</td>
+      <td style="color:var(--text2)">${f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Config ──
+
+async function saveConfig() {
+  try {
+    await api('/config', {
+      method: 'POST',
+      body: {
+        block_size: parseInt(document.getElementById('cfg-block-size').value),
+        index_db: document.getElementById('cfg-index-db').value,
+      },
+    });
+    toast('Configuration saved');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function initConfig() {
+  try {
+    await api('/config/init', { method: 'POST' });
+    toast('Config initialized');
+    await loadConfig();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Helpers ──
+
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KiB';
+  return (b/1024/1024).toFixed(1) + ' MiB';
+}
+function getCat(type) {
+  const r = registryData.find(a => a.type === type);
+  return r ? r.category : 'other';
+}
+function toast(msg, isError = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+</script>
+</body>
+</html>

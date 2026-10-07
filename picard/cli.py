@@ -477,5 +477,16 @@ def init() -> None:
         raise typer.Exit(1)
 
 
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address."),
+    port: int = typer.Option(8471, "--port", "-p", help="Port."),
+) -> None:
+    """Launch the PICARD web dashboard."""
+    from picard.web import serve
+    typer.echo(f"PICARD dashboard → http://{host}:{port}")
+    serve(host=host, port=port)
+
+
 if __name__ == "__main__":
     app()
