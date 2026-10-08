@@ -124,6 +124,8 @@ class Index:
                 self._encrypted = True
 
         self._conn.row_factory = sqlite3.Row
+        if self._db_path != ":memory:":
+            self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         for migration in _MIGRATIONS:
             try:
@@ -226,7 +228,7 @@ class Index:
     def get_manifest_by_path(self, path: str) -> Manifest | None:
         """Load the manifest for a given virtual path."""
         row = self._conn.execute(
-            "SELECT * FROM manifests WHERE path=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM manifests WHERE path=? ORDER BY version DESC LIMIT 1",
             (path,),
         ).fetchone()
         if row is None:
@@ -260,35 +262,36 @@ class Index:
 
     def _row_to_manifest(self, row: sqlite3.Row) -> Manifest:
         mid = row["manifest_id"]
-        block_rows = self._conn.execute(
-            "SELECT * FROM blocks WHERE manifest_id=? ORDER BY block_index", (mid,)
+        joined = self._conn.execute(
+            "SELECT b.block_index, b.digest, b.size_bytes, "
+            "c.chunk_index, c.adapter_name, c.location, c.status, "
+            "c.size_bytes AS c_size, c.digest AS c_digest "
+            "FROM blocks b LEFT JOIN chunks c "
+            "ON b.manifest_id = c.manifest_id AND b.block_index = c.block_index "
+            "WHERE b.manifest_id=? ORDER BY b.block_index, c.chunk_index",
+            (mid,),
         ).fetchall()
-        blocks: list[BlockRecord] = []
-        for br in block_rows:
-            chunk_rows = self._conn.execute(
-                "SELECT * FROM chunks WHERE manifest_id=? AND block_index=? "
-                "ORDER BY chunk_index",
-                (mid, br["block_index"]),
-            ).fetchall()
-            chunks = [
-                ChunkRecord(
-                    chunk_index=cr["chunk_index"],
-                    adapter_name=cr["adapter_name"],
-                    location=cr["location"],
-                    status=ChunkStatus(cr["status"]),
-                    size_bytes=cr["size_bytes"],
-                    digest=cr["digest"],
+        blocks_map: dict[int, BlockRecord] = {}
+        for jr in joined:
+            bi = jr["block_index"]
+            if bi not in blocks_map:
+                blocks_map[bi] = BlockRecord(
+                    block_index=bi,
+                    digest=jr["digest"],
+                    size_bytes=jr["size_bytes"],
                 )
-                for cr in chunk_rows
-            ]
-            blocks.append(
-                BlockRecord(
-                    block_index=br["block_index"],
-                    digest=br["digest"],
-                    size_bytes=br["size_bytes"],
-                    chunks=chunks,
+            if jr["chunk_index"] is not None:
+                blocks_map[bi].chunks.append(
+                    ChunkRecord(
+                        chunk_index=jr["chunk_index"],
+                        adapter_name=jr["adapter_name"],
+                        location=jr["location"],
+                        status=ChunkStatus(jr["status"]),
+                        size_bytes=jr["c_size"],
+                        digest=jr["c_digest"],
+                    )
                 )
-            )
+        blocks = list(blocks_map.values())
         def _col(name: str, default=""):
             try:
                 return row[name]

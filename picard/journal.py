@@ -112,10 +112,31 @@ class Journal:
             for r in rows
         ]
 
-    def cleanup_committed(self, max_age_hours: int = 24) -> int:
+    def cleanup_committed(self, max_age_hours: int = 0) -> int:
+        """Remove completed journal entries older than *max_age_hours*.
+
+        Default of 0 cleans up all committed/rolled-back entries immediately.
+        Pass a positive value to retain recent entries for auditing.
+        """
+        if max_age_hours <= 0:
+            with self._conn:
+                cur = self._conn.execute(
+                    "DELETE FROM journal_entries WHERE state IN (?, ?)",
+                    (JournalState.COMMITTED.value, JournalState.ROLLED_BACK.value),
+                )
+                return cur.rowcount
+        from datetime import timedelta
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        ).isoformat()
         with self._conn:
             cur = self._conn.execute(
-                "DELETE FROM journal_entries WHERE state IN (?, ?)",
-                (JournalState.COMMITTED.value, JournalState.ROLLED_BACK.value),
+                "DELETE FROM journal_entries WHERE state IN (?, ?) "
+                "AND created_at < ?",
+                (
+                    JournalState.COMMITTED.value,
+                    JournalState.ROLLED_BACK.value,
+                    cutoff,
+                ),
             )
             return cur.rowcount

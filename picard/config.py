@@ -25,6 +25,9 @@ DEFAULT_INDEX_DB = str(DEFAULT_CONFIG_DIR / "index.db")
 DEFAULT_BLOCK_SIZE = 65536
 
 
+VALID_BROWSER_MODES = frozenset({"api", "headless", "headed"})
+
+
 @dataclass
 class AdapterEntry:
     """One ``[[adapters]]`` stanza from config.toml."""
@@ -35,6 +38,10 @@ class AdapterEntry:
     params: dict[str, Any] = field(default_factory=dict)
     tor_proxy: bool = False
     browser_mode: str = "api"
+
+    def __post_init__(self) -> None:
+        if self.browser_mode not in VALID_BROWSER_MODES:
+            self.browser_mode = "api"
 
 
 @dataclass

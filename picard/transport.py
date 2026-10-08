@@ -49,13 +49,31 @@ def configure(adapters: dict[str, Adapter], secret: str = "") -> None:
     _secret = secret
 
 
-def _verify_hmac(request_body: bytes, signature: str | None) -> bool:
+_HMAC_MAX_AGE = 300
+
+def _verify_hmac(
+    request_body: bytes,
+    signature: str | None,
+    timestamp: str | None = None,
+    path: str = "",
+) -> bool:
     if not _secret:
         return True
     if not signature:
         return False
+    if timestamp:
+        try:
+            ts = float(timestamp)
+            if abs(time.time() - ts) > _HMAC_MAX_AGE:
+                return False
+        except (ValueError, TypeError):
+            return False
+    msg = path.encode() + b"\n"
+    if timestamp:
+        msg += timestamp.encode() + b"\n"
+    msg += request_body
     expected = hmac.new(
-        _secret.encode(), request_body, hashlib.sha256,
+        _secret.encode(), msg, hashlib.sha256,
     ).hexdigest()
     return hmac.compare_digest(expected, signature)
 
@@ -72,9 +90,10 @@ async def write_chunk(
     req: WriteRequest,
     request: Request,
     x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
 ):
     body = await request.body()
-    if not _verify_hmac(body, x_signature):
+    if not _verify_hmac(body, x_signature, x_timestamp, "/transport/v1/write_chunk"):
         raise HTTPException(status_code=403, detail="invalid signature")
     adapter = _get_adapter(req.adapter)
     ref = await adapter.write_chunk(req.data)
@@ -86,9 +105,10 @@ async def read_chunk(
     req: ReadRequest,
     request: Request,
     x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
 ):
     body = await request.body()
-    if not _verify_hmac(body, x_signature):
+    if not _verify_hmac(body, x_signature, x_timestamp, "/transport/v1/read_chunk"):
         raise HTTPException(status_code=403, detail="invalid signature")
     adapter = _get_adapter(req.adapter)
     ref = StoredChunkRef(adapter_name=req.adapter, location=req.ref)
@@ -101,9 +121,10 @@ async def delete_chunk(
     req: DeleteRequest,
     request: Request,
     x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
 ):
     body = await request.body()
-    if not _verify_hmac(body, x_signature):
+    if not _verify_hmac(body, x_signature, x_timestamp, "/transport/v1/delete_chunk"):
         raise HTTPException(status_code=403, detail="invalid signature")
     adapter = _get_adapter(req.adapter)
     ref = StoredChunkRef(adapter_name=req.adapter, location=req.ref)
@@ -116,9 +137,10 @@ async def list_chunks(
     req: ListRequest,
     request: Request,
     x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
 ):
     body = await request.body()
-    if not _verify_hmac(body, x_signature):
+    if not _verify_hmac(body, x_signature, x_timestamp, "/transport/v1/list_chunks"):
         raise HTTPException(status_code=403, detail="invalid signature")
     adapter = _get_adapter(req.adapter)
     refs = await adapter.list_chunks(req.manifest_id)

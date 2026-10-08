@@ -59,6 +59,7 @@ _UI_HTML = (Path(__file__).parent / "ui.html").read_text(encoding="utf-8")
 
 _orch: Orchestrator | None = None
 _index: Index | None = None
+_fallback_index: Index | None = None
 
 
 def _set_state(orch: Orchestrator | None, index: Index | None) -> None:
@@ -68,17 +69,24 @@ def _set_state(orch: Orchestrator | None, index: Index | None) -> None:
 
 
 def _ensure_index() -> Index:
+    global _fallback_index
     if _index is not None:
         return _index
+    if _fallback_index is not None:
+        return _fallback_index
     cfg = load_config()
     db_path = cfg.index_db
     if db_path.startswith("~"):
         db_path = str(Path(db_path).expanduser())
     pp = os.environ.get("PICARD_INDEX_PASSPHRASE") or None
-    return Index(db_path, passphrase=pp)
+    _fallback_index = Index(db_path, passphrase=pp)
+    return _fallback_index
 
 
 # ── models ────────────────────────────────────────────────────────────────
+
+_VALID_BROWSER_MODES = {"api", "headless", "headed"}
+
 
 class AdapterConfigRequest(BaseModel):
     name: str
@@ -87,6 +95,12 @@ class AdapterConfigRequest(BaseModel):
     params: dict[str, Any] = {}
     tor_proxy: bool = False
     browser_mode: str = "api"
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.browser_mode not in _VALID_BROWSER_MODES:
+            raise ValueError(
+                f"browser_mode must be one of {_VALID_BROWSER_MODES}"
+            )
 
 
 class RaidPoolRequest(BaseModel):
@@ -486,25 +500,32 @@ async def storage_health():
             results.append(status)
             continue
         try:
-            from picard.config import resolve_params
-            from picard.registry import instantiate
-            params = resolve_params(entry.params)
-            adapter = instantiate(entry.type, **params)
+            if _orch is not None:
+                adapter = _orch._adapter_map.get(entry.name)
+            else:
+                adapter = None
+            if adapter is None:
+                from picard.config import resolve_params
+                from picard.registry import instantiate
+                params = resolve_params(entry.params)
+                adapter = instantiate(entry.type, **params)
+                needs_close = True
+            else:
+                needs_close = False
             t0 = time.monotonic()
-            refs = await adapter.list()
+            ok = await asyncio.wait_for(adapter.health_check(), timeout=10.0)
             latency = (time.monotonic() - t0) * 1000
-            await adapter.close()
+            if needs_close:
+                await adapter.close()
             status.update({
-                "status": "healthy",
+                "status": "healthy" if ok else "degraded",
                 "latency_ms": round(latency, 1),
-                "chunks": len(refs),
                 "error": None,
             })
         except Exception as e:
             status.update({
                 "status": "error",
                 "latency_ms": None,
-                "chunks": 0,
                 "error": str(e),
             })
         results.append(status)

@@ -6,6 +6,7 @@ and the reverse path: gathering, verifying, reassembling, decrypting.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import math
@@ -46,16 +47,21 @@ class Orchestrator:
         key_ring: KeyRing | None = None,
         block_cache: BlockCache | None = None,
         journal: Journal | None = None,
+        adapter_timeout: float = 30.0,
     ) -> None:
         if not adapters:
             raise ValueError("need at least one adapter")
         self._adapters = list(adapters)
+        self._adapter_map: dict[str, Adapter] = {
+            a.profile().name: a for a in self._adapters
+        }
         self._index = index
         self._block_size = block_size
         self._key_ring = key_ring
         self._block_cache = block_cache
         self._journal = journal
         self._next_adapter: int = 0
+        self._adapter_timeout = adapter_timeout
 
     async def close(self) -> None:
         for adapter in self._adapters:
@@ -102,7 +108,7 @@ class Orchestrator:
                 await self._scatter_block(manifest, bi, plaintext_block, passphrase)
                 if self._journal and jid:
                     self._journal.mark_in_progress(
-                        jid, {"blocks_written": list(range(bi + 1))}
+                        jid, {"last_block": bi}
                     )
 
             if self._journal and jid:
@@ -205,23 +211,29 @@ class Orchestrator:
         try:
             hasher = hashlib.sha256()
             buffer = bytearray()
+            buf_offset = 0
             bi = 0
             total_size = 0
 
             async for chunk_data in stream:
                 buffer.extend(chunk_data)
-                while len(buffer) >= self._block_size:
-                    plaintext_block = bytes(buffer[: self._block_size])
-                    del buffer[: self._block_size]
+                while len(buffer) - buf_offset >= self._block_size:
+                    plaintext_block = bytes(
+                        buffer[buf_offset : buf_offset + self._block_size]
+                    )
+                    buf_offset += self._block_size
                     hasher.update(plaintext_block)
                     total_size += len(plaintext_block)
                     await self._scatter_block(manifest, bi, plaintext_block, passphrase)
                     bi += 1
                     if self._journal and jid:
                         self._journal.mark_in_progress(
-                            jid, {"blocks_written": list(range(bi))}
+                            jid, {"last_block": bi - 1}
                         )
 
+            if buf_offset > 0:
+                del buffer[:buf_offset]
+                buf_offset = 0
             if buffer:
                 plaintext_block = bytes(buffer)
                 hasher.update(plaintext_block)
@@ -230,7 +242,7 @@ class Orchestrator:
                 bi += 1
                 if self._journal and jid:
                     self._journal.mark_in_progress(
-                        jid, {"blocks_written": list(range(bi))}
+                        jid, {"last_block": bi - 1}
                     )
 
             manifest.original_size = total_size
@@ -482,14 +494,16 @@ class Orchestrator:
         self._index.delete_manifest(manifest.manifest_id)
         return True
 
-    async def tree(self, path: str = "/") -> dict:
+    async def tree(self, path: str = "/", *, max_depth: int = 64) -> dict:
         """Return a nested dict representing the directory tree."""
         children = self._index.list_children(path)
         result: dict = {"path": path, "children": []}
         for child in children:
             m = self._index.get_manifest_by_path(child)
-            if m and m.file_type == "directory":
-                result["children"].append(await self.tree(child))
+            if m and m.file_type == "directory" and max_depth > 0:
+                result["children"].append(
+                    await self.tree(child, max_depth=max_depth - 1)
+                )
             else:
                 result["children"].append({"path": child})
         return result
@@ -650,7 +664,9 @@ class Orchestrator:
             ref = StoredChunkRef(
                 adapter_name=cr.adapter_name, location=cr.location,
             )
-            wire_str = await adapter.read_chunk(ref)
+            wire_str = await asyncio.wait_for(
+                adapter.read_chunk(ref), timeout=self._adapter_timeout
+            )
             if self._key_ring:
                 sub_key = self._key_ring.get_sub_key(cr.adapter_name)
                 encoded = unseal(bytes.fromhex(wire_str), sub_key)
@@ -687,7 +703,9 @@ class Orchestrator:
                 wire_str = wire.hex()
             else:
                 wire_str = encoded
-            ref = await adapter.write_chunk(wire_str)
+            ref = await asyncio.wait_for(
+                adapter.write_chunk(wire_str), timeout=self._adapter_timeout
+            )
             chunk_digest = hashlib.sha256(
                 wire_str.encode() if isinstance(wire_str, str) else wire_str
             ).hexdigest()
@@ -710,7 +728,7 @@ class Orchestrator:
         return adapter
 
     def _adapter_by_name(self, name: str) -> Adapter:
-        for a in self._adapters:
-            if a.profile().name == name:
-                return a
-        raise LookupError(f"no adapter named {name!r}")
+        adapter = self._adapter_map.get(name)
+        if adapter is None:
+            raise LookupError(f"no adapter named {name!r}")
+        return adapter
