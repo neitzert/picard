@@ -410,6 +410,68 @@ class Index:
         ).fetchall()
         return [r["path"] for r in rows]
 
+    def list_children_with_metadata(self, parent_path: str) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT m.path, m.original_size, m.file_type, m.version, "
+            "m.mode, m.mtime "
+            "FROM manifests m "
+            "WHERE m.parent_path = ? AND m.version = ("
+            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+            ") ORDER BY m.path",
+            (parent_path,),
+        ).fetchall()
+        return [
+            {
+                "path": r["path"],
+                "name": r["path"].rsplit("/", 1)[-1],
+                "type": r["file_type"],
+                "size": r["original_size"],
+                "version": r["version"],
+                "mtime": r["mtime"],
+                "mode": r["mode"],
+            }
+            for r in rows
+        ]
+
+    def list_children_rich(self, parent_path: str) -> list[dict]:
+        """Return children with path, file_type, and original_size (latest version)."""
+        rows = self._conn.execute(
+            "SELECT m.path, m.file_type, m.original_size "
+            "FROM manifests m WHERE m.parent_path=? "
+            "AND m.version = ("
+            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+            ") ORDER BY m.path",
+            (parent_path,),
+        ).fetchall()
+        return [
+            {"path": r["path"], "file_type": r["file_type"],
+             "original_size": r["original_size"]}
+            for r in rows
+        ]
+
+    def tree_query(self, root: str = "/", max_depth: int = 64) -> list[dict]:
+        """Return all descendants of *root* up to *max_depth* via recursive CTE."""
+        rows = self._conn.execute(
+            "WITH RECURSIVE descendants(path, file_type, original_size, parent_path, depth) AS ("
+            "  SELECT m.path, m.file_type, m.original_size, m.parent_path, 0 "
+            "  FROM manifests m WHERE m.parent_path=? "
+            "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
+            "  UNION ALL "
+            "  SELECT m.path, m.file_type, m.original_size, m.parent_path, d.depth + 1 "
+            "  FROM manifests m INNER JOIN descendants d ON m.parent_path = d.path "
+            "  WHERE d.file_type = 'directory' AND d.depth < ? "
+            "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
+            ") SELECT path, file_type, original_size, parent_path, depth FROM descendants "
+            "ORDER BY path",
+            (root, max_depth),
+        ).fetchall()
+        return [
+            {"path": r["path"], "file_type": r["file_type"],
+             "original_size": r["original_size"], "parent_path": r["parent_path"],
+             "depth": r["depth"]}
+            for r in rows
+        ]
+
     def du_stats(self) -> tuple[dict[str, dict[str, int]], int]:
         """Return per-adapter chunk stats and file count via SQL aggregates.
 

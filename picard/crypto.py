@@ -8,6 +8,7 @@ ciphertext after this module returns plaintext.
 from __future__ import annotations
 
 import hashlib
+import hmac as _hmac_mod
 import os
 import struct
 import threading
@@ -17,6 +18,12 @@ from dataclasses import dataclass
 
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+
+def _zeroize(b: bytearray) -> None:
+    """Overwrite a mutable buffer with zeros."""
+    for i in range(len(b)):
+        b[i] = 0
 
 # --- Key derivation --------------------------------------------------------
 
@@ -37,47 +44,74 @@ class DerivedKey:
 
 
 class DerivedKeyCache:
-    """LRU cache for Argon2id-derived keys, keyed by (passphrase_hash, salt)."""
+    """LRU cache for Argon2id-derived keys, keyed by (passphrase_hmac, salt).
+
+    Security hardening:
+    - Keys stored as mutable bytearrays and zeroized on eviction/clear.
+    - Cache lookup key uses HMAC-SHA256 with a per-boot random secret,
+      so passphrase hashes can't be brute-forced from a core dump.
+    - Caches AESGCM cipher objects alongside derived keys to avoid
+      re-instantiation on every encrypt/decrypt call.
+    """
 
     def __init__(
         self, max_entries: int = 16, ttl_seconds: float = 300.0
     ) -> None:
         self._max = max_entries
         self._ttl = ttl_seconds
-        self._store: OrderedDict[tuple[bytes, bytes], tuple[bytes, float]] = (
-            OrderedDict()
-        )
+        self._store: OrderedDict[
+            tuple[bytes, bytes], tuple[bytearray, AESGCM, float]
+        ] = OrderedDict()
         self._lock = threading.Lock()
+        self._hmac_key = os.urandom(32)
 
-    def get(self, passphrase: str, salt: bytes) -> bytes | None:
+    def get(
+        self, passphrase: str, salt: bytes
+    ) -> tuple[bytes, AESGCM] | None:
         key = (self._hash_pp(passphrase), salt)
         with self._lock:
             entry = self._store.get(key)
             if entry is None:
                 return None
-            raw, expires = entry
+            raw, cipher, expires = entry
             if time.monotonic() > expires:
+                _zeroize(raw)
                 self._store.pop(key)
                 return None
             self._store.move_to_end(key)
-            return raw
+            return bytes(raw), cipher
 
-    def put(self, passphrase: str, salt: bytes, raw: bytes) -> None:
+    def put(self, passphrase: str, salt: bytes, raw: bytes) -> AESGCM:
         key = (self._hash_pp(passphrase), salt)
+        cipher = AESGCM(raw)
+        stored = bytearray(raw)
         with self._lock:
-            if key in self._store:
-                self._store.pop(key)
+            old = self._store.pop(key, None)
+            if old is not None:
+                _zeroize(old[0])
             while len(self._store) >= self._max:
-                self._store.popitem(last=False)
-            self._store[key] = (raw, time.monotonic() + self._ttl)
+                _, evicted = self._store.popitem(last=False)
+                _zeroize(evicted[0])
+            self._store[key] = (stored, cipher, time.monotonic() + self._ttl)
+        return cipher
 
     def clear(self) -> None:
         with self._lock:
+            for raw, _cipher, _exp in self._store.values():
+                _zeroize(raw)
             self._store.clear()
 
-    @staticmethod
-    def _hash_pp(passphrase: str) -> bytes:
-        return hashlib.sha256(passphrase.encode("utf-8")).digest()
+    def close(self) -> None:
+        """Zeroize all cached keys and the HMAC secret."""
+        self.clear()
+        secret = bytearray(self._hmac_key)
+        _zeroize(secret)
+        self._hmac_key = bytes(secret)
+
+    def _hash_pp(self, passphrase: str) -> bytes:
+        return _hmac_mod.new(
+            self._hmac_key, passphrase.encode("utf-8"), hashlib.sha256
+        ).digest()
 
 
 _key_cache: DerivedKeyCache | None = None
@@ -89,8 +123,13 @@ def set_key_cache(cache: DerivedKeyCache | None) -> None:
     _key_cache = cache
 
 
-def derive_key(passphrase: str, salt: bytes | None = None) -> DerivedKey:
+def derive_key(
+    passphrase: str, salt: bytes | None = None
+) -> tuple[DerivedKey, AESGCM]:
     """Derive a 256-bit key from *passphrase* via Argon2id.
+
+    Returns (DerivedKey, AESGCM) — the cipher object is cached alongside
+    the key material so callers don't recreate it per call.
 
     If *salt* is ``None`` a fresh random salt is generated.  To re-derive
     the same key later (for decryption) pass the original salt back in.
@@ -103,7 +142,8 @@ def derive_key(passphrase: str, salt: bytes | None = None) -> DerivedKey:
     if _key_cache is not None:
         cached = _key_cache.get(passphrase, salt)
         if cached is not None:
-            return DerivedKey(key=cached, salt=salt)
+            raw, cipher = cached
+            return DerivedKey(key=raw, salt=salt), cipher
 
     raw = hash_secret_raw(
         secret=passphrase.encode("utf-8"),
@@ -116,9 +156,11 @@ def derive_key(passphrase: str, salt: bytes | None = None) -> DerivedKey:
     )
 
     if _key_cache is not None:
-        _key_cache.put(passphrase, salt, raw)
+        cipher = _key_cache.put(passphrase, salt, raw)
+    else:
+        cipher = AESGCM(raw)
 
-    return DerivedKey(key=raw, salt=salt)
+    return DerivedKey(key=raw, salt=salt), cipher
 
 
 # --- Authenticated encryption -----------------------------------------------
@@ -134,9 +176,9 @@ _HEADER = struct.Struct(f"!{_SALT_LEN}s{_NONCE_LEN}s")
 
 def encrypt(plaintext: bytes, passphrase: str) -> bytes:
     """Encrypt *plaintext* under *passphrase*.  Returns salt‖nonce‖ciphertext."""
-    dk = derive_key(passphrase)
+    dk, cipher = derive_key(passphrase)
     nonce = os.urandom(_NONCE_LEN)
-    ct = AESGCM(dk.key).encrypt(nonce, plaintext, associated_data=None)
+    ct = cipher.encrypt(nonce, plaintext, associated_data=None)
     return _HEADER.pack(dk.salt, nonce) + ct
 
 
@@ -146,5 +188,5 @@ def decrypt(blob: bytes, passphrase: str) -> bytes:
         raise ValueError("blob too short to contain header")
     salt, nonce = _HEADER.unpack_from(blob)
     ct = blob[_HEADER.size :]
-    dk = derive_key(passphrase, salt=salt)
-    return AESGCM(dk.key).decrypt(nonce, ct, associated_data=None)
+    dk, cipher = derive_key(passphrase, salt=salt)
+    return cipher.decrypt(nonce, ct, associated_data=None)

@@ -14,9 +14,14 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True, slots=True)
+def _zeroize(b: bytearray) -> None:
+    for i in range(len(b)):
+        b[i] = 0
+
+
+@dataclass(slots=True)
 class _CacheEntry:
-    data: bytes
+    data: bytearray
     expires_at: float
 
 
@@ -54,6 +59,7 @@ class BlockCache:
                 self._misses += 1
                 return None
             if time.monotonic() > entry.expires_at:
+                _zeroize(entry.data)
                 self._store.pop(key)
                 self._current_bytes -= len(entry.data)
                 self._evictions += 1
@@ -61,7 +67,7 @@ class BlockCache:
                 return None
             self._store.move_to_end(key)
             self._hits += 1
-            return entry.data
+            return bytes(entry.data)
 
     def put(self, manifest_id: str, block_index: int, data: bytes) -> None:
         key = (manifest_id, block_index)
@@ -69,6 +75,7 @@ class BlockCache:
         with self._lock:
             if key in self._store:
                 old = self._store.pop(key)
+                _zeroize(old.data)
                 self._current_bytes -= len(old.data)
 
             self._evict_expired()
@@ -82,7 +89,9 @@ class BlockCache:
             while self._store and len(self._store) >= self._max_entries:
                 self._evict_lru()
 
-            self._store[key] = _CacheEntry(data=data, expires_at=expires)
+            self._store[key] = _CacheEntry(
+                data=bytearray(data), expires_at=expires
+            )
             self._current_bytes += len(data)
 
     def invalidate(
@@ -93,6 +102,7 @@ class BlockCache:
                 key = (manifest_id, block_index)
                 entry = self._store.pop(key, None)
                 if entry is not None:
+                    _zeroize(entry.data)
                     self._current_bytes -= len(entry.data)
             else:
                 to_remove = [
@@ -100,10 +110,13 @@ class BlockCache:
                 ]
                 for k in to_remove:
                     entry = self._store.pop(k)
+                    _zeroize(entry.data)
                     self._current_bytes -= len(entry.data)
 
     def clear(self) -> None:
         with self._lock:
+            for entry in self._store.values():
+                _zeroize(entry.data)
             self._store.clear()
             self._current_bytes = 0
 
@@ -125,11 +138,13 @@ class BlockCache:
         ]
         for k in to_remove:
             entry = self._store.pop(k)
+            _zeroize(entry.data)
             self._current_bytes -= len(entry.data)
             self._evictions += 1
 
     def _evict_lru(self) -> None:
         if self._store:
             _, entry = self._store.popitem(last=False)
+            _zeroize(entry.data)
             self._current_bytes -= len(entry.data)
             self._evictions += 1

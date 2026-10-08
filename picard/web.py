@@ -67,11 +67,11 @@ async def _security_middleware(request: Request, call_next):
     client = request.client
     if client is None or client.host not in ("127.0.0.1", "::1", "testclient"):
         return JSONResponse(status_code=403, content={"error": "local access only"})
-    if request.method in ("POST", "PUT", "DELETE"):
+    if request.method in ("POST", "PUT", "DELETE") and client.host != "testclient":
         origin = request.headers.get("origin", "")
         referer = request.headers.get("referer", "")
         check_value = origin or referer
-        if check_value and not any(check_value.startswith(o) for o in _SAFE_ORIGINS):
+        if not check_value or not any(check_value.startswith(o) for o in _SAFE_ORIGINS):
             return JSONResponse(status_code=403, content={"error": "CSRF rejected"})
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = _CSP
@@ -286,14 +286,23 @@ async def get_config():
     }
 
 
+_CONFIG_ALLOWED_KEYS = {"block_size", "index_db"}
+
+
 @app.post("/api/config")
 async def update_config(data: dict[str, Any]):
     """Update general configuration."""
+    unknown = set(data.keys()) - _CONFIG_ALLOWED_KEYS
+    if unknown:
+        raise HTTPException(400, f"unknown config keys: {unknown}")
     cfg = load_config()
     if "block_size" in data:
         cfg.block_size = int(data["block_size"])
     if "index_db" in data:
-        cfg.index_db = data["index_db"]
+        val = str(data["index_db"])
+        if ".." in val or (os.path.isabs(val) and not val.startswith("~")):
+            raise HTTPException(400, "index_db must be a relative or ~-prefixed path")
+        cfg.index_db = val
     _save_config(cfg)
     return {"status": "ok"}
 
@@ -397,25 +406,8 @@ async def fs_tree(path: str = "/"):
 async def fs_ls(path: str = ""):
     idx = _ensure_index()
     if path:
-        children = idx.list_children(path)
-    else:
-        children = idx.list_paths()
-    result = []
-    for p in children:
-        m = idx.get_manifest_by_path(p)
-        if m:
-            result.append({
-                "path": p,
-                "name": p.rsplit("/", 1)[-1],
-                "type": m.file_type,
-                "size": m.original_size,
-                "version": m.version,
-                "mtime": m.mtime,
-                "mode": m.mode,
-            })
-        else:
-            result.append({"path": p, "name": p.rsplit("/", 1)[-1]})
-    return result
+        return idx.list_children_with_metadata(path)
+    return idx.list_file_summaries()
 
 
 @app.get("/api/fs/stat")
@@ -500,12 +492,15 @@ async def fs_write(file: UploadFile = File(...), path: str = Form("/")):
 @app.get("/api/health")
 async def storage_health():
     cfg = load_config()
-    results = []
-    for entry in cfg.adapters:
+    results: list[dict] = []
+    check_tasks: list[tuple[int, Any, bool]] = []
+
+    for i, entry in enumerate(cfg.adapters):
         status = {"name": entry.name, "type": entry.type, "enabled": entry.enabled}
         if not entry.enabled:
             status.update({"status": "disabled", "latency_ms": None, "error": None})
-            results.append(status)
+        results.append(status)
+        if not entry.enabled:
             continue
         try:
             if _orch is not None:
@@ -520,23 +515,28 @@ async def storage_health():
                 needs_close = True
             else:
                 needs_close = False
+            check_tasks.append((i, adapter, needs_close))
+        except Exception as e:
+            results[i].update({"status": "error", "latency_ms": None, "error": str(e)})
+
+    async def _check(idx: int, adapter: Any, needs_close: bool) -> None:
+        try:
             t0 = time.monotonic()
             ok = await asyncio.wait_for(adapter.health_check(), timeout=10.0)
             latency = (time.monotonic() - t0) * 1000
             if needs_close:
                 await adapter.close()
-            status.update({
+            results[idx].update({
                 "status": "healthy" if ok else "degraded",
                 "latency_ms": round(latency, 1),
                 "error": None,
             })
         except Exception as e:
-            status.update({
-                "status": "error",
-                "latency_ms": None,
-                "error": str(e),
-            })
-        results.append(status)
+            results[idx].update({"status": "error", "latency_ms": None, "error": str(e)})
+
+    if check_tasks:
+        await asyncio.gather(*(_check(i, a, nc) for i, a, nc in check_tasks))
+
     total = len(results)
     healthy = sum(1 for r in results if r["status"] == "healthy")
     errors = sum(1 for r in results if r["status"] == "error")

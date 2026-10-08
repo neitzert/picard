@@ -47,12 +47,18 @@ def load_master_key(
 
     if keyfile:
         raw = Path(keyfile).read_bytes()
-        key = hashlib.sha256(raw).digest()
         if salt is None:
             salt = os.urandom(_SALT_LEN)
+        hkdf = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=salt,
+            info=b"picard-keyfile-v1",
+        )
+        key = hkdf.derive(raw)
         return MasterKey(key=key, salt=salt, source="keyfile")
 
-    dk = derive_key(passphrase, salt=salt)
+    dk, _cipher = derive_key(passphrase, salt=salt)
     return MasterKey(key=dk.key, salt=dk.salt, source="passphrase")
 
 

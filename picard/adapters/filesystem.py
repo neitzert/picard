@@ -47,14 +47,21 @@ class FilesystemAdapter(Adapter):
         loc = str(p.resolve())
         return StoredChunkRef(adapter_name="filesystem", location=loc)
 
+    def _check_path(self, p: Path) -> None:
+        resolved = p.resolve()
+        if not resolved.is_relative_to(self._root.resolve()):
+            raise ValueError(f"path escapes root: {p}")
+
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         p = Path(ref.location)
+        self._check_path(p)
         if not p.is_file():
             raise FileNotFoundError(f"chunk file not found: {ref.location}")
         return p.read_text(encoding="utf-8")
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         p = Path(ref.location)
+        self._check_path(p)
         if p.is_file():
             p.unlink()
             return True
@@ -76,8 +83,11 @@ class FilesystemAdapter(Adapter):
         import shutil
 
         usage = shutil.disk_usage(self._root)
-        chunk_count = sum(1 for _ in self._root.rglob("*.pchk"))
-        used = sum(f.stat().st_size for f in self._root.rglob("*.pchk"))
+        chunk_count = 0
+        used = 0
+        for f in self._root.rglob("*.pchk"):
+            chunk_count += 1
+            used += f.stat().st_size
         return {
             "used_bytes": used,
             "free_bytes": usage.free,

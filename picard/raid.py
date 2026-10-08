@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Sequence
@@ -122,6 +123,8 @@ class RaidPool(Adapter):
             self._stripe = _StripeState()
             self._stripe_id = 0
             self._parity_refs: list[StoredChunkRef] = []
+            self._stripe_lock = threading.Lock()
+            self._stripe_registry: dict[int, dict] = {}
 
     def profile(self) -> AdapterProfile:
         min_bytes = min(a.profile().max_chunk_bytes for a in self._adapters)
@@ -214,7 +217,9 @@ class RaidPool(Adapter):
         """Write accumulated parity for any partial stripe (RAID 5 only)."""
         if self._level != RaidLevel.RAID5:
             return
-        if not self._stripe.chunks:
+        with self._stripe_lock:
+            has_chunks = bool(self._stripe.chunks)
+        if not has_chunks:
             return
         await self._write_parity()
 
@@ -246,29 +251,37 @@ class RaidPool(Adapter):
     # --- RAID 5 (striping + parity) -----------------------------------------
 
     async def _write_raid5(self, encoded_chunk: str) -> StoredChunkRef:
-        n = len(self._adapters)
-        stripe = self._stripe
+        with self._stripe_lock:
+            n = len(self._adapters)
+            stripe = self._stripe
 
-        # Determine which adapter gets data (skip the parity adapter)
-        parity_idx = stripe.parity_adapter_idx
-        data_slot = len(stripe.chunks) % self._stripe_size
-        data_adapters = [i for i in range(n) if i != parity_idx]
-        adapter_idx = data_adapters[data_slot]
+            parity_idx = stripe.parity_adapter_idx
+            data_slot = len(stripe.chunks) % self._stripe_size
+            data_adapters = [i for i in range(n) if i != parity_idx]
+            adapter_idx = data_adapters[data_slot]
+
+            current_stripe_id = self._stripe_id
+            stripe_full = False
 
         ref = await self._adapters[adapter_idx].write_chunk(encoded_chunk)
 
-        # Accumulate XOR parity
-        chunk_bytes = encoded_chunk.encode("utf-8")
-        if not stripe.parity_accum:
-            stripe.parity_accum = chunk_bytes
-        else:
-            stripe.parity_accum = _xor_bytes(stripe.parity_accum, chunk_bytes)
+        with self._stripe_lock:
+            stripe = self._stripe
+            chunk_bytes = encoded_chunk.encode("utf-8")
+            if not stripe.parity_accum:
+                stripe.parity_accum = chunk_bytes
+            else:
+                stripe.parity_accum = _xor_bytes(stripe.parity_accum, chunk_bytes)
 
-        stripe.chunks.append((encoded_chunk, ref))
-        current_stripe_id = self._stripe_id
+            stripe.chunks.append((encoded_chunk, ref))
 
-        # If stripe is full, flush parity
-        if len(stripe.chunks) >= self._stripe_size:
+            if current_stripe_id not in self._stripe_registry:
+                self._stripe_registry[current_stripe_id] = {"data_refs": [], "parity_ref": None}
+            self._stripe_registry[current_stripe_id]["data_refs"].append(ref)
+
+            stripe_full = len(stripe.chunks) >= self._stripe_size
+
+        if stripe_full:
             await self._write_parity()
 
         raid_ref = RaidRef(refs=(ref,), stripe_id=current_stripe_id)
@@ -278,30 +291,62 @@ class RaidPool(Adapter):
         )
 
     async def _write_parity(self) -> None:
-        stripe = self._stripe
+        with self._stripe_lock:
+            stripe = self._stripe
+            current_stripe_id = self._stripe_id
+            parity_accum = stripe.parity_accum
+            parity_adapter_idx = stripe.parity_adapter_idx
+
         parity_chunk = Chunk(
             version=1,
-            manifest_id=f"__parity_s{self._stripe_id}",
+            manifest_id=f"__parity_s{current_stripe_id}",
             block_index=0,
             chunk_index=0,
             total_chunks=1,
-            payload=stripe.parity_accum,
+            payload=parity_accum,
         )
-        parity_adapter = self._adapters[stripe.parity_adapter_idx]
+        parity_adapter = self._adapters[parity_adapter_idx]
         parity_ref = await parity_adapter.write_chunk(parity_chunk.encode())
-        self._parity_refs.append(parity_ref)
 
-        # Reset stripe and rotate parity adapter
-        self._stripe = _StripeState(
-            parity_adapter_idx=(stripe.parity_adapter_idx + 1) % len(self._adapters),
-        )
-        self._stripe_id += 1
+        with self._stripe_lock:
+            self._parity_refs.append(parity_ref)
+            if current_stripe_id in self._stripe_registry:
+                self._stripe_registry[current_stripe_id]["parity_ref"] = parity_ref
+
+            self._stripe = _StripeState(
+                parity_adapter_idx=(parity_adapter_idx + 1) % len(self._adapters),
+            )
+            self._stripe_id += 1
 
     async def _read_raid5(self, raid_ref: RaidRef) -> str:
         try:
             return await self._read_single(raid_ref.refs[0])
         except Exception:
             pass
+
+        stripe_info = self._stripe_registry.get(raid_ref.stripe_id)
+        if stripe_info and stripe_info.get("parity_ref"):
+            try:
+                parity_data = await self._read_single(stripe_info["parity_ref"])
+                parity_bytes = parity_data.encode("utf-8")
+
+                surviving = []
+                for dr in stripe_info["data_refs"]:
+                    if dr.location == raid_ref.refs[0].location:
+                        continue
+                    try:
+                        surviving.append(await self._read_single(dr))
+                    except Exception:
+                        raise OSError("RAID 5: multiple data chunks missing, cannot reconstruct")
+
+                reconstructed = parity_bytes
+                for s in surviving:
+                    reconstructed = _xor_bytes(reconstructed, s.encode("utf-8"))
+                return reconstructed.decode("utf-8")
+            except OSError:
+                raise
+            except Exception:
+                pass
 
         if raid_ref.parity_refs:
             try:

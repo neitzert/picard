@@ -132,9 +132,13 @@ class Orchestrator:
             raise FileNotFoundError(f"no manifest for path: {path}")
         if manifest.file_type != "regular":
             raise FileNotFoundError(f"not a regular file: {path}")
-        parts: list[bytes] = []
-        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
-            parts.append(await self._decrypt_block(manifest, block, passphrase))
+        blocks = sorted(manifest.blocks, key=lambda b: b.block_index)
+        if len(blocks) <= 1:
+            parts = [await self._decrypt_block(manifest, b, passphrase) for b in blocks]
+        else:
+            parts = list(await asyncio.gather(
+                *(self._decrypt_block(manifest, b, passphrase) for b in blocks)
+            ))
         return b"".join(parts)
 
     async def get_block(
@@ -232,7 +236,7 @@ class Orchestrator:
                         )
 
             if buf_offset > 0:
-                del buffer[:buf_offset]
+                buffer = bytearray(buffer[buf_offset:])
                 buf_offset = 0
             if buffer:
                 plaintext_block = bytes(buffer)
@@ -292,13 +296,30 @@ class Orchestrator:
                 raise OSError(f"directory not empty: {path}")
 
         delete_coros = []
+        chunk_refs = []
         for block in manifest.blocks:
             for cr in block.chunks:
                 adapter = self._adapter_by_name(cr.adapter_name)
                 ref = StoredChunkRef(adapter_name=cr.adapter_name, location=cr.location)
                 delete_coros.append(adapter.delete_chunk(ref))
+                chunk_refs.append(cr)
         if delete_coros:
-            await asyncio.gather(*delete_coros, return_exceptions=True)
+            results = await asyncio.gather(*delete_coros, return_exceptions=True)
+            failed = [
+                {"adapter": chunk_refs[i].adapter_name, "location": chunk_refs[i].location,
+                 "error": str(results[i])}
+                for i in range(len(results))
+                if isinstance(results[i], Exception)
+            ]
+            if failed:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "rm %s: %d chunk deletes failed, manifest retained", path, len(failed),
+                )
+                raise OSError(
+                    f"rm {path}: {len(failed)} chunk delete(s) failed — "
+                    f"manifest retained to prevent orphans"
+                )
 
         self._index.delete_manifest(manifest.manifest_id)
         return True
@@ -429,14 +450,19 @@ class Orchestrator:
         total_bytes = sum(s["bytes"] for s in adapter_stats.values())
         total_chunks = sum(s["chunk_count"] for s in adapter_stats.values())
 
-        for adapter in self._adapters:
-            name = adapter.profile().name
-            if name in adapter_stats:
-                try:
-                    cap = await adapter.capacity()
+        relevant = [
+            a for a in self._adapters if a.profile().name in adapter_stats
+        ]
+        if relevant:
+            async def _cap(a):
+                return a.profile().name, await a.capacity()
+            results = await asyncio.gather(
+                *(_cap(a) for a in relevant), return_exceptions=True,
+            )
+            for result in results:
+                if not isinstance(result, Exception):
+                    name, cap = result
                     adapter_stats[name]["capacity"] = cap
-                except Exception:
-                    pass
 
         return {
             "total_bytes": total_bytes,
@@ -487,17 +513,19 @@ class Orchestrator:
 
     async def tree(self, path: str = "/", *, max_depth: int = 64) -> dict:
         """Return a nested dict representing the directory tree."""
-        children = self._index.list_children(path)
-        result: dict = {"path": path, "children": []}
-        for child in children:
-            m = self._index.get_manifest_by_path(child)
-            if m and m.file_type == "directory" and max_depth > 0:
-                result["children"].append(
-                    await self.tree(child, max_depth=max_depth - 1)
-                )
+        flat = self._index.tree_query(path, max_depth)
+        nodes: dict[str, dict] = {path: {"path": path, "children": []}}
+        for entry in flat:
+            node: dict = {"path": entry["path"]}
+            if entry["file_type"] == "directory":
+                node["children"] = []
+            nodes[entry["path"]] = node
+            parent = entry["parent_path"]
+            if parent in nodes:
+                nodes[parent].setdefault("children", []).append(node)
             else:
-                result["children"].append({"path": child})
-        return result
+                nodes[path].setdefault("children", []).append(node)
+        return nodes[path]
 
     def _ensure_parents(self, path: str) -> None:
         """Create directory manifests for all missing ancestors of *path*."""
@@ -568,9 +596,13 @@ class Orchestrator:
             raise FileNotFoundError(
                 f"no manifest for path {path!r} version {version}"
             )
-        parts: list[bytes] = []
-        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
-            parts.append(await self._decrypt_block(manifest, block, passphrase))
+        blocks = sorted(manifest.blocks, key=lambda b: b.block_index)
+        if len(blocks) <= 1:
+            parts = [await self._decrypt_block(manifest, b, passphrase) for b in blocks]
+        else:
+            parts = list(await asyncio.gather(
+                *(self._decrypt_block(manifest, b, passphrase) for b in blocks)
+            ))
         return b"".join(parts)
 
     async def list_versions(self, path: str) -> list[dict]:
@@ -699,7 +731,8 @@ class Orchestrator:
         adapter = self._pick_adapter()
         prof = adapter.profile()
         chunks = chunkify(ct, manifest.manifest_id, bi, prof.max_chunk_bytes)
-        for chunk in chunks:
+
+        async def _write_one(chunk):
             encoded = chunk.encode()
             if self._key_ring:
                 sub_key = self._key_ring.get_sub_key(prof.name)
@@ -713,16 +746,20 @@ class Orchestrator:
             chunk_digest = hashlib.sha256(
                 wire_str.encode() if isinstance(wire_str, str) else wire_str
             ).hexdigest()
-            block.chunks.append(
-                ChunkRecord(
-                    chunk_index=chunk.chunk_index,
-                    adapter_name=ref.adapter_name,
-                    location=ref.location,
-                    status=ChunkStatus.STORED,
-                    size_bytes=len(wire_str),
-                    digest=chunk_digest,
-                )
+            return ChunkRecord(
+                chunk_index=chunk.chunk_index,
+                adapter_name=ref.adapter_name,
+                location=ref.location,
+                status=ChunkStatus.STORED,
+                size_bytes=len(wire_str),
+                digest=chunk_digest,
             )
+
+        if len(chunks) == 1:
+            block.chunks.append(await _write_one(chunks[0]))
+        else:
+            records = await asyncio.gather(*(_write_one(c) for c in chunks))
+            block.chunks.extend(sorted(records, key=lambda r: r.chunk_index))
         manifest.blocks.append(block)
 
     def _pick_adapter(self) -> Adapter:

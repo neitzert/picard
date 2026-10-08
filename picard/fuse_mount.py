@@ -65,6 +65,8 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         self._fh_counter = 0
         self._fh_lock = threading.Lock()
         self._write_buffers: dict[int, _WriteBuffer] = {}
+        self._statfs_cache: tuple[dict, float] | None = None
+        self._statfs_ttl = 5.0
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(
             target=self._loop.run_forever, daemon=True,
@@ -240,6 +242,8 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
                 self._run(
                     self._orch.put(wb.path, data, self._passphrase, mode=wb.mode)
                 )
+                wb.buf.seek(0)
+                wb.buf.truncate(0)
 
     def getxattr(self, path, name, position=0):
         m = self._index.get_manifest_by_path(path)
@@ -291,8 +295,11 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         self._index.update_manifest_metadata(m.manifest_id, xattrs=xattrs)
 
     def statfs(self, path):
+        now = time.monotonic()
+        if self._statfs_cache and (now - self._statfs_cache[1]) < self._statfs_ttl:
+            return self._statfs_cache[0]
         du = self._run(self._orch.du())
-        return {
+        result = {
             "f_bsize": 4096,
             "f_frsize": 4096,
             "f_blocks": max(1, du["total_bytes"] // 4096),
@@ -303,6 +310,8 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
             "f_favail": 2**20,
             "f_namemax": 255,
         }
+        self._statfs_cache = (result, now)
+        return result
 
     def destroy(self, path):
         try:

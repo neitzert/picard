@@ -7,19 +7,21 @@ from picard.crypto import decrypt, derive_key, encrypt
 
 class TestDeriveKey:
     def test_deterministic_with_same_salt(self):
-        dk1 = derive_key("test-passphrase")
-        dk2 = derive_key("test-passphrase", salt=dk1.salt)
+        dk1, _ = derive_key("test-passphrase")
+        dk2, _ = derive_key("test-passphrase", salt=dk1.salt)
         assert dk1.key == dk2.key
 
     def test_different_salt_different_key(self):
-        dk1 = derive_key("test-passphrase")
-        dk2 = derive_key("test-passphrase")  # new random salt
+        dk1, _ = derive_key("test-passphrase")
+        dk2, _ = derive_key("test-passphrase")  # new random salt
         assert dk1.key != dk2.key
 
     def test_key_length(self):
-        dk = derive_key("test-passphrase")
+        dk, cipher = derive_key("test-passphrase")
         assert len(dk.key) == 32
         assert len(dk.salt) == 16
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        assert isinstance(cipher, AESGCM)
 
 
 class TestEncryptDecrypt:

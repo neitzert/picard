@@ -139,10 +139,22 @@ class TestConfig:
         assert data["block_size"] == 4096
 
     def test_update_index_db(self, client):
-        resp = client.post("/api/config", json={"index_db": "/tmp/test.db"})
+        resp = client.post("/api/config", json={"index_db": "~/.picard/test.db"})
         assert resp.status_code == 200
         data = client.get("/api/config").json()
-        assert data["index_db"] == "/tmp/test.db"
+        assert data["index_db"] == "~/.picard/test.db"
+
+    def test_reject_absolute_index_db(self, client):
+        resp = client.post("/api/config", json={"index_db": "/etc/passwd"})
+        assert resp.status_code == 400
+
+    def test_reject_traversal_index_db(self, client):
+        resp = client.post("/api/config", json={"index_db": "../../etc/passwd"})
+        assert resp.status_code == 400
+
+    def test_reject_unknown_config_keys(self, client):
+        resp = client.post("/api/config", json={"evil_key": "value"})
+        assert resp.status_code == 400
 
 
 class TestConfigInit:

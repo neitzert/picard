@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -96,10 +97,16 @@ class PicardFile(DAVNonCollection):
     def begin_write(self, *, content_type: str | None = None) -> io.BytesIO:
         if self._read_only:
             raise DAVError(HTTP_FORBIDDEN, "read-only mode")
-        return io.BytesIO()
+        self._write_buffer = io.BytesIO()
+        return self._write_buffer
 
     def end_write(self, *, with_errors: bool = False) -> None:
-        pass
+        buf = getattr(self, "_write_buffer", None)
+        if buf is None:
+            return
+        data = buf.getvalue()
+        _run(self._orch.put(self._manifest.path, data, self._passphrase))
+        self._write_buffer = None
 
     def handle_copy(self, dest_path: str, *, depth_infinity: bool = True) -> bool:
         if self._read_only:
@@ -271,6 +278,48 @@ class PicardProvider(DAVProvider):
         return self._read_only
 
 
+_MAX_PUT_BYTES = 100 * 1024 * 1024  # 100 MiB
+
+
+class _AuthMiddleware:
+    """WSGI middleware for optional Basic auth on the WebDAV server."""
+
+    def __init__(self, app):
+        self._app = app
+        self._user = os.environ.get("PICARD_WEBDAV_USER", "")
+        self._password = os.environ.get("PICARD_WEBDAV_PASS", "")
+        self._enabled = bool(self._user and self._password)
+
+    def __call__(self, environ, start_response):
+        if not self._enabled:
+            return self._app(environ, start_response)
+        import base64
+        import hmac
+        auth = environ.get("HTTP_AUTHORIZATION", "")
+        if not auth.startswith("Basic "):
+            return self._reject(start_response)
+        try:
+            decoded = base64.b64decode(auth[6:]).decode("utf-8")
+            user, password = decoded.split(":", 1)
+        except Exception:
+            return self._reject(start_response)
+        if (
+            not hmac.compare_digest(user.encode(), self._user.encode())
+            or not hmac.compare_digest(password.encode(), self._password.encode())
+        ):
+            return self._reject(start_response)
+        return self._app(environ, start_response)
+
+    def _reject(self, start_response):
+        msg = b"Authentication required"
+        start_response("401 Unauthorized", [
+            ("Content-Length", str(len(msg))),
+            ("Content-Type", "text/plain"),
+            ("WWW-Authenticate", 'Basic realm="PICARD WebDAV"'),
+        ])
+        return [msg]
+
+
 class _PutInterceptor:
     """WSGI middleware that intercepts PUT requests to write file data through the orchestrator."""
 
@@ -297,7 +346,6 @@ class _PutInterceptor:
                 ])
                 return [msg]
             path = normalized
-            _MAX_PUT_BYTES = 100 * 1024 * 1024  # 100 MiB
             try:
                 content_length = int(environ.get("CONTENT_LENGTH", 0))
             except (ValueError, TypeError):
@@ -311,7 +359,24 @@ class _PutInterceptor:
                 ])
                 return [msg]
 
-            body = environ["wsgi.input"].read(content_length) if content_length else b""
+            wsgi_input = environ["wsgi.input"]
+            chunks = []
+            total = 0
+            read_size = 65536
+            while True:
+                chunk = wsgi_input.read(min(read_size, _MAX_PUT_BYTES + 1 - total))
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_PUT_BYTES:
+                    msg = b"file exceeds 100 MiB limit"
+                    start_response("413 Request Entity Too Large", [
+                        ("Content-Length", str(len(msg))),
+                        ("Content-Type", "text/plain"),
+                    ])
+                    return [msg]
+                chunks.append(chunk)
+            body = b"".join(chunks)
             try:
                 _run(self._orch.put(path, body, self._passphrase))
                 start_response("201 Created", [("Content-Length", "0")])
@@ -388,7 +453,8 @@ def serve_webdav(
     }
 
     dav_app = WsgiDAVApp(dav_config)
-    wrapped = _PutInterceptor(dav_app, orch, pp, read_only)
+    put_wrapped = _PutInterceptor(dav_app, orch, pp, read_only)
+    wrapped = _AuthMiddleware(put_wrapped)
 
     server = CherootServer((host, port), wrapped)
     logger.info("PICARD WebDAV → http://%s:%d%s", host, port,
