@@ -156,8 +156,16 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
     def truncate(self, path, length, fh=None):
         if self._readonly:
             raise FuseOSError(errno.EROFS)
-        data = self._run(self._orch.get(path, self._passphrase))
-        data = data[:length]
+        if fh is not None and fh in self._write_buffers:
+            wb = self._write_buffers[fh]
+            wb.buf.truncate(length)
+            return
+        if length == 0:
+            self._run(self._orch.put(path, b"", self._passphrase))
+            return
+        data = self._run(
+            self._orch.read_range(path, 0, length, self._passphrase)
+        )
         self._run(self._orch.put(path, data, self._passphrase))
 
     def mkdir(self, path, mode):
@@ -297,11 +305,15 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         }
 
     def destroy(self, path):
-        if self._block_cache:
-            self._block_cache.clear()
-        self._loop.call_soon_threadsafe(self._loop.stop)
-        self._thread.join(timeout=5)
-        self._passphrase = ""
+        try:
+            if self._block_cache:
+                self._block_cache.clear()
+        finally:
+            try:
+                self._loop.call_soon_threadsafe(self._loop.stop)
+                self._thread.join(timeout=5)
+            finally:
+                self._passphrase = ""
 
 
 def mount(

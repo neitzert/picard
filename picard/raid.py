@@ -35,7 +35,9 @@ def _xor_bytes(a: bytes, b: bytes) -> bytes:
     length = max(len(a), len(b))
     a = a.ljust(length, b"\x00")
     b = b.ljust(length, b"\x00")
-    return bytes(x ^ y for x, y in zip(a, b))
+    ai = int.from_bytes(a, "big")
+    bi = int.from_bytes(b, "big")
+    return (ai ^ bi).to_bytes(length, "big")
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +109,9 @@ class RaidPool(Adapter):
                 raise ValueError("RAID 10 requires an even number of adapters")
 
         self._adapters = list(adapters)
+        self._adapter_map: dict[str, Adapter] = {
+            a.profile().name: a for a in self._adapters
+        }
         self._level = level
         self._mirror_count = min(mirror_count, len(adapters))
         self._counter = 0
@@ -386,7 +391,7 @@ class RaidPool(Adapter):
             return False
 
     def _adapter_by_name(self, name: str) -> Adapter:
-        for a in self._adapters:
-            if a.profile().name == name:
-                return a
-        raise LookupError(f"no adapter named {name!r} in pool")
+        adapter = self._adapter_map.get(name)
+        if adapter is None:
+            raise LookupError(f"no adapter named {name!r} in pool")
+        return adapter

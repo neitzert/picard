@@ -13,6 +13,7 @@ import asyncio
 import inspect
 import importlib
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -36,9 +37,29 @@ from picard.orchestrator import Orchestrator
 from picard.raid import RaidLevel
 from picard.registry import get_adapter_class, list_adapter_types
 
-app = FastAPI(title="PICARD", docs_url=None, redoc_url=None)
+
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    yield
+    if _orch:
+        await _orch.close()
+
+
+app = FastAPI(title="PICARD", docs_url=None, redoc_url=None, lifespan=_lifespan)
 
 _SAFE_ORIGINS = ("http://127.0.0.1", "http://localhost", "http://[::1]")
+
+
+_MAX_UPLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
+
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'unsafe-inline'; "
+    "style-src 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'"
+)
 
 
 @app.middleware("http")
@@ -52,7 +73,11 @@ async def _security_middleware(request: Request, call_next):
         check_value = origin or referer
         if check_value and not any(check_value.startswith(o) for o in _SAFE_ORIGINS):
             return JSONResponse(status_code=403, content={"error": "CSRF rejected"})
-    return await call_next(request)
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    return response
 
 
 _UI_HTML = (Path(__file__).parent / "ui.html").read_text(encoding="utf-8")
@@ -330,26 +355,7 @@ async def list_files():
         return []
     try:
         idx = _ensure_index()
-        paths = idx.list_paths()
-        result = []
-        for p in paths:
-            manifest = idx.get_manifest_by_path(p)
-            if manifest:
-                adapters_used = set()
-                for block in manifest.blocks:
-                    for cr in block.chunks:
-                        adapters_used.add(cr.adapter_name)
-                result.append({
-                    "path": manifest.path,
-                    "manifest_id": manifest.manifest_id,
-                    "original_size": manifest.original_size,
-                    "block_size": manifest.block_size,
-                    "total_blocks": manifest.total_blocks,
-                    "total_chunks": manifest.total_chunks,
-                    "created_at": manifest.created_at,
-                    "adapters": sorted(adapters_used),
-                })
-        return result
+        return idx.list_file_summaries()
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -472,7 +478,9 @@ async def fs_write(file: UploadFile = File(...), path: str = Form("/")):
     passphrase = os.environ.get("PICARD_PASSPHRASE") or os.environ.get("PICARD_INDEX_PASSPHRASE")
     if not passphrase:
         raise HTTPException(500, "PICARD_PASSPHRASE env var not set")
-    data = await file.read()
+    data = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"file exceeds {_MAX_UPLOAD_BYTES // (1024*1024)} MiB limit")
     if not data:
         raise HTTPException(400, "empty file")
     filename = file.filename or "upload"
@@ -732,8 +740,11 @@ def _save_config(cfg: PicardConfig) -> None:
                     for sk, sv in profile.items():
                         section.append(f"{_format_toml_key(sk)} = {_toml_value(sv)}\n")
                     preserved_sections.append("".join(section))
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger("picard.web").warning(
+                "could not read existing config for section preservation: %s", exc
+            )
 
     lines = ["[general]\n"]
     lines.append(f'index_db = "{_escape_toml(str(cfg.index_db))}"\n')
@@ -755,7 +766,21 @@ def _save_config(cfg: PicardConfig) -> None:
     for section in preserved_sections:
         lines.append(section)
         lines.append("\n")
-    DEFAULT_CONFIG_PATH.write_text("".join(lines), encoding="utf-8")
+    import tempfile
+    content = "".join(lines)
+    fd, tmp = tempfile.mkstemp(
+        dir=str(DEFAULT_CONFIG_PATH.parent), suffix=".tmp",
+    )
+    try:
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp, str(DEFAULT_CONFIG_PATH))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
@@ -808,10 +833,5 @@ def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
     journal = Journal(index.connection)
     orch = Orchestrator(adapters, index, journal=journal)
     _set_state(orch, index)
-
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        if _orch:
-            await _orch.close()
 
     uvicorn.run(app, host=host, port=port, log_level="info")

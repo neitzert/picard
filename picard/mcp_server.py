@@ -334,13 +334,13 @@ async def call_tool(name: str, arguments: dict):
         elif name == "picard_verify":
             path = arguments["path"]
             pp = _passphrase()
-            report = await orch.verify(path, pp)
+            report = await orch.verify(path)
             return [TextContent(type="text", text=json.dumps({
                 "path": path,
                 "ok": report.get("ok", False),
-                "verified_chunks": report.get("verified", 0),
-                "missing_chunks": report.get("missing", 0),
-                "corrupt_blocks": report.get("corrupt", 0),
+                "verified_chunks": report.get("verified_chunks", 0),
+                "missing_chunks": report.get("missing_chunks", 0),
+                "corrupt_blocks": report.get("corrupt_blocks", 0),
             }))]
 
         else:

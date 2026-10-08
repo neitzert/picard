@@ -285,10 +285,31 @@ class _PutInterceptor:
             path = environ.get("PATH_INFO", "/").rstrip("/")
             if not path:
                 path = "/"
+            import posixpath
+            normalized = posixpath.normpath(path)
+            if not normalized.startswith("/"):
+                normalized = "/" + normalized
+            if ".." in normalized.split("/"):
+                msg = b"path traversal rejected"
+                start_response("400 Bad Request", [
+                    ("Content-Length", str(len(msg))),
+                    ("Content-Type", "text/plain"),
+                ])
+                return [msg]
+            path = normalized
+            _MAX_PUT_BYTES = 100 * 1024 * 1024  # 100 MiB
             try:
                 content_length = int(environ.get("CONTENT_LENGTH", 0))
             except (ValueError, TypeError):
                 content_length = 0
+
+            if content_length > _MAX_PUT_BYTES:
+                msg = b"file exceeds 100 MiB limit"
+                start_response("413 Request Entity Too Large", [
+                    ("Content-Length", str(len(msg))),
+                    ("Content-Type", "text/plain"),
+                ])
+                return [msg]
 
             body = environ["wsgi.input"].read(content_length) if content_length else b""
             try:

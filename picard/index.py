@@ -171,24 +171,32 @@ class Index:
                 m.parent_path,
             ),
         )
-        for b in m.blocks:
-            self._conn.execute(
+        if m.blocks:
+            self._conn.executemany(
                 "INSERT OR REPLACE INTO blocks VALUES (?,?,?,?)",
-                (m.manifest_id, b.block_index, b.digest, b.size_bytes),
+                [
+                    (m.manifest_id, b.block_index, b.digest, b.size_bytes)
+                    for b in m.blocks
+                ],
             )
-            for c in b.chunks:
-                self._conn.execute(
+            chunk_rows = [
+                (
+                    m.manifest_id,
+                    b.block_index,
+                    c.chunk_index,
+                    c.adapter_name,
+                    c.location,
+                    c.status.value,
+                    c.size_bytes,
+                    c.digest,
+                )
+                for b in m.blocks
+                for c in b.chunks
+            ]
+            if chunk_rows:
+                self._conn.executemany(
                     "INSERT OR REPLACE INTO chunks VALUES (?,?,?,?,?,?,?,?)",
-                    (
-                        m.manifest_id,
-                        b.block_index,
-                        c.chunk_index,
-                        c.adapter_name,
-                        c.location,
-                        c.status.value,
-                        c.size_bytes,
-                        c.digest,
-                    ),
+                    chunk_rows,
                 )
 
     def update_chunk_status(
@@ -241,6 +249,47 @@ class Index:
             "SELECT DISTINCT path FROM manifests ORDER BY path"
         ).fetchall()
         return [r["path"] for r in rows]
+
+    def list_file_summaries(self) -> list[dict]:
+        """Return lightweight summaries for all latest-version files."""
+        rows = self._conn.execute(
+            "SELECT m.manifest_id, m.path, m.original_size, m.block_size, "
+            "m.total_blocks, m.created_at, m.file_type "
+            "FROM manifests m "
+            "WHERE m.version = ("
+            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+            ") ORDER BY m.path"
+        ).fetchall()
+        if not rows:
+            return []
+        mids = [r["manifest_id"] for r in rows]
+        placeholders = ",".join("?" * len(mids))
+        chunk_rows = self._conn.execute(
+            f"SELECT manifest_id, COUNT(*) AS cnt, "
+            f"GROUP_CONCAT(DISTINCT adapter_name) AS adapters "
+            f"FROM chunks WHERE manifest_id IN ({placeholders}) "
+            f"GROUP BY manifest_id",
+            mids,
+        ).fetchall()
+        chunk_map: dict[str, tuple[int, list[str]]] = {}
+        for cr in chunk_rows:
+            adapters = sorted(cr["adapters"].split(",")) if cr["adapters"] else []
+            chunk_map[cr["manifest_id"]] = (cr["cnt"], adapters)
+        result = []
+        for r in rows:
+            mid = r["manifest_id"]
+            cnt, adapters = chunk_map.get(mid, (0, []))
+            result.append({
+                "path": r["path"],
+                "manifest_id": mid,
+                "original_size": r["original_size"],
+                "block_size": r["block_size"],
+                "total_blocks": r["total_blocks"],
+                "total_chunks": cnt,
+                "created_at": r["created_at"],
+                "adapters": adapters,
+            })
+        return result
 
     # --- delete ------------------------------------------------------------
 
@@ -361,6 +410,48 @@ class Index:
         ).fetchall()
         return [r["path"] for r in rows]
 
+    def du_stats(self) -> tuple[dict[str, dict[str, int]], int]:
+        """Return per-adapter chunk stats and file count via SQL aggregates.
+
+        Returns (adapter_stats, file_count) where adapter_stats maps
+        adapter_name -> {"chunk_count": N, "bytes": N}.
+        Only counts chunks belonging to each path's latest version.
+        """
+        rows = self._conn.execute(
+            "SELECT c.adapter_name, COUNT(*) AS cnt, "
+            "COALESCE(SUM(c.size_bytes), 0) AS total "
+            "FROM chunks c INNER JOIN manifests m "
+            "ON c.manifest_id = m.manifest_id "
+            "WHERE m.version = ("
+            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+            ") GROUP BY c.adapter_name"
+        ).fetchall()
+        stats: dict[str, dict[str, int]] = {}
+        for r in rows:
+            stats[r["adapter_name"]] = {
+                "chunk_count": r["cnt"],
+                "bytes": r["total"],
+            }
+        fc = self._conn.execute(
+            "SELECT COUNT(DISTINCT path) AS n FROM manifests"
+        ).fetchone()
+        return stats, fc["n"]
+
+    def chunk_stats_for_manifest(self, manifest_id: str) -> tuple[dict[str, int], int]:
+        """Return (adapter_distribution, total_chunk_bytes) via SQL aggregate."""
+        rows = self._conn.execute(
+            "SELECT adapter_name, COUNT(*) AS cnt, "
+            "COALESCE(SUM(size_bytes), 0) AS total "
+            "FROM chunks WHERE manifest_id=? GROUP BY adapter_name",
+            (manifest_id,),
+        ).fetchall()
+        dist: dict[str, int] = {}
+        total = 0
+        for r in rows:
+            dist[r["adapter_name"]] = r["cnt"]
+            total += r["total"]
+        return dist, total
+
     def list_paths_with_prefix(self, prefix: str) -> list[str]:
         rows = self._conn.execute(
             "SELECT DISTINCT path FROM manifests WHERE path LIKE ? ORDER BY path",
@@ -404,10 +495,24 @@ class Index:
         self._write_encrypted()
 
     def _write_encrypted(self) -> None:
+        import tempfile
         from picard.crypto import encrypt
         sql_text = "\n".join(self._conn.iterdump()) + "\n"
         ct = encrypt(sql_text.encode("utf-8"), self._passphrase)
-        Path(self._db_path).write_bytes(_PCIX_MAGIC + ct)
+        dest = Path(self._db_path)
+        fd, tmp = tempfile.mkstemp(dir=str(dest.parent), suffix=".tmp")
+        try:
+            with open(fd, "wb") as f:
+                f.write(_PCIX_MAGIC + ct)
+            import os
+            os.replace(tmp, str(dest))
+        except BaseException:
+            import os
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
 
     def close(self) -> None:
         if self._encrypted and self._db_path != ":memory:":

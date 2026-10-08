@@ -152,7 +152,13 @@ async def list_chunks(
 
 
 @transport_app.get("/transport/v1/adapters")
-async def list_adapters():
+async def list_adapters(
+    request: Request,
+    x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
+):
+    if not _verify_hmac(b"", x_signature, x_timestamp, "/transport/v1/adapters"):
+        raise HTTPException(status_code=403, detail="invalid signature")
     results = []
     for name, adapter in _adapters.items():
         p = adapter.profile()
@@ -166,7 +172,13 @@ async def list_adapters():
 
 
 @transport_app.get("/transport/v1/health")
-async def health():
+async def health(
+    request: Request,
+    x_signature: Optional[str] = Header(None),
+    x_timestamp: Optional[str] = Header(None),
+):
+    if not _verify_hmac(b"", x_signature, x_timestamp, "/transport/v1/health"):
+        raise HTTPException(status_code=403, detail="invalid signature")
     capacities: dict[str, dict | None] = {}
     for name, adapter in _adapters.items():
         try:

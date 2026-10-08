@@ -291,11 +291,14 @@ class Orchestrator:
             if children:
                 raise OSError(f"directory not empty: {path}")
 
+        delete_coros = []
         for block in manifest.blocks:
             for cr in block.chunks:
                 adapter = self._adapter_by_name(cr.adapter_name)
                 ref = StoredChunkRef(adapter_name=cr.adapter_name, location=cr.location)
-                await adapter.delete_chunk(ref)
+                delete_coros.append(adapter.delete_chunk(ref))
+        if delete_coros:
+            await asyncio.gather(*delete_coros, return_exceptions=True)
 
         self._index.delete_manifest(manifest.manifest_id)
         return True
@@ -306,14 +309,9 @@ class Orchestrator:
         if manifest is None:
             raise FileNotFoundError(f"no manifest for path: {path}")
 
-        adapter_distribution: dict[str, int] = {}
-        total_chunk_bytes = 0
-        for block in manifest.blocks:
-            for cr in block.chunks:
-                adapter_distribution[cr.adapter_name] = (
-                    adapter_distribution.get(cr.adapter_name, 0) + 1
-                )
-                total_chunk_bytes += cr.size_bytes
+        adapter_distribution, total_chunk_bytes = (
+            self._index.chunk_stats_for_manifest(manifest.manifest_id)
+        )
 
         return {
             "path": manifest.path,
@@ -350,31 +348,41 @@ class Orchestrator:
         for block in sorted(manifest.blocks, key=lambda b: b.block_index):
             raw_chunks: list[Chunk] = []
             block_ok = True
-            for cr in block.chunks:
-                try:
-                    adapter = self._adapter_by_name(cr.adapter_name)
-                    ref = StoredChunkRef(
-                        adapter_name=cr.adapter_name, location=cr.location
-                    )
-                    wire_str = await adapter.read_chunk(ref)
-                    if self._key_ring:
-                        sub_key = self._key_ring.get_sub_key(cr.adapter_name)
-                        encoded = unseal(bytes.fromhex(wire_str), sub_key)
-                    else:
-                        encoded = wire_str
-                    raw_chunks.append(Chunk.decode(encoded))
-                    report["verified_chunks"] += 1
-                except Exception as e:
+
+            async def _read_cr(cr):
+                adapter = self._adapter_by_name(cr.adapter_name)
+                ref = StoredChunkRef(
+                    adapter_name=cr.adapter_name, location=cr.location,
+                )
+                wire_str = await adapter.read_chunk(ref)
+                if self._key_ring:
+                    sub_key = self._key_ring.get_sub_key(cr.adapter_name)
+                    encoded = unseal(bytes.fromhex(wire_str), sub_key)
+                else:
+                    encoded = wire_str
+                return cr, Chunk.decode(encoded)
+
+            results = await asyncio.gather(
+                *(_read_cr(cr) for cr in block.chunks),
+                return_exceptions=True,
+            )
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    cr = block.chunks[i]
                     report["missing_chunks"] += 1
                     report["errors"].append(
                         {
                             "block_index": block.block_index,
                             "chunk_index": cr.chunk_index,
                             "adapter": cr.adapter_name,
-                            "error": str(e),
+                            "error": str(result),
                         }
                     )
                     block_ok = False
+                else:
+                    _, chunk = result
+                    raw_chunks.append(chunk)
+                    report["verified_chunks"] += 1
 
             if block_ok and raw_chunks:
                 ct = reassemble(raw_chunks)
@@ -417,26 +425,9 @@ class Orchestrator:
 
     async def du(self) -> dict:
         """Storage usage summary per adapter."""
-        paths = self._index.list_paths()
-        adapter_stats: dict[str, dict] = {}
-        total_bytes = 0
-        total_chunks = 0
-
-        for path in paths:
-            manifest = self._index.get_manifest_by_path(path)
-            if manifest is None:
-                continue
-            for block in manifest.blocks:
-                for cr in block.chunks:
-                    if cr.adapter_name not in adapter_stats:
-                        adapter_stats[cr.adapter_name] = {
-                            "chunk_count": 0,
-                            "bytes": 0,
-                        }
-                    adapter_stats[cr.adapter_name]["chunk_count"] += 1
-                    adapter_stats[cr.adapter_name]["bytes"] += cr.size_bytes
-                    total_bytes += cr.size_bytes
-                    total_chunks += 1
+        adapter_stats, total_files = self._index.du_stats()
+        total_bytes = sum(s["bytes"] for s in adapter_stats.values())
+        total_chunks = sum(s["chunk_count"] for s in adapter_stats.values())
 
         for adapter in self._adapters:
             name = adapter.profile().name
@@ -450,7 +441,7 @@ class Orchestrator:
         return {
             "total_bytes": total_bytes,
             "total_chunks": total_chunks,
-            "total_files": len(paths),
+            "total_files": total_files,
             "adapters": adapter_stats,
         }
 
@@ -612,6 +603,7 @@ class Orchestrator:
         for entry in entries:
             manifest = self._index.get_manifest(entry.manifest_id)
             if manifest is not None:
+                delete_coros = []
                 for block in manifest.blocks:
                     for cr in block.chunks:
                         try:
@@ -619,10 +611,16 @@ class Orchestrator:
                             ref = StoredChunkRef(
                                 adapter_name=cr.adapter_name, location=cr.location,
                             )
-                            await adapter.delete_chunk(ref)
-                            cleaned_chunks += 1
+                            delete_coros.append(adapter.delete_chunk(ref))
                         except Exception:
                             pass
+                if delete_coros:
+                    results = await asyncio.gather(
+                        *delete_coros, return_exceptions=True,
+                    )
+                    cleaned_chunks += sum(
+                        1 for r in results if not isinstance(r, Exception)
+                    )
                 self._index.delete_manifest(manifest.manifest_id)
             self._journal.rollback(entry.journal_id)
         return {"recovered": len(entries), "cleaned_chunks": cleaned_chunks}
@@ -658,8 +656,7 @@ class Orchestrator:
             if cached is not None:
                 return cached
 
-        raw_chunks: list[Chunk] = []
-        for cr in block.chunks:
+        async def _fetch_chunk(cr):
             adapter = self._adapter_by_name(cr.adapter_name)
             ref = StoredChunkRef(
                 adapter_name=cr.adapter_name, location=cr.location,
@@ -672,7 +669,14 @@ class Orchestrator:
                 encoded = unseal(bytes.fromhex(wire_str), sub_key)
             else:
                 encoded = wire_str
-            raw_chunks.append(Chunk.decode(encoded))
+            return Chunk.decode(encoded)
+
+        if len(block.chunks) == 1:
+            raw_chunks = [await _fetch_chunk(block.chunks[0])]
+        else:
+            raw_chunks = list(
+                await asyncio.gather(*(_fetch_chunk(cr) for cr in block.chunks))
+            )
         ct = reassemble(raw_chunks)
         if block_digest(ct) != block.digest:
             raise ValueError(

@@ -93,12 +93,12 @@ class TestTransportHMAC:
 
         configure({})
 
-    def test_health_works_without_signature(self):
+    def test_health_requires_signature_when_secret_set(self):
         adapter = MemoryAdapter()
         configure({"memory": adapter}, secret="my-secret")
         client = TestClient(transport_app)
 
         resp = client.get("/transport/v1/health")
-        assert resp.status_code == 200
+        assert resp.status_code == 403
 
         configure({})
