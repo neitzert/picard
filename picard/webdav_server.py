@@ -410,7 +410,6 @@ def serve_webdav(
     index_passphrase: str | None = None,
 ) -> None:
     """Start a WsgiDAV server exposing PICARD's filesystem."""
-    import os
     from cheroot.wsgi import Server as CherootServer
     from wsgidav.wsgidav_app import WsgiDAVApp
 

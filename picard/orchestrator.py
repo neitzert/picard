@@ -66,8 +66,9 @@ class Orchestrator:
         self._adapter_timeout = adapter_timeout
 
     async def close(self) -> None:
-        for adapter in self._adapters:
-            await adapter.close()
+        await asyncio.gather(
+            *(a.close() for a in self._adapters), return_exceptions=True,
+        )
         if self._block_cache is not None:
             self._block_cache.clear()
 
