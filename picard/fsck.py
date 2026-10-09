@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 from dataclasses import dataclass, field
 from typing import Sequence
 
@@ -107,7 +108,7 @@ async def fsck(
 
                 if block_ok and raw_chunks:
                     ct = reassemble(raw_chunks)
-                    if block_digest(ct) != block.digest:
+                    if not hmac.compare_digest(block_digest(ct), block.digest):
                         report.corrupt_blocks += 1
                         report.errors.append({
                             "type": "corrupt_block",

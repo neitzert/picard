@@ -4,7 +4,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from picard.adapters.memory import MemoryAdapter
-from picard.transport import configure, transport_app
+from picard.transport import _RateLimiter, configure, transport_app
 
 
 @pytest.fixture
@@ -102,3 +102,31 @@ class TestTransportHMAC:
         assert resp.status_code == 403
 
         configure({})
+
+
+class TestRateLimiter:
+    def test_allows_within_limit(self):
+        rl = _RateLimiter(max_requests=5, window_seconds=60.0)
+        for _ in range(5):
+            assert rl.allow("1.2.3.4")
+
+    def test_blocks_over_limit(self):
+        rl = _RateLimiter(max_requests=3, window_seconds=60.0)
+        for _ in range(3):
+            assert rl.allow("1.2.3.4")
+        assert not rl.allow("1.2.3.4")
+
+    def test_separate_clients_independent(self):
+        rl = _RateLimiter(max_requests=2, window_seconds=60.0)
+        assert rl.allow("1.1.1.1")
+        assert rl.allow("1.1.1.1")
+        assert not rl.allow("1.1.1.1")
+        assert rl.allow("2.2.2.2")
+
+    def test_window_expiry(self):
+        rl = _RateLimiter(max_requests=1, window_seconds=0.01)
+        assert rl.allow("1.2.3.4")
+        assert not rl.allow("1.2.3.4")
+        import time
+        time.sleep(0.05)
+        assert rl.allow("1.2.3.4")

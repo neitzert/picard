@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import hashlib
 import hmac
+import threading
 import time
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from picard.adapters.base import Adapter, StoredChunkRef
@@ -22,6 +25,43 @@ transport_app = FastAPI(title="PICARD Transport", docs_url=None, redoc_url=None)
 
 _adapters: dict[str, Adapter] = {}
 _secret: str = ""
+
+
+class _RateLimiter:
+    """Sliding-window rate limiter per client IP."""
+
+    def __init__(self, max_requests: int = 120, window_seconds: float = 60.0) -> None:
+        self._max = max_requests
+        self._window = window_seconds
+        self._hits: dict[str, collections.deque[float]] = {}
+        self._lock = threading.Lock()
+
+    def allow(self, client_ip: str) -> bool:
+        now = time.monotonic()
+        cutoff = now - self._window
+        with self._lock:
+            dq = self._hits.get(client_ip)
+            if dq is None:
+                dq = collections.deque()
+                self._hits[client_ip] = dq
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            if len(dq) >= self._max:
+                return False
+            dq.append(now)
+            return True
+
+
+_rate_limiter = _RateLimiter()
+
+
+@transport_app.middleware("http")
+async def _rate_limit_middleware(request: Request, call_next):
+    client = request.client
+    ip = client.host if client else "unknown"
+    if not _rate_limiter.allow(ip):
+        return JSONResponse(status_code=429, content={"error": "rate limit exceeded"})
+    return await call_next(request)
 
 
 class WriteRequest(BaseModel):

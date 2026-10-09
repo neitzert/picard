@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import hmac
 import math
 import uuid
 from datetime import datetime, timezone
@@ -451,7 +452,7 @@ class Orchestrator:
 
             if block_ok and raw_chunks:
                 ct = reassemble(raw_chunks)
-                if block_digest(ct) != block.digest:
+                if not hmac.compare_digest(block_digest(ct), block.digest):
                     block_report["corrupt"] = True
                     block_report["errors"].append({
                         "block_index": block.block_index,
@@ -764,7 +765,7 @@ class Orchestrator:
                 await asyncio.gather(*(_fetch_chunk(cr) for cr in block.chunks))
             )
         ct = reassemble(raw_chunks)
-        if block_digest(ct) != block.digest:
+        if not hmac.compare_digest(block_digest(ct), block.digest):
             raise ValueError(
                 f"block {block.block_index} digest mismatch — data may be corrupted"
             )

@@ -34,11 +34,9 @@ class RaidLevel(str, Enum):
 def _xor_bytes(a: bytes, b: bytes) -> bytes:
     """XOR two byte strings, padding the shorter one with zeros."""
     length = max(len(a), len(b))
-    ba = bytearray(length)
-    ba[:len(a)] = a
-    bb = bytearray(length)
-    bb[:len(b)] = b
-    return bytes(x ^ y for x, y in zip(ba, bb))
+    ai = int.from_bytes(a.ljust(length, b"\x00"), "big")
+    bi = int.from_bytes(b.ljust(length, b"\x00"), "big")
+    return (ai ^ bi).to_bytes(length, "big")
 
 
 @dataclass(frozen=True, slots=True)
