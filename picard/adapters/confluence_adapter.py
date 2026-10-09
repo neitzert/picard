@@ -151,3 +151,7 @@ class ConfluenceAdapter(Adapter):
                 return resp.status == 200
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()

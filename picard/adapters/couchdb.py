@@ -40,7 +40,7 @@ class CouchDbAdapter(Adapter):
         import httpx
 
         auth = (self._username, self._password) if self._username else None
-        self._client = httpx.AsyncClient(auth=auth)
+        self._client = httpx.AsyncClient(auth=auth, timeout=30.0)
         return self._client
 
     async def _ensure_db(self):
@@ -130,3 +130,7 @@ class CouchDbAdapter(Adapter):
             return resp.status_code == 200
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

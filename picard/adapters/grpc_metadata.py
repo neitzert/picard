@@ -40,9 +40,9 @@ class GrpcMetadataAdapter(Adapter):
         if self._api_key:
             headers["x-api-key"] = self._api_key
         try:
-            self._client = httpx.AsyncClient(http2=True, headers=headers)
+            self._client = httpx.AsyncClient(http2=True, headers=headers, timeout=30.0)
         except ImportError:
-            self._client = httpx.AsyncClient(headers=headers)
+            self._client = httpx.AsyncClient(headers=headers, timeout=30.0)
         return self._client
 
     def profile(self) -> AdapterProfile:
@@ -103,3 +103,7 @@ class GrpcMetadataAdapter(Adapter):
             return resp.status_code == 200
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

@@ -39,6 +39,7 @@ class MatrixAdapter(Adapter):
 
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {self._access_token}"},
+            timeout=30.0,
         )
         return self._client
 
@@ -119,3 +120,7 @@ class MatrixAdapter(Adapter):
             return "user_id" in resp.json()
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

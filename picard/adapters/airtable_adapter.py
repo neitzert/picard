@@ -139,3 +139,7 @@ class AirtableAdapter(Adapter):
             }
         except Exception:
             return {"used_bytes": None, "free_bytes": None, "total_bytes": None, "chunk_count": None}
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()

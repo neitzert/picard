@@ -168,3 +168,7 @@ class CalDavAdapter(Adapter):
             return resp.status_code == 207
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

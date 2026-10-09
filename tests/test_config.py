@@ -130,3 +130,90 @@ class TestInitConfig:
         path.write_text("existing", encoding="utf-8")
         with pytest.raises(FileExistsError):
             init_config(path)
+
+
+class TestAdapterNameValidation:
+    def _write_cfg(self, tmp_path, adapters_toml: str) -> Path:
+        p = tmp_path / "config.toml"
+        p.write_text(
+            "[general]\nblock_size = 65536\n\n" + adapters_toml,
+            encoding="utf-8",
+        )
+        return p
+
+    def test_empty_name_rejected(self, tmp_path):
+        p = self._write_cfg(tmp_path, '[[adapters]]\nname = ""\ntype = "memory"\n')
+        with pytest.raises(ValueError, match="1-128"):
+            load_config(p)
+
+    def test_slash_rejected(self, tmp_path):
+        p = self._write_cfg(tmp_path, '[[adapters]]\nname = "a/b"\ntype = "memory"\n')
+        with pytest.raises(ValueError, match="forbidden"):
+            load_config(p)
+
+    def test_backslash_rejected(self, tmp_path):
+        p = self._write_cfg(tmp_path, '[[adapters]]\nname = "a\\\\b"\ntype = "memory"\n')
+        with pytest.raises(ValueError, match="forbidden"):
+            load_config(p)
+
+    def test_dotdot_rejected(self, tmp_path):
+        p = self._write_cfg(tmp_path, '[[adapters]]\nname = "a..b"\ntype = "memory"\n')
+        with pytest.raises(ValueError, match="forbidden"):
+            load_config(p)
+
+    def test_too_long_rejected(self, tmp_path):
+        long_name = "x" * 129
+        p = self._write_cfg(tmp_path, f'[[adapters]]\nname = "{long_name}"\ntype = "memory"\n')
+        with pytest.raises(ValueError, match="1-128"):
+            load_config(p)
+
+    def test_duplicate_name_rejected(self, tmp_path):
+        p = self._write_cfg(
+            tmp_path,
+            '[[adapters]]\nname = "dup"\ntype = "memory"\n\n'
+            '[[adapters]]\nname = "dup"\ntype = "filesystem"\n',
+        )
+        with pytest.raises(ValueError, match="duplicate"):
+            load_config(p)
+
+    def test_valid_name_accepted(self, tmp_path):
+        p = self._write_cfg(tmp_path, '[[adapters]]\nname = "my-adapter-1"\ntype = "memory"\n')
+        cfg = load_config(p)
+        assert cfg.adapters[0].name == "my-adapter-1"
+
+
+class TestRaidLevelValidation:
+    def test_invalid_level_rejected(self, tmp_path):
+        p = tmp_path / "config.toml"
+        p.write_text(
+            "[general]\nblock_size = 65536\n\n"
+            '[raid]\nlevel = "raid99"\nadapters = ["a","b"]\n',
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="invalid RAID level"):
+            load_config(p)
+
+    def test_valid_levels_accepted(self, tmp_path):
+        for level in ("raid0", "raid1", "raid5", "raid10"):
+            p = tmp_path / f"config_{level}.toml"
+            p.write_text(
+                "[general]\nblock_size = 65536\n\n"
+                f'[raid]\nlevel = "{level}"\nadapters = ["a","b","c"]\n',
+                encoding="utf-8",
+            )
+            cfg = load_config(p)
+            assert cfg.raid[0].level == level
+
+
+class TestBlockSizeValidation:
+    def test_too_small_rejected(self, tmp_path):
+        p = tmp_path / "config.toml"
+        p.write_text("[general]\nblock_size = 512\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="1024"):
+            load_config(p)
+
+    def test_too_large_rejected(self, tmp_path):
+        p = tmp_path / "config.toml"
+        p.write_text("[general]\nblock_size = 100000000\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="67108864"):
+            load_config(p)

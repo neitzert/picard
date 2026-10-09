@@ -148,3 +148,64 @@ class TestPicardMCP:
     async def test_get_nonexistent_errors(self):
         r = await _call("picard_get", {"path": "/does-not-exist.txt"})
         assert "error" in r.lower() if isinstance(r, str) else "error" in r
+
+
+class TestValidatePath:
+    def test_empty_path(self):
+        from picard.mcp_server import _validate_path
+        assert _validate_path("") is not None
+        assert "empty" in _validate_path("")
+
+    def test_null_byte_rejected(self):
+        from picard.mcp_server import _validate_path
+        assert _validate_path("/foo\x00bar") is not None
+        assert "null" in _validate_path("/foo\x00bar")
+
+    def test_too_long_rejected(self):
+        from picard.mcp_server import _validate_path
+        assert _validate_path("/" + "a" * 4096) is not None
+        assert "4096" in _validate_path("/" + "a" * 4096)
+
+    def test_valid_path_ok(self):
+        from picard.mcp_server import _validate_path
+        assert _validate_path("/docs/readme.md") is None
+
+    def test_max_length_ok(self):
+        from picard.mcp_server import _validate_path
+        assert _validate_path("/" + "a" * 4095) is None
+
+
+class TestSanitizePath:
+    def test_collapse_dotdot(self):
+        from picard.mcp_server import _sanitize_path
+        assert _sanitize_path("/a/../b") == "/b"
+
+    def test_strip_nulls(self):
+        from picard.mcp_server import _sanitize_path
+        assert "\x00" not in _sanitize_path("/foo\x00bar")
+
+    def test_bare_dot_becomes_root(self):
+        from picard.mcp_server import _sanitize_path
+        assert _sanitize_path(".") == "/"
+
+    def test_normal_path_unchanged(self):
+        from picard.mcp_server import _sanitize_path
+        assert _sanitize_path("/docs/readme.md") == "/docs/readme.md"
+
+    def test_double_slashes_collapsed(self):
+        from picard.mcp_server import _sanitize_path
+        assert _sanitize_path("/a//b///c") == "/a/b/c"
+
+
+class TestPicardVerify:
+    async def test_verify_stored_file(self):
+        await _call("picard_put", {"path": "/verify-me.txt", "content": "verify this"})
+        r = await _call("picard_verify", {"path": "/verify-me.txt"})
+        assert r["ok"] is True
+        assert r["missing_chunks"] == 0
+        assert r["corrupt_blocks"] == 0
+        assert r["verified_chunks"] > 0
+
+    async def test_verify_missing_file(self):
+        r = await _call("picard_verify", {"path": "/no-such-file.txt"})
+        assert isinstance(r, str) or "error" in str(r).lower()

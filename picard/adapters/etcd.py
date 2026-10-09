@@ -50,7 +50,7 @@ class EtcdAdapter(Adapter):
         if self._client is not None:
             return self._client
         import httpx
-        self._client = httpx.AsyncClient()
+        self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
 
     def _key(self, manifest_id: str, block: int, chunk_index: int) -> str:
@@ -144,3 +144,7 @@ class EtcdAdapter(Adapter):
             return body.get("health") == "true" or body.get("status") == "true"
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

@@ -71,6 +71,7 @@ class CarddavAdapter(Adapter):
 
         self._client = httpx.AsyncClient(
             auth=(self._username, self._password),
+            timeout=30.0,
         )
         return self._client
 
@@ -170,3 +171,7 @@ class CarddavAdapter(Adapter):
             return resp.status_code == 207
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

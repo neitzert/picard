@@ -41,6 +41,7 @@ class GitLabAdapter(Adapter):
 
         self._client = httpx.AsyncClient(
             headers={"PRIVATE-TOKEN": self._token},
+            timeout=30.0,
         )
         return self._client
 
@@ -123,3 +124,7 @@ class GitLabAdapter(Adapter):
             return resp.status_code == 200
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

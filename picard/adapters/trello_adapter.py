@@ -132,3 +132,7 @@ class TrelloAdapter(Adapter):
             "total_bytes": None,
             "chunk_count": None,
         }
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.close()

@@ -42,7 +42,7 @@ class WebdavAdapter(Adapter):
         import httpx
 
         auth = (self._username, self._password) if self._username else None
-        self._client = httpx.AsyncClient(auth=auth)
+        self._client = httpx.AsyncClient(auth=auth, timeout=30.0)
         return self._client
 
     def _full_url(self, rel_path: str = "") -> str:
@@ -140,3 +140,7 @@ class WebdavAdapter(Adapter):
             return resp.status_code == 207
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

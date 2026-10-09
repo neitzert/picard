@@ -100,10 +100,11 @@ class Journal:
             )
 
     def get_incomplete(self) -> list[JournalEntry]:
-        rows = self._conn.execute(
-            "SELECT * FROM journal_entries WHERE state IN (?, ?) ORDER BY created_at",
-            (JournalState.PENDING.value, JournalState.IN_PROGRESS.value),
-        ).fetchall()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM journal_entries WHERE state IN (?, ?) ORDER BY created_at",
+                (JournalState.PENDING.value, JournalState.IN_PROGRESS.value),
+            ).fetchall()
         return [
             JournalEntry(
                 journal_id=r["journal_id"],

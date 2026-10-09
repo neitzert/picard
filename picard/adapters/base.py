@@ -70,6 +70,12 @@ class Adapter(ABC):
     async def close(self) -> None:
         """Release resources held by this adapter. Called on shutdown."""
 
+    async def __aenter__(self) -> "Adapter":
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()
+
     async def health_check(self) -> bool:
         """Return True if the backend is currently reachable."""
         return True

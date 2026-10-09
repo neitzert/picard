@@ -103,3 +103,7 @@ class CardanoAdapter(Adapter):
             "total_bytes": None,
             "chunk_count": None,
         }
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()

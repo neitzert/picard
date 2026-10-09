@@ -34,7 +34,7 @@ class IpfsAdapter(Adapter):
             return self._client
         import httpx
 
-        self._client = httpx.AsyncClient(base_url=self._api_url)
+        self._client = httpx.AsyncClient(base_url=self._api_url, timeout=30.0)
         return self._client
 
     def profile(self) -> AdapterProfile:
@@ -118,3 +118,7 @@ class IpfsAdapter(Adapter):
             return resp.status_code == 200 and "ID" in resp.json()
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

@@ -103,15 +103,31 @@ class Orchestrator:
         if self._journal:
             jid = self._journal.begin("put", path, manifest.manifest_id)
         try:
-            for bi in range(total_blocks):
-                start = bi * self._block_size
-                end = start + self._block_size
-                plaintext_block = data[start:end]
-                await self._scatter_block(manifest, bi, plaintext_block, passphrase)
-                if self._journal and jid:
-                    self._journal.mark_in_progress(
-                        jid, {"last_block": bi}
-                    )
+            if self._journal and jid:
+                for bi in range(total_blocks):
+                    start = bi * self._block_size
+                    end = start + self._block_size
+                    plaintext_block = data[start:end]
+                    await self._scatter_block(manifest, bi, plaintext_block, passphrase)
+                    self._journal.mark_in_progress(jid, {"last_block": bi})
+            elif total_blocks > 1:
+                sem = asyncio.Semaphore(8)
+                async def _guarded_scatter(bi: int) -> None:
+                    start = bi * self._block_size
+                    end = start + self._block_size
+                    async with sem:
+                        await self._scatter_block(
+                            manifest, bi, data[start:end], passphrase,
+                        )
+                await asyncio.gather(
+                    *(_guarded_scatter(bi) for bi in range(total_blocks))
+                )
+                manifest.blocks.sort(key=lambda b: b.block_index)
+            else:
+                for bi in range(total_blocks):
+                    start = bi * self._block_size
+                    end = start + self._block_size
+                    await self._scatter_block(manifest, bi, data[start:end], passphrase)
 
             if self._journal and jid:
                 with self._index.write_lock, self._index.connection:
@@ -172,12 +188,24 @@ class Orchestrator:
         end_bi = (end - 1) // bs
 
         blocks_by_idx = {b.block_index: b for b in manifest.blocks}
-        result: list[bytes] = []
-        for bi in range(start_bi, end_bi + 1):
-            block = blocks_by_idx.get(bi)
-            if block is None:
+        needed = list(range(start_bi, end_bi + 1))
+        for bi in needed:
+            if bi not in blocks_by_idx:
                 raise ValueError(f"missing block {bi}")
-            pt = await self._decrypt_block(manifest, block, passphrase)
+
+        if len(needed) <= 1:
+            decrypted = [await self._decrypt_block(
+                manifest, blocks_by_idx[needed[0]], passphrase
+            )] if needed else []
+        else:
+            decrypted = list(await asyncio.gather(*(
+                self._decrypt_block(manifest, blocks_by_idx[bi], passphrase)
+                for bi in needed
+            )))
+
+        result: list[bytes] = []
+        for i, bi in enumerate(needed):
+            pt = decrypted[i]
             blk_start = bi * bs
             lo = max(offset, blk_start) - blk_start
             hi = min(end, blk_start + bs) - blk_start
@@ -272,14 +300,27 @@ class Orchestrator:
     async def get_stream(
         self, path: str, passphrase: str, *, follow_symlinks: bool = True,
     ) -> AsyncIterator[bytes]:
-        """Yield decrypted blocks one at a time as an async iterator."""
+        """Yield decrypted blocks one at a time with 1-block lookahead."""
         manifest = self._resolve_path(path, follow_symlinks)
         if manifest is None:
             raise FileNotFoundError(f"no manifest for path: {path}")
         if manifest.file_type != "regular":
             raise FileNotFoundError(f"not a regular file: {path}")
-        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
-            yield await self._decrypt_block(manifest, block, passphrase)
+        blocks = sorted(manifest.blocks, key=lambda b: b.block_index)
+        if not blocks:
+            return
+        pending: asyncio.Task | None = asyncio.ensure_future(
+            self._decrypt_block(manifest, blocks[0], passphrase)
+        )
+        for i, block in enumerate(blocks):
+            current = await pending
+            if i + 1 < len(blocks):
+                pending = asyncio.ensure_future(
+                    self._decrypt_block(manifest, blocks[i + 1], passphrase)
+                )
+            else:
+                pending = None
+            yield current
 
     async def ls(self, path: str = "") -> list[str]:
         """List virtual paths. With *path*, list children of that directory."""
@@ -368,9 +409,10 @@ class Orchestrator:
             "errors": [],
         }
 
-        for block in sorted(manifest.blocks, key=lambda b: b.block_index):
-            raw_chunks: list[Chunk] = []
-            block_ok = True
+        async def _verify_block(block: BlockRecord) -> dict:
+            block_report: dict = {
+                "verified": 0, "missing": 0, "corrupt": False, "errors": [],
+            }
 
             async def _read_cr(cr):
                 adapter = self._adapter_by_name(cr.adapter_name)
@@ -389,34 +431,44 @@ class Orchestrator:
                 *(_read_cr(cr) for cr in block.chunks),
                 return_exceptions=True,
             )
+            raw_chunks: list[Chunk] = []
+            block_ok = True
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     cr = block.chunks[i]
-                    report["missing_chunks"] += 1
-                    report["errors"].append(
-                        {
-                            "block_index": block.block_index,
-                            "chunk_index": cr.chunk_index,
-                            "adapter": cr.adapter_name,
-                            "error": str(result),
-                        }
-                    )
+                    block_report["missing"] += 1
+                    block_report["errors"].append({
+                        "block_index": block.block_index,
+                        "chunk_index": cr.chunk_index,
+                        "adapter": cr.adapter_name,
+                        "error": str(result),
+                    })
                     block_ok = False
                 else:
                     _, chunk = result
                     raw_chunks.append(chunk)
-                    report["verified_chunks"] += 1
+                    block_report["verified"] += 1
 
             if block_ok and raw_chunks:
                 ct = reassemble(raw_chunks)
                 if block_digest(ct) != block.digest:
-                    report["corrupt_blocks"] += 1
-                    report["errors"].append(
-                        {
-                            "block_index": block.block_index,
-                            "error": "block digest mismatch",
-                        }
-                    )
+                    block_report["corrupt"] = True
+                    block_report["errors"].append({
+                        "block_index": block.block_index,
+                        "error": "block digest mismatch",
+                    })
+            return block_report
+
+        blocks = sorted(manifest.blocks, key=lambda b: b.block_index)
+        block_reports = await asyncio.gather(
+            *(_verify_block(b) for b in blocks)
+        )
+        for br in block_reports:
+            report["verified_chunks"] += br["verified"]
+            report["missing_chunks"] += br["missing"]
+            if br["corrupt"]:
+                report["corrupt_blocks"] += 1
+            report["errors"].extend(br["errors"])
 
         report["ok"] = (
             report["missing_chunks"] == 0 and report["corrupt_blocks"] == 0

@@ -7,6 +7,7 @@ ciphertext after this module returns plaintext.
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import hmac as _hmac_mod
 import os
@@ -21,9 +22,9 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
 def _zeroize(b: bytearray) -> None:
-    """Overwrite a mutable buffer with zeros."""
-    for i in range(len(b)):
-        b[i] = 0
+    """Overwrite a mutable buffer with zeros via libc memset."""
+    if b:
+        ctypes.memset((ctypes.c_char * len(b)).from_buffer(b), 0, len(b))
 
 # --- Key derivation --------------------------------------------------------
 
@@ -63,7 +64,7 @@ class DerivedKeyCache:
             tuple[bytes, bytes], tuple[bytearray, AESGCM, float]
         ] = OrderedDict()
         self._lock = threading.Lock()
-        self._hmac_key = os.urandom(32)
+        self._hmac_key = bytearray(os.urandom(32))
 
     def get(
         self, passphrase: str, salt: bytes
@@ -104,9 +105,7 @@ class DerivedKeyCache:
     def close(self) -> None:
         """Zeroize all cached keys and the HMAC secret."""
         self.clear()
-        secret = bytearray(self._hmac_key)
-        _zeroize(secret)
-        self._hmac_key = bytes(secret)
+        _zeroize(self._hmac_key)
 
     def _hash_pp(self, passphrase: str) -> bytes:
         return _hmac_mod.new(

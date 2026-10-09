@@ -38,7 +38,7 @@ class HttpHeadersAdapter(Adapter):
         headers: dict[str, str] = {}
         if self._auth_token:
             headers["Authorization"] = f"Bearer {self._auth_token}"
-        self._client = httpx.AsyncClient(headers=headers)
+        self._client = httpx.AsyncClient(headers=headers, timeout=30.0)
         return self._client
 
     def profile(self) -> AdapterProfile:
@@ -103,3 +103,7 @@ class HttpHeadersAdapter(Adapter):
             return resp.status_code == 200
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

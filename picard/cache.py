@@ -8,6 +8,7 @@ This cache ensures each block is decrypted at most once within its TTL.
 
 from __future__ import annotations
 
+import ctypes
 import threading
 import time
 from collections import OrderedDict
@@ -15,8 +16,8 @@ from dataclasses import dataclass
 
 
 def _zeroize(b: bytearray) -> None:
-    for i in range(len(b)):
-        b[i] = 0
+    if b:
+        ctypes.memset((ctypes.c_char * len(b)).from_buffer(b), 0, len(b))
 
 
 @dataclass(slots=True)

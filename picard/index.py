@@ -101,7 +101,7 @@ class Index:
         self._db_path = str(db_path)
         self._passphrase = passphrase
         self._encrypted = False
-        self._write_lock = threading.Lock()
+        self._write_lock = threading.RLock()
 
         if str(db_path) == ":memory:" or passphrase is None:
             self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
@@ -228,51 +228,55 @@ class Index:
 
     def get_manifest(self, manifest_id: str) -> Manifest | None:
         """Load a full manifest by ID."""
-        row = self._conn.execute(
-            "SELECT * FROM manifests WHERE manifest_id=?", (manifest_id,)
-        ).fetchone()
-        if row is None:
-            return None
-        return self._row_to_manifest(row)
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT * FROM manifests WHERE manifest_id=?", (manifest_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_manifest(row)
 
     def get_manifest_by_path(self, path: str) -> Manifest | None:
         """Load the manifest for a given virtual path."""
-        row = self._conn.execute(
-            "SELECT * FROM manifests WHERE path=? ORDER BY version DESC LIMIT 1",
-            (path,),
-        ).fetchone()
-        if row is None:
-            return None
-        return self._row_to_manifest(row)
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT * FROM manifests WHERE path=? ORDER BY version DESC LIMIT 1",
+                (path,),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_manifest(row)
 
     def list_paths(self) -> list[str]:
         """Return all stored virtual paths."""
-        rows = self._conn.execute(
-            "SELECT DISTINCT path FROM manifests ORDER BY path"
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT path FROM manifests ORDER BY path"
+            ).fetchall()
         return [r["path"] for r in rows]
 
     def list_file_summaries(self) -> list[dict]:
         """Return lightweight summaries for all latest-version files."""
-        rows = self._conn.execute(
-            "SELECT m.manifest_id, m.path, m.original_size, m.block_size, "
-            "m.total_blocks, m.created_at, m.file_type "
-            "FROM manifests m "
-            "WHERE m.version = ("
-            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
-            ") ORDER BY m.path"
-        ).fetchall()
-        if not rows:
-            return []
-        mids = [r["manifest_id"] for r in rows]
-        placeholders = ",".join("?" * len(mids))
-        chunk_rows = self._conn.execute(
-            f"SELECT manifest_id, COUNT(*) AS cnt, "
-            f"GROUP_CONCAT(DISTINCT adapter_name) AS adapters "
-            f"FROM chunks WHERE manifest_id IN ({placeholders}) "
-            f"GROUP BY manifest_id",
-            mids,
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT m.manifest_id, m.path, m.original_size, m.block_size, "
+                "m.total_blocks, m.created_at, m.file_type "
+                "FROM manifests m "
+                "WHERE m.version = ("
+                "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+                ") ORDER BY m.path"
+            ).fetchall()
+            if not rows:
+                return []
+            mids = [r["manifest_id"] for r in rows]
+            placeholders = ",".join("?" * len(mids))
+            chunk_rows = self._conn.execute(
+                f"SELECT manifest_id, COUNT(*) AS cnt, "
+                f"GROUP_CONCAT(DISTINCT adapter_name) AS adapters "
+                f"FROM chunks WHERE manifest_id IN ({placeholders}) "
+                f"GROUP BY manifest_id",
+                mids,
+            ).fetchall()
         chunk_map: dict[str, tuple[int, list[str]]] = {}
         for cr in chunk_rows:
             adapters = sorted(cr["adapters"].split(",")) if cr["adapters"] else []
@@ -382,20 +386,22 @@ class Index:
             return (row["max_v"] or 0) + 1
 
     def get_manifest_by_path_version(self, path: str, version: int) -> Manifest | None:
-        row = self._conn.execute(
-            "SELECT * FROM manifests WHERE path=? AND version=? LIMIT 1",
-            (path, version),
-        ).fetchone()
-        if row is None:
-            return None
-        return self._row_to_manifest(row)
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT * FROM manifests WHERE path=? AND version=? LIMIT 1",
+                (path, version),
+            ).fetchone()
+            if row is None:
+                return None
+            return self._row_to_manifest(row)
 
     def list_versions(self, path: str) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT manifest_id, version, created_at, original_size, file_type "
-            "FROM manifests WHERE path=? ORDER BY version",
-            (path,),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT manifest_id, version, created_at, original_size, file_type "
+                "FROM manifests WHERE path=? ORDER BY version",
+                (path,),
+            ).fetchall()
         return [
             {
                 "manifest_id": r["manifest_id"],
@@ -408,22 +414,24 @@ class Index:
         ]
 
     def list_children(self, parent_path: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT DISTINCT path FROM manifests WHERE parent_path=? ORDER BY path",
-            (parent_path,),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT path FROM manifests WHERE parent_path=? ORDER BY path",
+                (parent_path,),
+            ).fetchall()
         return [r["path"] for r in rows]
 
     def list_children_with_metadata(self, parent_path: str) -> list[dict]:
-        rows = self._conn.execute(
-            "SELECT m.path, m.original_size, m.file_type, m.version, "
-            "m.mode, m.mtime "
-            "FROM manifests m "
-            "WHERE m.parent_path = ? AND m.version = ("
-            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
-            ") ORDER BY m.path",
-            (parent_path,),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT m.path, m.original_size, m.file_type, m.version, "
+                "m.mode, m.mtime "
+                "FROM manifests m "
+                "WHERE m.parent_path = ? AND m.version = ("
+                "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+                ") ORDER BY m.path",
+                (parent_path,),
+            ).fetchall()
         return [
             {
                 "path": r["path"],
@@ -439,14 +447,15 @@ class Index:
 
     def list_children_rich(self, parent_path: str) -> list[dict]:
         """Return children with path, file_type, and original_size (latest version)."""
-        rows = self._conn.execute(
-            "SELECT m.path, m.file_type, m.original_size "
-            "FROM manifests m WHERE m.parent_path=? "
-            "AND m.version = ("
-            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
-            ") ORDER BY m.path",
-            (parent_path,),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT m.path, m.file_type, m.original_size "
+                "FROM manifests m WHERE m.parent_path=? "
+                "AND m.version = ("
+                "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+                ") ORDER BY m.path",
+                (parent_path,),
+            ).fetchall()
         return [
             {"path": r["path"], "file_type": r["file_type"],
              "original_size": r["original_size"]}
@@ -455,20 +464,21 @@ class Index:
 
     def tree_query(self, root: str = "/", max_depth: int = 64) -> list[dict]:
         """Return all descendants of *root* up to *max_depth* via recursive CTE."""
-        rows = self._conn.execute(
-            "WITH RECURSIVE descendants(path, file_type, original_size, parent_path, depth) AS ("
-            "  SELECT m.path, m.file_type, m.original_size, m.parent_path, 0 "
-            "  FROM manifests m WHERE m.parent_path=? "
-            "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
-            "  UNION ALL "
-            "  SELECT m.path, m.file_type, m.original_size, m.parent_path, d.depth + 1 "
-            "  FROM manifests m INNER JOIN descendants d ON m.parent_path = d.path "
-            "  WHERE d.file_type = 'directory' AND d.depth < ? "
-            "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
-            ") SELECT path, file_type, original_size, parent_path, depth FROM descendants "
-            "ORDER BY path",
-            (root, max_depth),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "WITH RECURSIVE descendants(path, file_type, original_size, parent_path, depth) AS ("
+                "  SELECT m.path, m.file_type, m.original_size, m.parent_path, 0 "
+                "  FROM manifests m WHERE m.parent_path=? "
+                "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
+                "  UNION ALL "
+                "  SELECT m.path, m.file_type, m.original_size, m.parent_path, d.depth + 1 "
+                "  FROM manifests m INNER JOIN descendants d ON m.parent_path = d.path "
+                "  WHERE d.file_type = 'directory' AND d.depth < ? "
+                "  AND m.version = (SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path) "
+                ") SELECT path, file_type, original_size, parent_path, depth FROM descendants "
+                "ORDER BY path",
+                (root, max_depth),
+            ).fetchall()
         return [
             {"path": r["path"], "file_type": r["file_type"],
              "original_size": r["original_size"], "parent_path": r["parent_path"],
@@ -483,34 +493,36 @@ class Index:
         adapter_name -> {"chunk_count": N, "bytes": N}.
         Only counts chunks belonging to each path's latest version.
         """
-        rows = self._conn.execute(
-            "SELECT c.adapter_name, COUNT(*) AS cnt, "
-            "COALESCE(SUM(c.size_bytes), 0) AS total "
-            "FROM chunks c INNER JOIN manifests m "
-            "ON c.manifest_id = m.manifest_id "
-            "WHERE m.version = ("
-            "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
-            ") GROUP BY c.adapter_name"
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT c.adapter_name, COUNT(*) AS cnt, "
+                "COALESCE(SUM(c.size_bytes), 0) AS total "
+                "FROM chunks c INNER JOIN manifests m "
+                "ON c.manifest_id = m.manifest_id "
+                "WHERE m.version = ("
+                "  SELECT MAX(m2.version) FROM manifests m2 WHERE m2.path = m.path"
+                ") GROUP BY c.adapter_name"
+            ).fetchall()
+            fc = self._conn.execute(
+                "SELECT COUNT(DISTINCT path) AS n FROM manifests"
+            ).fetchone()
         stats: dict[str, dict[str, int]] = {}
         for r in rows:
             stats[r["adapter_name"]] = {
                 "chunk_count": r["cnt"],
                 "bytes": r["total"],
             }
-        fc = self._conn.execute(
-            "SELECT COUNT(DISTINCT path) AS n FROM manifests"
-        ).fetchone()
         return stats, fc["n"]
 
     def chunk_stats_for_manifest(self, manifest_id: str) -> tuple[dict[str, int], int]:
         """Return (adapter_distribution, total_chunk_bytes) via SQL aggregate."""
-        rows = self._conn.execute(
-            "SELECT adapter_name, COUNT(*) AS cnt, "
-            "COALESCE(SUM(size_bytes), 0) AS total "
-            "FROM chunks WHERE manifest_id=? GROUP BY adapter_name",
-            (manifest_id,),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT adapter_name, COUNT(*) AS cnt, "
+                "COALESCE(SUM(size_bytes), 0) AS total "
+                "FROM chunks WHERE manifest_id=? GROUP BY adapter_name",
+                (manifest_id,),
+            ).fetchall()
         dist: dict[str, int] = {}
         total = 0
         for r in rows:
@@ -519,10 +531,11 @@ class Index:
         return dist, total
 
     def list_paths_with_prefix(self, prefix: str) -> list[str]:
-        rows = self._conn.execute(
-            "SELECT DISTINCT path FROM manifests WHERE path LIKE ? ORDER BY path",
-            (prefix + "%",),
-        ).fetchall()
+        with self._write_lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT path FROM manifests WHERE path LIKE ? ORDER BY path",
+                (prefix + "%",),
+            ).fetchall()
         return [r["path"] for r in rows]
 
     def update_manifest_metadata(self, manifest_id: str, **fields: object) -> None:
@@ -555,7 +568,7 @@ class Index:
         return self._conn
 
     @property
-    def write_lock(self) -> threading.Lock:
+    def write_lock(self) -> threading.RLock:
         return self._write_lock
 
     def flush(self) -> None:
@@ -567,7 +580,8 @@ class Index:
     def _write_encrypted(self) -> None:
         import tempfile
         from picard.crypto import encrypt
-        sql_text = "\n".join(self._conn.iterdump()) + "\n"
+        with self._write_lock:
+            sql_text = "\n".join(self._conn.iterdump()) + "\n"
         ct = encrypt(sql_text.encode("utf-8"), self._passphrase)
         dest = Path(self._db_path)
         fd, tmp = tempfile.mkstemp(dir=str(dest.parent), suffix=".tmp")

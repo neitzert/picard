@@ -315,15 +315,28 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
 
     def destroy(self, path):
         try:
-            if self._block_cache:
-                self._block_cache.clear()
+            for fh, wb in list(self._write_buffers.items()):
+                try:
+                    wb.buf.seek(0)
+                    data = wb.buf.read()
+                    if data:
+                        self._run(
+                            self._orch.put(wb.path, data, self._passphrase, mode=wb.mode)
+                        )
+                except Exception:
+                    pass
+            self._write_buffers.clear()
         finally:
             try:
-                self._loop.call_soon_threadsafe(self._loop.stop)
-                self._thread.join(timeout=5)
-                self._loop.close()
+                if self._block_cache:
+                    self._block_cache.clear()
             finally:
-                self._passphrase = ""
+                try:
+                    self._loop.call_soon_threadsafe(self._loop.stop)
+                    self._thread.join(timeout=5)
+                    self._loop.close()
+                finally:
+                    self._passphrase = ""
 
 
 def mount(

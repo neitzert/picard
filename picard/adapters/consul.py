@@ -39,7 +39,7 @@ class ConsulAdapter(Adapter):
         headers: dict[str, str] = {}
         if self._token:
             headers["X-Consul-Token"] = self._token
-        self._client = httpx.AsyncClient(headers=headers)
+        self._client = httpx.AsyncClient(headers=headers, timeout=30.0)
         return self._client
 
     def _key(self, manifest_id: str, block: int, chunk_index: int) -> str:
@@ -107,3 +107,7 @@ class ConsulAdapter(Adapter):
             return resp.status_code == 200 and len(resp.text) > 0
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()

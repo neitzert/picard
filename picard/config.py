@@ -26,6 +26,9 @@ DEFAULT_BLOCK_SIZE = 65536
 
 
 VALID_BROWSER_MODES = frozenset({"api", "headless", "headed"})
+VALID_RAID_LEVELS = frozenset({"raid0", "raid1", "raid5", "raid10"})
+_MAX_ADAPTER_NAME_LEN = 128
+_ADAPTER_NAME_BAD = frozenset("/\\\x00..")
 
 
 @dataclass
@@ -98,11 +101,20 @@ def load_config(path: Path | None = None) -> PicardConfig:
         block_size=block_size,
     )
 
+    seen_names: set[str] = set()
     for entry in raw.get("adapters", []):
+        aname = entry["name"]
+        if not aname or len(aname) > _MAX_ADAPTER_NAME_LEN:
+            raise ValueError(f"adapter name must be 1-{_MAX_ADAPTER_NAME_LEN} chars, got {aname!r}")
+        if "\x00" in aname or "/" in aname or "\\" in aname or ".." in aname:
+            raise ValueError(f"adapter name contains forbidden characters: {aname!r}")
+        if aname in seen_names:
+            raise ValueError(f"duplicate adapter name: {aname!r}")
+        seen_names.add(aname)
         params = {k: v for k, v in entry.items() if k not in ("name", "type", "enabled", "tor_proxy", "browser_mode")}
         cfg.adapters.append(
             AdapterEntry(
-                name=entry["name"],
+                name=aname,
                 type=entry["type"],
                 enabled=entry.get("enabled", True),
                 params=params,
@@ -116,10 +128,15 @@ def load_config(path: Path | None = None) -> PicardConfig:
         if isinstance(raid_raw, dict):
             raid_raw = [raid_raw]
         for i, entry in enumerate(raid_raw):
+            level = entry.get("level", "raid0")
+            if level not in VALID_RAID_LEVELS:
+                raise ValueError(
+                    f"invalid RAID level {level!r}, must be one of {sorted(VALID_RAID_LEVELS)}"
+                )
             cfg.raid.append(
                 RaidEntry(
                     name=entry.get("name", f"pool-{i}"),
-                    level=entry.get("level", "raid0"),
+                    level=level,
                     adapters=entry.get("adapters", []),
                     mirror_count=entry.get("mirror_count", 2),
                 )

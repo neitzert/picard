@@ -46,7 +46,7 @@ def load_master_key(
         raise ValueError("provide passphrase or keyfile")
 
     if keyfile:
-        raw = Path(keyfile).read_bytes()
+        raw = bytearray(Path(keyfile).read_bytes())
         if salt is None:
             salt = os.urandom(_SALT_LEN)
         hkdf = HKDF(
@@ -55,7 +55,11 @@ def load_master_key(
             salt=salt,
             info=b"picard-keyfile-v1",
         )
-        key = hkdf.derive(raw)
+        try:
+            key = hkdf.derive(bytes(raw))
+        finally:
+            for i in range(len(raw)):
+                raw[i] = 0
         return MasterKey(key=key, salt=salt, source="keyfile")
 
     dk, _cipher = derive_key(passphrase, salt=salt)

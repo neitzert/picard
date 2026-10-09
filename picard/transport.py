@@ -6,6 +6,7 @@ or as a standalone server via ``picard serve``.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -179,12 +180,15 @@ async def health(
 ):
     if not _verify_hmac(b"", x_signature, x_timestamp, "/transport/v1/health"):
         raise HTTPException(status_code=403, detail="invalid signature")
-    capacities: dict[str, dict | None] = {}
-    for name, adapter in _adapters.items():
+    async def _cap(name: str, adapter) -> tuple[str, dict | None]:
         try:
-            capacities[name] = await adapter.capacity()
+            return name, await asyncio.wait_for(adapter.capacity(), timeout=10.0)
         except Exception:
-            capacities[name] = None
+            return name, None
+    results = await asyncio.gather(
+        *(_cap(n, a) for n, a in _adapters.items())
+    )
+    capacities: dict[str, dict | None] = dict(results)
     return {
         "status": "ok",
         "adapters": len(_adapters),
