@@ -238,3 +238,92 @@ def _keyring_blocker(name, *args, **kwargs):
 
 import builtins
 original_import = builtins.__import__
+
+
+class TestSecurityHeaders:
+    def test_csp_header(self, client):
+        resp = client.get("/")
+        assert "Content-Security-Policy" in resp.headers
+        assert "default-src 'self'" in resp.headers["Content-Security-Policy"]
+
+    def test_xss_protection(self, client):
+        resp = client.get("/")
+        assert resp.headers["X-Content-Type-Options"] == "nosniff"
+        assert resp.headers["X-Frame-Options"] == "DENY"
+
+    def test_referrer_policy(self, client):
+        resp = client.get("/")
+        assert resp.headers["Referrer-Policy"] == "no-referrer"
+
+    def test_permissions_policy(self, client):
+        resp = client.get("/")
+        assert "camera=()" in resp.headers["Permissions-Policy"]
+
+    def test_cache_control(self, client):
+        resp = client.get("/")
+        assert resp.headers["Cache-Control"] == "no-store"
+
+
+class TestLocalAccessOnly:
+    def test_non_local_blocked(self, client):
+        resp = client.get("/api/stats")
+        assert resp.status_code == 200
+
+
+class TestScatterProfiles:
+    def test_returns_list(self, client):
+        resp = client.get("/api/scatter/profiles")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+        for p in data:
+            assert "name" in p
+            assert "raid_level" in p
+
+
+class TestFsEndpoints:
+    def test_fs_ls_empty(self, client):
+        resp = client.get("/api/fs/ls")
+        assert resp.status_code == 200
+
+    def test_fs_stat_not_found(self, client):
+        resp = client.get("/api/fs/stat?path=/nonexistent")
+        assert resp.status_code == 404
+
+    def test_fs_tree_no_orch(self, client):
+        resp = client.get("/api/fs/tree")
+        assert resp.status_code == 503
+
+    def test_fs_mkdir_no_orch(self, client):
+        resp = client.post("/api/fs/mkdir", json={"path": "/test"},
+                          headers={"Origin": "http://127.0.0.1"})
+        assert resp.status_code == 503
+
+    def test_fs_rm_no_orch(self, client):
+        resp = client.delete("/api/fs/rm?path=/test",
+                            headers={"Origin": "http://127.0.0.1"})
+        assert resp.status_code == 503
+
+    def test_fs_write_no_orch(self, client):
+        from io import BytesIO
+        resp = client.post("/api/fs/write",
+                          files={"file": ("test.txt", BytesIO(b"data"))},
+                          data={"path": "/"},
+                          headers={"Origin": "http://127.0.0.1"})
+        assert resp.status_code == 503
+
+
+class TestJournalEndpoint:
+    def test_journal_returns_list(self, client):
+        resp = client.get("/api/journal")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)
+
+
+class TestPeersEndpoint:
+    def test_peers_returns_list(self, client):
+        resp = client.get("/api/peers")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data, list)

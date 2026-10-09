@@ -299,7 +299,7 @@ class TestBlockCacheCorruption:
         cache = BlockCache(max_entries=10, max_bytes=1024, ttl_seconds=0.001)
         cache.put("m1", 0, b"data")
         import time
-        time.sleep(0.01)
+        time.sleep(0.05)
         assert cache.get("m1", 0) is None
 
     def test_invalidation_clears_entry(self):

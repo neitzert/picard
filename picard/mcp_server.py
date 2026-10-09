@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import os
+import posixpath
 import sys
 from pathlib import Path
 
@@ -232,7 +233,6 @@ async def list_tools():
 def _sanitize_path(path: str) -> str:
     """Normalize a virtual path: collapse ``..``, strip nulls."""
     path = path.replace("\x00", "")
-    import posixpath
     path = posixpath.normpath(path)
     if path == ".":
         path = "/"

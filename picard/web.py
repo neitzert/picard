@@ -81,6 +81,9 @@ async def _security_middleware(request: Request, call_next):
     response.headers["Content-Security-Policy"] = _CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 
@@ -152,9 +155,15 @@ async def index():
     return _UI_HTML
 
 
+_registry_cache: list[dict] | None = None
+
+
 @app.get("/api/adapters/registry")
 async def list_registry():
     """All known adapter types with their constructor signatures."""
+    global _registry_cache
+    if _registry_cache is not None:
+        return _registry_cache
     result = []
     for type_name in list_adapter_types():
         try:
@@ -184,6 +193,7 @@ async def list_registry():
             })
         except Exception:
             result.append({"type": type_name, "class": "?", "params": [], "category": "unknown"})
+    _registry_cache = result
     return result
 
 
