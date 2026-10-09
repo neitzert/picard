@@ -35,6 +35,18 @@ class OsmAdapter(Adapter):
         self._password = password
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -68,14 +80,14 @@ class OsmAdapter(Adapter):
         lat, lon = self._key_to_latlon(key)
         text = f"PICARD:{key}:{encoded_chunk}"
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                f"{self._api_url}/api/0.6/notes.json",
-                params={"lat": lat, "lon": lon, "text": text},
-                auth=self._auth(),
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.post(
+            f"{self._api_url}/api/0.6/notes.json",
+            params={"lat": lat, "lon": lon, "text": text},
+            auth=self._auth(),
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         note_id = str(data["properties"]["id"])
         loc = f"osm://notes/{note_id}"
@@ -87,12 +99,12 @@ class OsmAdapter(Adapter):
             return self._cache[ref.location]
 
         note_id = ref.location.split("/")[-1]
-        async with aiohttp.ClientSession() as session:
-            resp = await session.get(
-                f"{self._api_url}/api/0.6/notes/{note_id}.json",
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.get(
+            f"{self._api_url}/api/0.6/notes/{note_id}.json",
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         text = data["properties"]["comments"][0]["text"]
         chunk_data = text.split(":", 2)[-1]
@@ -102,13 +114,13 @@ class OsmAdapter(Adapter):
         self._cache.pop(ref.location, None)
         note_id = ref.location.split("/")[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.post(
-                    f"{self._api_url}/api/0.6/notes/{note_id}/close.json",
-                    params={"text": "removed"},
-                    auth=self._auth(),
-                )
-                resp.raise_for_status()
+            session = await self._get_session()
+            resp = await session.post(
+                f"{self._api_url}/api/0.6/notes/{note_id}/close.json",
+                params={"text": "removed"},
+                auth=self._auth(),
+            )
+            resp.raise_for_status()
             return True
         except Exception:
             return False
@@ -122,11 +134,11 @@ class OsmAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    f"{self._api_url}/api/0.6/capabilities",
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                f"{self._api_url}/api/0.6/capabilities",
+            )
+            return resp.status == 200
         except Exception:
             return False
 

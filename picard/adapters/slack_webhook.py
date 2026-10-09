@@ -30,6 +30,19 @@ class SlackWebhookAdapter(Adapter):
         self._read_token = read_api_token
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -41,17 +54,15 @@ class SlackWebhookAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         marker = f"PICARD:{chunk_id}"
         payload = {"text": f"{marker}\n{encoded_chunk}"}
         if self._channel:
             payload["channel"] = self._channel
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self._webhook_url, json=payload) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(self._webhook_url, json=payload) as resp:
+            resp.raise_for_status()
 
         location = f"slack-wh://{self._channel or 'default'}/{chunk_id}"
         self._cache[location] = encoded_chunk
@@ -64,18 +75,16 @@ class SlackWebhookAdapter(Adapter):
         if not self._read_token or not self._channel:
             raise RuntimeError("read requires read_api_token and channel")
 
-        import aiohttp
-
         chunk_id = ref.location.rsplit("/", 1)[-1]
         marker = f"PICARD:{chunk_id}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://slack.com/api/conversations.history",
-                headers={"Authorization": f"Bearer {self._read_token}"},
-                json={"channel": self._channel, "limit": 200},
-            ) as resp:
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            "https://slack.com/api/conversations.history",
+            headers={"Authorization": f"Bearer {self._read_token}"},
+            json={"channel": self._channel, "limit": 200},
+        ) as resp:
+            data = await resp.json()
 
         for msg in data.get("messages", []):
             text = msg.get("text", "")
@@ -95,15 +104,13 @@ class SlackWebhookAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._webhook_url,
-                    json={"text": "picard health check"},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.post(
+                self._webhook_url,
+                json={"text": "picard health check"},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

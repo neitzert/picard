@@ -49,6 +49,19 @@ class TwitterAdapter(Adapter):
         self._max = max_chunk_bytes or (10_000 if use_dm else 280)
         self._use_browser = use_browser
         self._headless = headless
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -68,89 +81,81 @@ class TwitterAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         if self._use_dm and self._dm_recipient_id:
             body = {
                 "text": encoded_chunk,
                 "participant_id": self._dm_recipient_id,
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API}/dm_conversations/with/{self._dm_recipient_id}/messages",
-                    json=body,
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    dm_id = data["data"]["dm_event_id"]
+            session = await self._get_session()
+            async with session.post(
+                f"{_API}/dm_conversations/with/{self._dm_recipient_id}/messages",
+                json=body,
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                dm_id = data["data"]["dm_event_id"]
             location = f"twitter://dm/{dm_id}"
         else:
             body = {"text": encoded_chunk}
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API}/tweets", json=body, headers=self._headers()
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    tweet_id = data["data"]["id"]
+            session = await self._get_session()
+            async with session.post(
+                f"{_API}/tweets", json=body, headers=self._headers()
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                tweet_id = data["data"]["id"]
             location = f"twitter://{tweet_id}"
 
         return StoredChunkRef(adapter_name="twitter", location=location)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         path = ref.location.split("://", 1)[1]
 
         if path.startswith("dm/"):
             dm_id = path.split("/", 1)[1]
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/dm_events/{dm_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/dm_events/{dm_id}",
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
             return data["data"]["text"]
         else:
             tweet_id = path
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/tweets/{tweet_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/tweets/{tweet_id}",
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
             return data["data"]["text"]
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         path = ref.location.split("://", 1)[1]
         if path.startswith("dm/"):
             return False
 
         tweet_id = path
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API}/tweets/{tweet_id}", headers=self._headers()
-                ) as resp:
-                    data = await resp.json()
-                    return data.get("data", {}).get("deleted", False)
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API}/tweets/{tweet_id}", headers=self._headers()
+            ) as resp:
+                data = await resp.json()
+                return data.get("data", {}).get("deleted", False)
         except Exception:
             return False
 
     async def _api_health(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/users/me", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/users/me", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

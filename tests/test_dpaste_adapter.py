@@ -58,8 +58,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             post_ctx = AsyncMock()
             post_ctx.__aenter__ = AsyncMock(return_value=post_resp)
             post_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -78,8 +78,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             get_ctx = AsyncMock()
             get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
             get_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -106,8 +106,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             get_ctx = AsyncMock()
             get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
             get_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -120,8 +120,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             session.get = MagicMock(side_effect=Exception("connection refused"))
 
             assert await a.health_check() is False
@@ -133,8 +133,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             post_ctx = AsyncMock()
             post_ctx.__aenter__ = AsyncMock(return_value=post_resp)
             post_ctx.__aexit__ = AsyncMock(return_value=False)
@@ -156,8 +156,8 @@ class TestDpasteAdapter:
 
         with patch("aiohttp.ClientSession") as mock_cls:
             session = AsyncMock()
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_cls.return_value = session
+            session.closed = False
             get_ctx = AsyncMock()
             get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
             get_ctx.__aexit__ = AsyncMock(return_value=False)

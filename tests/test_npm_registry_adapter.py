@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -24,7 +24,7 @@ def _make_adapter(**kw) -> NpmRegistryAdapter:
     return NpmRegistryAdapter(**defaults)
 
 
-def _mock_session(method="get", status=200, json_data=None, text_data=None):
+def _mock_response(method="get", status=200, json_data=None, text_data=None):
     resp = AsyncMock()
     resp.status = status
     resp.raise_for_status = MagicMock()
@@ -32,19 +32,13 @@ def _mock_session(method="get", status=200, json_data=None, text_data=None):
         resp.json = AsyncMock(return_value=json_data)
     if text_data is not None:
         resp.text = AsyncMock(return_value=text_data)
-
     cm = AsyncMock()
     cm.__aenter__ = AsyncMock(return_value=resp)
     cm.__aexit__ = AsyncMock(return_value=False)
-
     session = AsyncMock()
+    session.closed = False
     setattr(session, method, MagicMock(return_value=cm))
-
-    session_cm = AsyncMock()
-    session_cm.__aenter__ = AsyncMock(return_value=session)
-    session_cm.__aexit__ = AsyncMock(return_value=False)
-
-    return session_cm, session
+    return session
 
 
 @pytest.mark.asyncio
@@ -64,41 +58,33 @@ class TestNpmProfile:
 
 @pytest.mark.asyncio
 class TestNpmWrite:
-    @patch("aiohttp.ClientSession")
-    async def test_write_chunk(self, MockSession):
-        session_cm, session = _mock_session("put")
-        MockSession.return_value = session_cm
+    async def test_write_chunk(self):
         a = _make_adapter()
+        a._session = _mock_response("put")
         ref = await a.write_chunk(_sample_encoded())
         assert ref.adapter_name == "npm-registry"
         assert ref.location.startswith("npm://")
 
-    @patch("aiohttp.ClientSession")
-    async def test_write_opaque(self, MockSession):
-        session_cm, session = _mock_session("put")
-        MockSession.return_value = session_cm
+    async def test_write_opaque(self):
         a = _make_adapter()
+        a._session = _mock_response("put")
         ref = await a.write_chunk("opaque-sealed-data")
         assert ref.adapter_name == "npm-registry"
 
 
 @pytest.mark.asyncio
 class TestNpmRead:
-    @patch("aiohttp.ClientSession")
-    async def test_read_chunk(self, MockSession):
+    async def test_read_chunk(self):
         enc = _sample_encoded()
-        session_cm, session = _mock_session("get", json_data={"description": enc})
-        MockSession.return_value = session_cm
         a = _make_adapter()
+        a._session = _mock_response("get", json_data={"description": enc})
         ref = StoredChunkRef(adapter_name="npm-registry", location="npm://@picard/pchk-abc/1.0.0")
         result = await a.read_chunk(ref)
         assert result == enc
 
-    @patch("aiohttp.ClientSession")
-    async def test_read_not_found(self, MockSession):
-        session_cm, session = _mock_session("get", json_data={"description": ""})
-        MockSession.return_value = session_cm
+    async def test_read_not_found(self):
         a = _make_adapter()
+        a._session = _mock_response("get", json_data={"description": ""})
         ref = StoredChunkRef(adapter_name="npm-registry", location="npm://@picard/missing/1.0.0")
         with pytest.raises(KeyError):
             await a.read_chunk(ref)
@@ -106,33 +92,31 @@ class TestNpmRead:
 
 @pytest.mark.asyncio
 class TestNpmDelete:
-    @patch("aiohttp.ClientSession")
-    async def test_delete_success(self, MockSession):
-        session_cm, session = _mock_session("delete")
-        MockSession.return_value = session_cm
+    async def test_delete_success(self):
         a = _make_adapter()
+        a._session = _mock_response("delete")
         ref = StoredChunkRef(adapter_name="npm-registry", location="npm://@picard/pchk-abc/1.0.0")
         assert await a.delete_chunk(ref) is True
 
-    @patch("aiohttp.ClientSession")
-    async def test_delete_failure(self, MockSession):
-        MockSession.side_effect = Exception("network error")
+    async def test_delete_failure(self):
         a = _make_adapter()
+        a._session = AsyncMock()
+        a._session.closed = False
+        a._session.delete = MagicMock(side_effect=Exception("network error"))
         ref = StoredChunkRef(adapter_name="npm-registry", location="npm://@picard/missing/1.0.0")
         assert await a.delete_chunk(ref) is False
 
 
 @pytest.mark.asyncio
 class TestNpmHealth:
-    @patch("aiohttp.ClientSession")
-    async def test_health_ok(self, MockSession):
-        session_cm, session = _mock_session("get")
-        MockSession.return_value = session_cm
+    async def test_health_ok(self):
         a = _make_adapter()
+        a._session = _mock_response("get")
         assert await a.health_check() is True
 
-    @patch("aiohttp.ClientSession")
-    async def test_health_fail(self, MockSession):
-        MockSession.side_effect = Exception("connection refused")
+    async def test_health_fail(self):
         a = _make_adapter()
+        a._session = AsyncMock()
+        a._session.closed = False
+        a._session.get = MagicMock(side_effect=Exception("connection refused"))
         assert await a.health_check() is False

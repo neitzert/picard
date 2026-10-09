@@ -40,6 +40,17 @@ class AwsSnsAdapter(Adapter):
         self._region = region
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session: aiohttp.ClientSession | None = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -107,10 +118,10 @@ class AwsSnsAdapter(Adapter):
         endpoint = f"https://sns.{self._region}.amazonaws.com/"
         headers = self._sign_v4("POST", endpoint, body, now)
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(endpoint, headers=headers, data=body)
-            resp.raise_for_status()
-            text = await resp.text()
+        session = await self._get_session()
+        resp = await session.post(endpoint, headers=headers, data=body)
+        resp.raise_for_status()
+        text = await resp.text()
 
         import re
         m = re.search(r"<MessageId>(.*?)</MessageId>", text)
@@ -141,9 +152,9 @@ class AwsSnsAdapter(Adapter):
             now = datetime.now(timezone.utc)
             endpoint = f"https://sns.{self._region}.amazonaws.com/"
             headers = self._sign_v4("POST", endpoint, body, now)
-            async with aiohttp.ClientSession() as session:
-                resp = await session.post(endpoint, headers=headers, data=body)
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.post(endpoint, headers=headers, data=body)
+            return resp.status == 200
         except Exception:
             return False
 

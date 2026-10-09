@@ -12,6 +12,7 @@ import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 
 class ZendeskAdapter(Adapter):
@@ -30,6 +31,18 @@ class ZendeskAdapter(Adapter):
         self._api_token = api_token
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -42,8 +55,6 @@ class ZendeskAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         payload = {
             "ticket": {
@@ -60,15 +71,15 @@ class ZendeskAdapter(Adapter):
         )
         headers = {"Content-Type": "application/json"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"https://{self._subdomain}.zendesk.com/api/v2/tickets.json",
-                json=payload,
-                headers=headers,
-                auth=auth,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"https://{self._subdomain}.zendesk.com/api/v2/tickets.json",
+            json=payload,
+            headers=headers,
+            auth=auth,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         ticket_id = data.get("ticket", {}).get("id", chunk_id)
         location = f"zendesk://{self._subdomain}/tickets/{ticket_id}"
@@ -90,18 +101,16 @@ class ZendeskAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             auth = aiohttp.BasicAuth(
                 f"{self._email}/token", self._api_token
             )
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://{self._subdomain}.zendesk.com/api/v2/users/me.json",
-                    auth=auth,
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"https://{self._subdomain}.zendesk.com/api/v2/users/me.json",
+                auth=auth,
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

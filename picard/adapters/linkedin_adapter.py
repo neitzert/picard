@@ -36,6 +36,19 @@ class LinkedInAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -56,43 +69,39 @@ class LinkedInAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/ugcPosts",
-                headers=self._headers(),
-                json={
-                    "author": self._person_urn,
-                    "lifecycleState": "PUBLISHED",
-                    "visibility": {
-                        "com.linkedin.ugc.MemberNetworkVisibility": "CONNECTIONS"
-                    },
-                    "specificContent": {
-                        "com.linkedin.ugc.ShareContent": {
-                            "shareCommentary": {"text": encoded_chunk},
-                            "shareMediaCategory": "NONE",
-                        }
-                    },
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/ugcPosts",
+            headers=self._headers(),
+            json={
+                "author": self._person_urn,
+                "lifecycleState": "PUBLISHED",
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "CONNECTIONS"
                 },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                post_id = data.get("id", "")
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {"text": encoded_chunk},
+                        "shareMediaCategory": "NONE",
+                    }
+                },
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            post_id = data.get("id", "")
         loc = f"linkedin://{self._person_urn}/{post_id}"
         return StoredChunkRef(adapter_name="linkedin", location=loc)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/ugcPosts/{post_id}",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/ugcPosts/{post_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return (
             data.get("specificContent", {})
             .get("com.linkedin.ugc.ShareContent", {})
@@ -101,31 +110,27 @@ class LinkedInAdapter(Adapter):
         )
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API_BASE}/ugcPosts/{post_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API_BASE}/ugcPosts/{post_id}",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/ugcPosts",
-                headers=self._headers(),
-                params={"q": "authors", "authors": self._person_urn},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/ugcPosts",
+            headers=self._headers(),
+            params={"q": "authors", "authors": self._person_urn},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         for item in data.get("elements", []):
             text = (
                 item.get("specificContent", {})
@@ -220,13 +225,11 @@ class LinkedInAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/me", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/me", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

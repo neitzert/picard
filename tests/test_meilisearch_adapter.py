@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -83,6 +83,7 @@ class _FakeMeili:
 
 def _mock_session(meili):
     session = AsyncMock()
+    session.closed = False
     session.post = lambda url, **kw: meili.handle("POST", url, **kw)
     session.get = lambda url, **kw: meili.handle("GET", url, **kw)
     session.delete = lambda url, **kw: meili.handle("DELETE", url, **kw)
@@ -99,69 +100,57 @@ class TestMeilisearchAdapter:
 
     async def test_write_read_round_trip(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            ref = await adapter.write_chunk(_ROUND)
-            assert ref.adapter_name == "meilisearch"
-            result = await adapter.read_chunk(ref)
-            assert result == _ROUND
+        adapter._session = _mock_session(meili)
+        ref = await adapter.write_chunk(_ROUND)
+        assert ref.adapter_name == "meilisearch"
+        result = await adapter.read_chunk(ref)
+        assert result == _ROUND
 
     async def test_read_missing_raises(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            ref = StoredChunkRef(adapter_name="meilisearch", location="meili://test-idx/nope")
-            with pytest.raises(KeyError):
-                await adapter.read_chunk(ref)
+        adapter._session = _mock_session(meili)
+        ref = StoredChunkRef(adapter_name="meilisearch", location="meili://test-idx/nope")
+        with pytest.raises(KeyError):
+            await adapter.read_chunk(ref)
 
     async def test_delete(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            ref = await adapter.write_chunk(_ROUND)
-            assert await adapter.delete_chunk(ref) is True
+        adapter._session = _mock_session(meili)
+        ref = await adapter.write_chunk(_ROUND)
+        assert await adapter.delete_chunk(ref) is True
 
     async def test_list_chunks(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            await adapter.write_chunk(_C1)
-            await adapter.write_chunk(_C2)
-            refs = await adapter.list_chunks("m1")
-            assert len(refs) == 2
+        adapter._session = _mock_session(meili)
+        await adapter.write_chunk(_C1)
+        await adapter.write_chunk(_C2)
+        refs = await adapter.list_chunks("m1")
+        assert len(refs) == 2
 
     async def test_health_check_ok(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            assert await adapter.health_check() is True
+        adapter._session = _mock_session(meili)
+        assert await adapter.health_check() is True
 
     async def test_health_check_fail(self, adapter):
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(side_effect=Exception("no"))
-            assert await adapter.health_check() is False
+        session = AsyncMock()
+        session.closed = False
+        session.get = AsyncMock(side_effect=Exception("no"))
+        adapter._session = session
+        assert await adapter.health_check() is False
 
     async def test_capacity(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            cap = await adapter.capacity()
-            assert cap["used_bytes"] == 2048
-            assert cap["chunk_count"] == 0
+        adapter._session = _mock_session(meili)
+        cap = await adapter.capacity()
+        assert cap["used_bytes"] == 2048
+        assert cap["chunk_count"] == 0
 
     async def test_location_format(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            ref = await adapter.write_chunk(_ROUND)
-            assert ref.location.startswith("meili://test-idx/")
+        adapter._session = _mock_session(meili)
+        ref = await adapter.write_chunk(_ROUND)
+        assert ref.location.startswith("meili://test-idx/")
 
     async def test_api_key_header(self):
         a = MeilisearchAdapter(api_key="test-key")
@@ -170,12 +159,10 @@ class TestMeilisearchAdapter:
 
     async def test_write_opaque_data(self, adapter):
         meili = _FakeMeili()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(meili))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
-            ref = await adapter.write_chunk("opaque-sealed")
-            result = await adapter.read_chunk(ref)
-            assert result == "opaque-sealed"
+        adapter._session = _mock_session(meili)
+        ref = await adapter.write_chunk("opaque-sealed")
+        result = await adapter.read_chunk(ref)
+        assert result == "opaque-sealed"
 
     async def test_max_chunk_configurable(self):
         a = MeilisearchAdapter(max_chunk_bytes=999)

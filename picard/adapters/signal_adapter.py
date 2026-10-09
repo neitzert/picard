@@ -29,6 +29,19 @@ class SignalAdapter(Adapter):
         self._api_url = api_url.rstrip("/")
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -40,22 +53,20 @@ class SignalAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         message = f"PICARD:{chunk_id}\n{encoded_chunk}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._api_url}/v2/send",
-                json={
-                    "message": message,
-                    "number": self._phone,
-                    "recipients": [self._recipient],
-                },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{self._api_url}/v2/send",
+            json={
+                "message": message,
+                "number": self._phone,
+                "recipients": [self._recipient],
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         ts = data.get("timestamp", chunk_id)
         location = f"signal://{self._phone}/{ts}"
@@ -66,14 +77,12 @@ class SignalAdapter(Adapter):
         if ref.location in self._cache:
             return self._cache[ref.location]
 
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._api_url}/v1/receive/{self._phone}",
-            ) as resp:
-                resp.raise_for_status()
-                messages = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._api_url}/v1/receive/{self._phone}",
+        ) as resp:
+            resp.raise_for_status()
+            messages = await resp.json()
 
         ts = ref.location.rsplit("/", 1)[-1]
         for msg in messages:
@@ -93,12 +102,10 @@ class SignalAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self._api_url}/v1/about") as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(f"{self._api_url}/v1/about") as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -30,6 +30,19 @@ class PrometheusAdapter(Adapter):
         self._job_name = job_name
         self._query_url = query_url.rstrip("/") if query_url else None
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -47,7 +60,6 @@ class PrometheusAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
         from picard.chunker import Chunk
 
         try:
@@ -65,13 +77,13 @@ class PrometheusAdapter(Adapter):
             f"/group/{group_key}"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                url,
-                data=body,
-                headers={"Content-Type": "text/plain"},
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(
+            url,
+            data=body,
+            headers={"Content-Type": "text/plain"},
+        ) as resp:
+            resp.raise_for_status()
 
         location = f"prom://{self._job_name}/{group_key}"
         return StoredChunkRef(adapter_name="prometheus", location=location)
@@ -82,27 +94,23 @@ class PrometheusAdapter(Adapter):
                 "prometheus read requires query_url (Prometheus server)"
             )
 
-        import aiohttp
-
         parts = ref.location.split("/", 2)
         group_key = parts[2] if len(parts) > 2 else parts[-1]
 
         query = f'picard_chunk{{group="{group_key}"}}'
         url = f"{self._query_url}/api/v1/query"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params={"query": query}) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
-                data = result["data"]["result"]
-                if not data:
-                    raise KeyError(f"metric not found: {group_key}")
-                b64 = data[0]["metric"]["data"]
-                return base64.b64decode(b64).decode()
+        session = await self._get_session()
+        async with session.get(url, params={"query": query}) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+            data = result["data"]["result"]
+            if not data:
+                raise KeyError(f"metric not found: {group_key}")
+            b64 = data[0]["metric"]["data"]
+            return base64.b64decode(b64).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.split("/", 2)
         group_key = parts[2] if len(parts) > 2 else parts[-1]
         url = (
@@ -111,9 +119,9 @@ class PrometheusAdapter(Adapter):
         )
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url) as resp:
-                    return resp.status in (200, 202)
+            session = await self._get_session()
+            async with session.delete(url) as resp:
+                return resp.status in (200, 202)
         except Exception:
             return False
 
@@ -121,35 +129,31 @@ class PrometheusAdapter(Adapter):
         if not self._query_url:
             return []
 
-        import aiohttp
-
         query = f'picard_chunk{{group=~"{manifest_id}/.*"}}'
         url = f"{self._query_url}/api/v1/query"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, params={"query": query}) as resp:
-                    resp.raise_for_status()
-                    result = await resp.json()
-                    return [
-                        StoredChunkRef(
-                            adapter_name="prometheus",
-                            location=f"prom://{self._job_name}/{r['metric']['group']}",
-                        )
-                        for r in result["data"]["result"]
-                    ]
+            session = await self._get_session()
+            async with session.get(url, params={"query": query}) as resp:
+                resp.raise_for_status()
+                result = await resp.json()
+                return [
+                    StoredChunkRef(
+                        adapter_name="prometheus",
+                        location=f"prom://{self._job_name}/{r['metric']['group']}",
+                    )
+                    for r in result["data"]["result"]
+                ]
         except Exception:
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._pushgateway_url}/-/healthy"
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._pushgateway_url}/-/healthy"
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

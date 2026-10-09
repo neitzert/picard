@@ -14,6 +14,7 @@ import zlib
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 _API_BASE = "https://www.flickr.com/services"
 _REST_URL = "https://api.flickr.com/services/rest/"
@@ -51,6 +52,18 @@ class FlickrAdapter(Adapter):
         self._oauth_token = oauth_token
         self._oauth_secret = oauth_secret
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -70,8 +83,6 @@ class FlickrAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         png_data = _tiny_png()
         form = aiohttp.FormData()
         form.add_field("api_key", self._api_key)
@@ -87,50 +98,44 @@ class FlickrAdapter(Adapter):
             content_type="image/png",
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/upload/", data=form
-            ) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
-                import xml.etree.ElementTree as ET
-                root = ET.fromstring(text)
-                photo_id = root.find("photoid").text
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/upload/", data=form
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(text)
+            photo_id = root.find("photoid").text
         loc = f"flickr://{photo_id}"
         return StoredChunkRef(adapter_name="flickr", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         photo_id = ref.location.rsplit("/", 1)[-1]
         params = self._auth_params()
         params["method"] = "flickr.photos.getInfo"
         params["photo_id"] = photo_id
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(_REST_URL, params=params) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(_REST_URL, params=params) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return data["photo"]["description"]["_content"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         photo_id = ref.location.rsplit("/", 1)[-1]
         params = self._auth_params()
         params["method"] = "flickr.photos.delete"
         params["photo_id"] = photo_id
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(_REST_URL, params=params) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.post(_REST_URL, params=params) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         params = self._auth_params()
         params["method"] = "flickr.photos.search"
         params["user_id"] = "me"
@@ -138,10 +143,10 @@ class FlickrAdapter(Adapter):
         params["extras"] = "description"
 
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(_REST_URL, params=params) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(_REST_URL, params=params) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         for photo in data.get("photos", {}).get("photo", []):
             desc = photo.get("description", {}).get("_content", "")
             if manifest_id in desc:
@@ -154,13 +159,11 @@ class FlickrAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         params = self._auth_params()
         params["method"] = "flickr.test.login"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(_REST_URL, params=params) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(_REST_URL, params=params) as resp:
+                return resp.status == 200
         except Exception:
             return False

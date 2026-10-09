@@ -1,6 +1,6 @@
 """Tests for LoRaWAN adapter."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -31,46 +31,33 @@ class TestProfile:
         assert adapter.profile().rate_limit_per_min == 6
 
 
+def _mock_session(*methods):
+    mock_resp = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.status = 200
+    mock_resp.json = AsyncMock(return_value={})
+    session = AsyncMock()
+    session.closed = False
+    for method in methods:
+        setattr(session, method, MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(return_value=mock_resp),
+            __aexit__=AsyncMock(return_value=False),
+        )))
+    return session
+
+
 @pytest.mark.asyncio
 class TestWriteRead:
     async def test_write_returns_ref(self, adapter):
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(return_value={"id": "queue-1"})
-
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-
-        with patch("aiohttp.ClientSession", return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_session),
-            __aexit__=AsyncMock(return_value=False),
-        )):
-            ref = await adapter.write_chunk("PCHK:m1:0:0:data")
-
+        adapter._session = _mock_session("post")
+        ref = await adapter.write_chunk("PCHK:m1:0:0:data")
         assert ref.adapter_name == "lorawan"
         assert "lora://app-1/0011223344556677" in ref.location
 
     async def test_read_from_cache(self, adapter):
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(return_value={})
-
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-
+        adapter._session = _mock_session("post")
         data = "PCHK:m1:0:0:hello"
-        with patch("aiohttp.ClientSession", return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_session),
-            __aexit__=AsyncMock(return_value=False),
-        )):
-            ref = await adapter.write_chunk(data)
-
+        ref = await adapter.write_chunk(data)
         result = adapter._written[ref.location]
         assert result == data
 
@@ -78,32 +65,13 @@ class TestWriteRead:
 @pytest.mark.asyncio
 class TestDelete:
     async def test_delete_existing(self, adapter):
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(return_value={})
-
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-        mock_session.delete = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-
-        with patch("aiohttp.ClientSession", return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_session),
-            __aexit__=AsyncMock(return_value=False),
-        )):
-            ref = await adapter.write_chunk("PCHK:m1:0:0:data")
-            result = await adapter.delete_chunk(ref)
-
+        adapter._session = _mock_session("post", "delete")
+        ref = await adapter.write_chunk("PCHK:m1:0:0:data")
+        result = await adapter.delete_chunk(ref)
         assert result is True
 
     async def test_delete_nonexistent(self, adapter):
         from picard.adapters.base import StoredChunkRef
-
         ref = StoredChunkRef(adapter_name="lorawan", location="lora://fake")
         assert await adapter.delete_chunk(ref) is False
 
@@ -111,24 +79,9 @@ class TestDelete:
 @pytest.mark.asyncio
 class TestListChunks:
     async def test_list(self, adapter):
-        mock_resp = AsyncMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json = AsyncMock(return_value={})
-
-        mock_session = AsyncMock()
-        mock_session.post = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-
-        with patch("aiohttp.ClientSession", return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_session),
-            __aexit__=AsyncMock(return_value=False),
-        )):
-            await adapter.write_chunk("data-a")
-            await adapter.write_chunk("data-b")
-
-        # All locations contain the app_id and dev_eui
+        adapter._session = _mock_session("post")
+        await adapter.write_chunk("data-a")
+        await adapter.write_chunk("data-b")
         refs = await adapter.list_chunks("app-1")
         assert len(refs) == 2
 
@@ -136,24 +89,14 @@ class TestListChunks:
 @pytest.mark.asyncio
 class TestHealth:
     async def test_healthy(self, adapter):
-        mock_resp = AsyncMock()
-        mock_resp.status = 200
-
-        mock_session = AsyncMock()
-        mock_session.get = MagicMock(return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_resp),
-            __aexit__=AsyncMock(return_value=False),
-        ))
-
-        with patch("aiohttp.ClientSession", return_value=AsyncMock(
-            __aenter__=AsyncMock(return_value=mock_session),
-            __aexit__=AsyncMock(return_value=False),
-        )):
-            assert await adapter.health_check() is True
+        adapter._session = _mock_session("get")
+        assert await adapter.health_check() is True
 
     async def test_unhealthy(self, adapter):
-        with patch("aiohttp.ClientSession", side_effect=ConnectionError):
-            assert await adapter.health_check() is False
+        adapter._session = AsyncMock()
+        adapter._session.closed = False
+        adapter._session.get = MagicMock(side_effect=ConnectionError)
+        assert await adapter.health_check() is False
 
 
 @pytest.mark.asyncio

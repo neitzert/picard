@@ -14,6 +14,7 @@ from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
+import aiohttp
 
 
 class SmsAdapter(Adapter):

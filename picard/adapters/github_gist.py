@@ -28,6 +28,19 @@ class GitHubGistAdapter(Adapter):
     ) -> None:
         self._token = token
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -45,8 +58,6 @@ class GitHubGistAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             filename = f"{chunk.manifest_id}_{chunk.block_index}_{chunk.chunk_index}.pchk"
@@ -59,57 +70,51 @@ class GitHubGistAdapter(Adapter):
             "files": {filename: {"content": encoded_chunk}},
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API}/gists", json=payload, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{_API}/gists", json=payload, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         gist_id = data["id"]
         return StoredChunkRef(adapter_name="github-gist", location=f"gist://{gist_id}")
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         gist_id = ref.location.split("://", 1)[1]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API}/gists/{gist_id}", headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API}/gists/{gist_id}", headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         files = data["files"]
         first_file = next(iter(files.values()))
         return first_file["content"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         gist_id = ref.location.split("://", 1)[1]
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API}/gists/{gist_id}", headers=self._headers()
-                ) as resp:
-                    return resp.status == 204
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API}/gists/{gist_id}", headers=self._headers()
+            ) as resp:
+                return resp.status == 204
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/gists", headers=self._headers()
-                ) as resp:
-                    resp.raise_for_status()
-                    gists = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/gists", headers=self._headers()
+            ) as resp:
+                resp.raise_for_status()
+                gists = await resp.json()
 
             for gist in gists:
                 for fname in gist.get("files", {}):
@@ -126,13 +131,11 @@ class GitHubGistAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/user", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/user", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

@@ -35,6 +35,18 @@ class HuggingFaceAdapter(Adapter):
         self._repo_type = repo_type
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -59,13 +71,13 @@ class HuggingFaceAdapter(Adapter):
             f"{_HF_API}/{self._repo_type}s/{self._repo_id}/upload/main/{filename}"
         )
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.put(
-                upload_url,
-                headers=self._headers(),
-                data=encoded_chunk.encode(),
-            )
-            resp.raise_for_status()
+        session = await self._get_session()
+        resp = await session.put(
+            upload_url,
+            headers=self._headers(),
+            data=encoded_chunk.encode(),
+        )
+        resp.raise_for_status()
 
         loc = f"hf://{self._repo_id}/{filename}"
         self._cache[loc] = encoded_chunk
@@ -80,22 +92,22 @@ class HuggingFaceAdapter(Adapter):
             f"https://huggingface.co/{self._repo_type}s/{self._repo_id}/resolve/main/{path}"
         )
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.get(resolve_url, headers=self._headers())
-            resp.raise_for_status()
-            return await resp.text()
+        session = await self._get_session()
+        resp = await session.get(resolve_url, headers=self._headers())
+        resp.raise_for_status()
+        return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         self._cache.pop(ref.location, None)
         path = ref.location.replace(f"hf://{self._repo_id}/", "")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.delete(
-                    f"{_HF_API}/{self._repo_type}s/{self._repo_id}/delete/main/{path}",
-                    headers=self._headers(),
-                )
-                resp.raise_for_status()
+            session = await self._get_session()
+            resp = await session.delete(
+                f"{_HF_API}/{self._repo_type}s/{self._repo_id}/delete/main/{path}",
+                headers=self._headers(),
+            )
+            resp.raise_for_status()
             return True
         except Exception:
             return False
@@ -109,12 +121,12 @@ class HuggingFaceAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    f"{_HF_API}/whoami",
-                    headers=self._headers(),
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                f"{_HF_API}/whoami",
+                headers=self._headers(),
+            )
+            return resp.status == 200
         except Exception:
             return False
 

@@ -30,6 +30,18 @@ class CratesAdapter(Adapter):
         self._registry = registry_url.rstrip("/")
         self._prefix = crate_prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -67,30 +79,28 @@ class CratesAdapter(Adapter):
             "license": "MIT",
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self._registry}/api/v1/crates/new",
-                headers=self._headers(),
-                json=body,
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(
+            f"{self._registry}/api/v1/crates/new",
+            headers=self._headers(),
+            json=body,
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"crates://{crate_name}/{version}"
         return StoredChunkRef(adapter_name="crates-io", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.removeprefix("crates://").split("/")
         crate_name = parts[0]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._registry}/api/v1/crates/{crate_name}",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._registry}/api/v1/crates/{crate_name}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         desc = data.get("crate", {}).get("description", "")
         if not desc:
@@ -98,34 +108,30 @@ class CratesAdapter(Adapter):
         return desc
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.removeprefix("crates://").split("/")
         crate_name = parts[0]
         version = parts[1] if len(parts) > 1 else "0.1.0"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._registry}/api/v1/crates/{crate_name}/{version}/yank",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(
+                f"{self._registry}/api/v1/crates/{crate_name}/{version}/yank",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._registry}/api/v1/crates",
-                    params={"q": self._prefix, "per_page": 100},
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{self._registry}/api/v1/crates",
+                params={"q": self._prefix, "per_page": 100},
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
             refs = []
             for crate in data.get("crates", []):
@@ -140,14 +146,12 @@ class CratesAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._registry}/api/v1/summary",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._registry}/api/v1/summary",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

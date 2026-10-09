@@ -43,6 +43,19 @@ class TwitchAdapter(Adapter):
         self._headless = headless
         self._max = max_chunk_bytes
         self._chat_cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -63,72 +76,66 @@ class TwitchAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         if self._use_chat:
             loc = f"twitch://{self._broadcaster_id}/chat/{uuid.uuid4().hex[:8]}"
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API_BASE}/chat/messages",
-                    headers=self._headers(),
-                    json={
-                        "broadcaster_id": self._broadcaster_id,
-                        "sender_id": self._broadcaster_id,
-                        "message": encoded_chunk,
-                    },
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                    msg_id = data.get("data", [{}])[0].get("message_id", uuid.uuid4().hex)
-                    loc = f"twitch://{self._broadcaster_id}/chat/{msg_id}"
+            session = await self._get_session()
+            async with session.post(
+                f"{_API_BASE}/chat/messages",
+                headers=self._headers(),
+                json={
+                    "broadcaster_id": self._broadcaster_id,
+                    "sender_id": self._broadcaster_id,
+                    "message": encoded_chunk,
+                },
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                msg_id = data.get("data", [{}])[0].get("message_id", uuid.uuid4().hex)
+                loc = f"twitch://{self._broadcaster_id}/chat/{msg_id}"
             self._chat_cache[loc] = encoded_chunk
             return StoredChunkRef(adapter_name="twitch", location=loc)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.patch(
-                f"{_API_BASE}/channels",
-                headers=self._headers(),
-                params={"broadcaster_id": self._broadcaster_id},
-                json={"description": encoded_chunk},
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.patch(
+            f"{_API_BASE}/channels",
+            headers=self._headers(),
+            params={"broadcaster_id": self._broadcaster_id},
+            json={"description": encoded_chunk},
+        ) as resp:
+            resp.raise_for_status()
         loc = f"twitch://{self._broadcaster_id}/description"
         return StoredChunkRef(adapter_name="twitch", location=loc)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         if "/chat/" in ref.location:
             cached = self._chat_cache.get(ref.location)
             if cached:
                 return cached
             raise KeyError(f"chat message not in cache: {ref.location}")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/channels",
-                headers=self._headers(),
-                params={"broadcaster_id": self._broadcaster_id},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/channels",
+            headers=self._headers(),
+            params={"broadcaster_id": self._broadcaster_id},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return data["data"][0]["description"]
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         if "/chat/" in ref.location:
             return self._chat_cache.pop(ref.location, None) is not None
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.patch(
-                    f"{_API_BASE}/channels",
-                    headers=self._headers(),
-                    params={"broadcaster_id": self._broadcaster_id},
-                    json={"description": ""},
-                ) as resp:
-                    return resp.status == 204
+            session = await self._get_session()
+            async with session.patch(
+                f"{_API_BASE}/channels",
+                headers=self._headers(),
+                params={"broadcaster_id": self._broadcaster_id},
+                json={"description": ""},
+            ) as resp:
+                return resp.status == 204
         except Exception:
             return False
 
@@ -234,14 +241,12 @@ class TwitchAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/users",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/users",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

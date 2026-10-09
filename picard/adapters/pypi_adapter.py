@@ -14,6 +14,7 @@ from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
+import aiohttp
 
 
 class PypiAdapter(Adapter):
@@ -35,6 +36,18 @@ class PypiAdapter(Adapter):
         self._index_url = index_url.rstrip("/")
         self._prefix = pkg_prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -50,8 +63,6 @@ class PypiAdapter(Adapter):
         return f"{self._prefix}-{slug}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             pkg_name = self._pkg_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -78,17 +89,15 @@ class PypiAdapter(Adapter):
         return StoredChunkRef(adapter_name="pypi", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.removeprefix("pypi://").split("/")
         pkg_name = parts[0]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._index_url}/pypi/{pkg_name}/json"
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._index_url}/pypi/{pkg_name}/json"
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         desc = data.get("info", {}).get("description", "")
         if not desc:
@@ -96,8 +105,6 @@ class PypiAdapter(Adapter):
         return desc
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.removeprefix("pypi://").split("/")
         pkg_name = parts[0]
         version = parts[1] if len(parts) > 1 else "0.0.1"
@@ -113,16 +120,14 @@ class PypiAdapter(Adapter):
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._index_url}/simple/",
-                    headers={"Accept": "application/vnd.pypi.simple.v1+json"},
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{self._index_url}/simple/",
+                headers={"Accept": "application/vnd.pypi.simple.v1+json"},
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
             refs = []
             for project in data.get("projects", []):
@@ -137,13 +142,11 @@ class PypiAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._index_url}/pypi/pip/json"
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._index_url}/pypi/pip/json"
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

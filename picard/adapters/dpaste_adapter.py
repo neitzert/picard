@@ -24,6 +24,19 @@ class DpasteAdapter(Adapter):
         self._api_url = api_url.rstrip("/")
         self._expiry_days = expiry_days
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -35,32 +48,28 @@ class DpasteAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         data = {
             "content": encoded_chunk,
             "format": "url",
             "expires": str(self._expiry_days),
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self._api_url, data=data) as resp:
-                resp.raise_for_status()
-                url = (await resp.text()).strip()
+        session = await self._get_session()
+        async with session.post(self._api_url, data=data) as resp:
+            resp.raise_for_status()
+            url = (await resp.text()).strip()
 
         slug = url.rstrip("/").rsplit("/", 1)[-1]
         return StoredChunkRef(adapter_name="dpaste", location=f"dpaste://{slug}")
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         slug = ref.location.split("://", 1)[1]
         base = self._api_url.rsplit("/api", 1)[0]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{base}/{slug}.txt") as resp:
-                resp.raise_for_status()
-                return await resp.text()
+        session = await self._get_session()
+        async with session.get(f"{base}/{slug}.txt") as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         return False
@@ -69,13 +78,11 @@ class DpasteAdapter(Adapter):
         return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self._api_url.rsplit("/api", 1)[0]
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                self._api_url.rsplit("/api", 1)[0]
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

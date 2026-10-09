@@ -35,6 +35,18 @@ class CtLogAdapter(Adapter):
         self._ca_key_pem = ca_key_pem
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -46,8 +58,6 @@ class CtLogAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             from picard.chunker import Chunk
             chunk = Chunk.decode(encoded_chunk)
@@ -57,14 +67,14 @@ class CtLogAdapter(Adapter):
 
         cert_data = base64.b64encode(encoded_chunk.encode()).decode()
 
-        async with aiohttp.ClientSession() as session:
-            payload = {"chain": [cert_data]}
-            async with session.post(
-                f"{self._ct_log_url}/ct/v1/add-pre-chain",
-                json=payload,
-            ) as resp:
-                result = await resp.json()
-                entry_index = result.get("sct_version", chunk_id)
+        session = await self._get_session()
+        payload = {"chain": [cert_data]}
+        async with session.post(
+            f"{self._ct_log_url}/ct/v1/add-pre-chain",
+            json=payload,
+        ) as resp:
+            result = await resp.json()
+            entry_index = result.get("sct_version", chunk_id)
 
         location = f"ct://{self._ct_log_url}/{chunk_id}"
         self._cache[location] = encoded_chunk
@@ -74,22 +84,20 @@ class CtLogAdapter(Adapter):
         if ref.location in self._cache:
             return self._cache[ref.location]
 
-        import aiohttp
-
         parts = ref.location.removeprefix("ct://").split("/", 1)
         entry_index = parts[-1] if len(parts) > 1 else "0"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._ct_log_url}/ct/v1/get-entries",
-                params={"start": entry_index, "end": entry_index},
-            ) as resp:
-                data = await resp.json()
-                entries = data.get("entries", [])
-                if not entries:
-                    raise KeyError(f"CT entry not found: {ref.location}")
-                leaf = entries[0].get("leaf_input", "")
-                return base64.b64decode(leaf).decode()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._ct_log_url}/ct/v1/get-entries",
+            params={"start": entry_index, "end": entry_index},
+        ) as resp:
+            data = await resp.json()
+            entries = data.get("entries", [])
+            if not entries:
+                raise KeyError(f"CT entry not found: {ref.location}")
+            leaf = entries[0].get("leaf_input", "")
+            return base64.b64decode(leaf).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         return self._cache.pop(ref.location, None) is not None
@@ -102,14 +110,12 @@ class CtLogAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._ct_log_url}/ct/v1/get-sth"
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._ct_log_url}/ct/v1/get-sth"
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

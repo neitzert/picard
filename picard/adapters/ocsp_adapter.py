@@ -28,6 +28,19 @@ class OcspAdapter(Adapter):
         self._responder_url = responder_url.rstrip("/")
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -39,8 +52,6 @@ class OcspAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             from picard.chunker import Chunk
             chunk = Chunk.decode(encoded_chunk)
@@ -51,13 +62,13 @@ class OcspAdapter(Adapter):
         nonce = encoded_chunk.encode()[:self._max]
         request_hash = hashlib.sha256(nonce).hexdigest()[:16]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._responder_url,
-                data=nonce,
-                headers={"Content-Type": "application/ocsp-request"},
-            ) as resp:
-                await resp.read()
+        session = await self._get_session()
+        async with session.post(
+            self._responder_url,
+            data=nonce,
+            headers={"Content-Type": "application/ocsp-request"},
+        ) as resp:
+            await resp.read()
 
         location = f"ocsp://{self._responder_url}/{request_hash}"
         self._cache[location] = encoded_chunk
@@ -80,12 +91,10 @@ class OcspAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self._responder_url) as resp:
-                    return resp.status in (200, 405)
+            session = await self._get_session()
+            async with session.get(self._responder_url) as resp:
+                return resp.status in (200, 405)
         except Exception:
             return False
 

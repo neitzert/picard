@@ -32,6 +32,19 @@ class PastebinAdapter(Adapter):
         self._expire = expire
         self._visibility = visibility
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -43,8 +56,6 @@ class PastebinAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         data = {
             "api_dev_key": self._api_key,
             "api_option": "paste",
@@ -56,18 +67,16 @@ class PastebinAdapter(Adapter):
         if self._user_key:
             data["api_user_key"] = self._user_key
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"{_API}/api_post.php", data=data) as resp:
-                resp.raise_for_status()
-                url = await resp.text()
+        session = await self._get_session()
+        async with session.post(f"{_API}/api_post.php", data=data) as resp:
+            resp.raise_for_status()
+            url = await resp.text()
 
         paste_key = url.rstrip("/").rsplit("/", 1)[-1]
         location = f"paste://{paste_key}"
         return StoredChunkRef(adapter_name="pastebin", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         paste_key = ref.location.split("://", 1)[1]
 
         if self._user_key:
@@ -77,23 +86,21 @@ class PastebinAdapter(Adapter):
                 "api_option": "show_paste",
                 "api_paste_key": paste_key,
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API}/api_raw.php", data=data
-                ) as resp:
-                    resp.raise_for_status()
-                    return await resp.text()
+            session = await self._get_session()
+            async with session.post(
+                f"{_API}/api_raw.php", data=data
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.text()
         else:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://pastebin.com/raw/{paste_key}"
-                ) as resp:
-                    resp.raise_for_status()
-                    return await resp.text()
+            session = await self._get_session()
+            async with session.get(
+                f"https://pastebin.com/raw/{paste_key}"
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         paste_key = ref.location.split("://", 1)[1]
 
         if not self._user_key:
@@ -107,12 +114,12 @@ class PastebinAdapter(Adapter):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API}/api_post.php", data=data
-                ) as resp:
-                    text = await resp.text()
-                    return "removed" in text.lower()
+            session = await self._get_session()
+            async with session.post(
+                f"{_API}/api_post.php", data=data
+            ) as resp:
+                text = await resp.text()
+                return "removed" in text.lower()
         except Exception:
             return False
 
@@ -120,11 +127,9 @@ class PastebinAdapter(Adapter):
         return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get("https://pastebin.com") as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get("https://pastebin.com") as resp:
+                return resp.status == 200
         except Exception:
             return False

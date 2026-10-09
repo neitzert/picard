@@ -33,6 +33,18 @@ class MeilisearchAdapter(Adapter):
         self._api_key = api_key
         self._index = index
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -61,11 +73,11 @@ class MeilisearchAdapter(Adapter):
         doc = [{"id": key, "data": encoded_chunk, "manifest_id": manifest_id}]
         url = f"{self._url}/indexes/{self._index}/documents"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, headers=self._headers(), data=json.dumps(doc)
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(
+            url, headers=self._headers(), data=json.dumps(doc)
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"meili://{self._index}/{key}"
         return StoredChunkRef(adapter_name="meilisearch", location=loc)
@@ -75,13 +87,13 @@ class MeilisearchAdapter(Adapter):
         index, key = parts[0], parts[1]
         url = f"{self._url}/indexes/{index}/documents/{key}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers()) as resp:
-                if resp.status == 404:
-                    raise KeyError(f"chunk not found: {ref.location}")
-                resp.raise_for_status()
-                body = await resp.json()
-                return body["data"]
+        session = await self._get_session()
+        async with session.get(url, headers=self._headers()) as resp:
+            if resp.status == 404:
+                raise KeyError(f"chunk not found: {ref.location}")
+            resp.raise_for_status()
+            body = await resp.json()
+            return body["data"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         parts = ref.location.removeprefix("meili://").split("/", 1)
@@ -89,9 +101,9 @@ class MeilisearchAdapter(Adapter):
         url = f"{self._url}/indexes/{index}/documents/{key}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=self._headers()) as resp:
-                    return resp.status in (200, 202)
+            session = await self._get_session()
+            async with session.delete(url, headers=self._headers()) as resp:
+                return resp.status in (200, 202)
         except Exception:
             return False
 
@@ -104,46 +116,46 @@ class MeilisearchAdapter(Adapter):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, headers=self._headers(), data=json.dumps(payload)
-                ) as resp:
-                    resp.raise_for_status()
-                    body = await resp.json()
-                    return [
-                        StoredChunkRef(
-                            adapter_name="meilisearch",
-                            location=f"meili://{self._index}/{hit['id']}",
-                        )
-                        for hit in body.get("hits", [])
-                    ]
+            session = await self._get_session()
+            async with session.post(
+                url, headers=self._headers(), data=json.dumps(payload)
+            ) as resp:
+                resp.raise_for_status()
+                body = await resp.json()
+                return [
+                    StoredChunkRef(
+                        adapter_name="meilisearch",
+                        location=f"meili://{self._index}/{hit['id']}",
+                    )
+                    for hit in body.get("hits", [])
+                ]
         except Exception:
             return []
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/health", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/health", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def capacity(self) -> dict[str, int | None]:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/indexes/{self._index}/stats",
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    body = await resp.json()
-                    return {
-                        "used_bytes": body.get("rawDocumentDbSize", None),
-                        "free_bytes": None,
-                        "total_bytes": None,
-                        "chunk_count": body.get("numberOfDocuments", None),
-                    }
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/indexes/{self._index}/stats",
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                body = await resp.json()
+                return {
+                    "used_bytes": body.get("rawDocumentDbSize", None),
+                    "free_bytes": None,
+                    "total_bytes": None,
+                    "chunk_count": body.get("numberOfDocuments", None),
+                }
         except Exception:
             return {"used_bytes": None, "free_bytes": None, "total_bytes": None, "chunk_count": None}

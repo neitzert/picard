@@ -31,6 +31,19 @@ class PushoverAdapter(Adapter):
         self._device = device
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -43,8 +56,6 @@ class PushoverAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         payload = {
             "token": self._app_token,
@@ -56,13 +67,13 @@ class PushoverAdapter(Adapter):
         if self._device:
             payload["device"] = self._device
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_URL}/1/messages.json",
-                data=payload,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_URL}/1/messages.json",
+            data=payload,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         receipt = data.get("request", chunk_id)
         location = f"pushover://{self._user_key}/{receipt}"
@@ -84,16 +95,14 @@ class PushoverAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API_URL}/1/users/validate.json",
-                    data={"token": self._app_token, "user": self._user_key},
-                ) as resp:
-                    data = await resp.json()
-                    return data.get("status") == 1
+            session = await self._get_session()
+            async with session.post(
+                f"{_API_URL}/1/users/validate.json",
+                data={"token": self._app_token, "user": self._user_key},
+            ) as resp:
+                data = await resp.json()
+                return data.get("status") == 1
         except Exception:
             return False
 

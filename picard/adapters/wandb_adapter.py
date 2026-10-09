@@ -37,6 +37,18 @@ class WandbAdapter(Adapter):
         self._artifact_type = artifact_type
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -59,35 +71,35 @@ class WandbAdapter(Adapter):
 
         artifact_name = f"chunk-{key.replace('/', '-')}"
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                f"{_WANDB_API}/graphql",
-                headers=self._headers(),
-                json={
-                    "query": """
-                        mutation CreateArtifact($entityName: String!, $projectName: String!,
-                                               $artifactTypeName: String!, $artifactCollectionName: String!,
-                                               $description: String) {
-                            createArtifact(input: {
-                                entityName: $entityName,
-                                projectName: $projectName,
-                                artifactTypeName: $artifactTypeName,
-                                artifactCollectionName: $artifactCollectionName,
-                                description: $description
-                            }) { artifact { id } }
-                        }
-                    """,
-                    "variables": {
-                        "entityName": self._entity,
-                        "projectName": self._project,
-                        "artifactTypeName": self._artifact_type,
-                        "artifactCollectionName": artifact_name,
-                        "description": encoded_chunk[:4096],
-                    },
+        session = await self._get_session()
+        resp = await session.post(
+            f"{_WANDB_API}/graphql",
+            headers=self._headers(),
+            json={
+                "query": """
+                    mutation CreateArtifact($entityName: String!, $projectName: String!,
+                                           $artifactTypeName: String!, $artifactCollectionName: String!,
+                                           $description: String) {
+                        createArtifact(input: {
+                            entityName: $entityName,
+                            projectName: $projectName,
+                            artifactTypeName: $artifactTypeName,
+                            artifactCollectionName: $artifactCollectionName,
+                            description: $description
+                        }) { artifact { id } }
+                    }
+                """,
+                "variables": {
+                    "entityName": self._entity,
+                    "projectName": self._project,
+                    "artifactTypeName": self._artifact_type,
+                    "artifactCollectionName": artifact_name,
+                    "description": encoded_chunk[:4096],
                 },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         artifact_id = data.get("data", {}).get("createArtifact", {}).get("artifact", {}).get("id", key)
         loc = f"wandb://{self._entity}/{self._project}/{artifact_id}"
@@ -101,21 +113,21 @@ class WandbAdapter(Adapter):
         parts = ref.location.replace("wandb://", "").split("/")
         artifact_id = parts[-1] if parts else ref.location
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                f"{_WANDB_API}/graphql",
-                headers=self._headers(),
-                json={
-                    "query": """
-                        query GetArtifact($id: ID!) {
-                            artifact(id: $id) { description }
-                        }
-                    """,
-                    "variables": {"id": artifact_id},
-                },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.post(
+            f"{_WANDB_API}/graphql",
+            headers=self._headers(),
+            json={
+                "query": """
+                    query GetArtifact($id: ID!) {
+                        artifact(id: $id) { description }
+                    }
+                """,
+                "variables": {"id": artifact_id},
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         return data["data"]["artifact"]["description"]
 
@@ -125,20 +137,20 @@ class WandbAdapter(Adapter):
         artifact_id = parts[-1] if parts else ref.location
 
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.post(
-                    f"{_WANDB_API}/graphql",
-                    headers=self._headers(),
-                    json={
-                        "query": """
-                            mutation DeleteArtifact($id: ID!) {
-                                deleteArtifact(input: {artifactID: $id}) { success }
-                            }
-                        """,
-                        "variables": {"id": artifact_id},
-                    },
-                )
-                resp.raise_for_status()
+            session = await self._get_session()
+            resp = await session.post(
+                f"{_WANDB_API}/graphql",
+                headers=self._headers(),
+                json={
+                    "query": """
+                        mutation DeleteArtifact($id: ID!) {
+                            deleteArtifact(input: {artifactID: $id}) { success }
+                        }
+                    """,
+                    "variables": {"id": artifact_id},
+                },
+            )
+            resp.raise_for_status()
             return True
         except Exception:
             return False
@@ -152,12 +164,12 @@ class WandbAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    f"{_WANDB_API}/healthz",
-                    headers=self._headers(),
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                f"{_WANDB_API}/healthz",
+                headers=self._headers(),
+            )
+            return resp.status == 200
         except Exception:
             return False
 

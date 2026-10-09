@@ -31,6 +31,19 @@ class TeamsWebhookAdapter(Adapter):
         self._channel_id = channel_id
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -42,8 +55,6 @@ class TeamsWebhookAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         card = {
             "type": "message",
@@ -63,9 +74,9 @@ class TeamsWebhookAdapter(Adapter):
             ],
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self._webhook_url, json=card) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(self._webhook_url, json=card) as resp:
+            resp.raise_for_status()
 
         location = f"teams://{self._team_id or 'default'}/{self._channel_id or 'default'}/{chunk_id}"
         self._cache[location] = encoded_chunk
@@ -78,18 +89,16 @@ class TeamsWebhookAdapter(Adapter):
         if not self._read_token or not self._team_id or not self._channel_id:
             raise RuntimeError("read requires read_api_token, team_id, and channel_id")
 
-        import aiohttp
-
         chunk_id = ref.location.rsplit("/", 1)[-1]
         marker = f"PICARD:{chunk_id}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"https://graph.microsoft.com/v1.0/teams/{self._team_id}/channels/{self._channel_id}/messages",
-                headers={"Authorization": f"Bearer {self._read_token}"},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"https://graph.microsoft.com/v1.0/teams/{self._team_id}/channels/{self._channel_id}/messages",
+            headers={"Authorization": f"Bearer {self._read_token}"},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         for msg in data.get("value", []):
             body = msg.get("body", {}).get("content", "")
@@ -112,15 +121,13 @@ class TeamsWebhookAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._webhook_url,
-                    json={"type": "message", "attachments": []},
-                ) as resp:
-                    return resp.status in (200, 202)
+            session = await self._get_session()
+            async with session.post(
+                self._webhook_url,
+                json={"type": "message", "attachments": []},
+            ) as resp:
+                return resp.status in (200, 202)
         except Exception:
             return False
 

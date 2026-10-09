@@ -30,6 +30,19 @@ class RubyGemsAdapter(Adapter):
         self._registry = registry_url.rstrip("/")
         self._prefix = gem_prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -48,8 +61,6 @@ class RubyGemsAdapter(Adapter):
         return {"Authorization": self._api_key}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             gem_name = self._gem_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -66,30 +77,28 @@ class RubyGemsAdapter(Adapter):
             "authors": "picard",
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._registry}/api/v1/gems",
-                headers=self._headers(),
-                json=body,
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(
+            f"{self._registry}/api/v1/gems",
+            headers=self._headers(),
+            json=body,
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"gems://{gem_name}/{version}"
         return StoredChunkRef(adapter_name="rubygems", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.removeprefix("gems://").split("/")
         gem_name = parts[0]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._registry}/api/v1/gems/{gem_name}.json",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._registry}/api/v1/gems/{gem_name}.json",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         desc = data.get("info", "")
         if not desc:
@@ -97,35 +106,31 @@ class RubyGemsAdapter(Adapter):
         return desc
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.removeprefix("gems://").split("/")
         gem_name = parts[0]
         version = parts[1] if len(parts) > 1 else "0.0.1"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._registry}/api/v1/gems/yank",
-                    headers=self._headers(),
-                    params={"gem_name": gem_name, "version": version},
-                ) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(
+                f"{self._registry}/api/v1/gems/yank",
+                headers=self._headers(),
+                params={"gem_name": gem_name, "version": version},
+            ) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._registry}/api/v1/search.json",
-                    params={"query": self._prefix},
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{self._registry}/api/v1/search.json",
+                params={"query": self._prefix},
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
             refs = []
             for gem in data:
@@ -140,14 +145,12 @@ class RubyGemsAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._registry}/api/v1/api_key.json",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.get(
+                f"{self._registry}/api/v1/api_key.json",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status < 400
         except Exception:
             return False

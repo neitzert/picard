@@ -12,6 +12,7 @@ import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 
 class FreshdeskAdapter(Adapter):
@@ -28,6 +29,18 @@ class FreshdeskAdapter(Adapter):
         self._api_key = api_key
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -40,8 +53,6 @@ class FreshdeskAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         payload = {
             "subject": f"PICARD:{chunk_id}",
@@ -54,15 +65,15 @@ class FreshdeskAdapter(Adapter):
         auth = aiohttp.BasicAuth(self._api_key, "X")
         headers = {"Content-Type": "application/json"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"https://{self._domain}.freshdesk.com/api/v2/tickets",
-                json=payload,
-                headers=headers,
-                auth=auth,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"https://{self._domain}.freshdesk.com/api/v2/tickets",
+            json=payload,
+            headers=headers,
+            auth=auth,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         ticket_id = data.get("id", chunk_id)
         location = f"freshdesk://{self._domain}/tickets/{ticket_id}"
@@ -84,16 +95,14 @@ class FreshdeskAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             auth = aiohttp.BasicAuth(self._api_key, "X")
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"https://{self._domain}.freshdesk.com/api/v2/tickets?per_page=1",
-                    auth=auth,
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"https://{self._domain}.freshdesk.com/api/v2/tickets?per_page=1",
+                auth=auth,
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

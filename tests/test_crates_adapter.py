@@ -24,7 +24,7 @@ def _make_adapter(**kw) -> CratesAdapter:
     return CratesAdapter(**defaults)
 
 
-def _mock_session(method="get", status=200, json_data=None):
+def _mock_response(method="get", status=200, json_data=None):
     resp = AsyncMock()
     resp.status = status
     resp.raise_for_status = MagicMock()
@@ -35,10 +35,8 @@ def _mock_session(method="get", status=200, json_data=None):
     cm.__aexit__ = AsyncMock(return_value=False)
     session = AsyncMock()
     setattr(session, method, MagicMock(return_value=cm))
-    session_cm = AsyncMock()
-    session_cm.__aenter__ = AsyncMock(return_value=session)
-    session_cm.__aexit__ = AsyncMock(return_value=False)
-    return session_cm, session
+    session.closed = False
+    return session
 
 
 @pytest.mark.asyncio
@@ -57,41 +55,37 @@ class TestCratesProfile:
 
 @pytest.mark.asyncio
 class TestCratesWrite:
-    @patch("aiohttp.ClientSession")
-    async def test_write_chunk(self, MockSession):
-        session_cm, _ = _mock_session("put")
-        MockSession.return_value = session_cm
+    async def test_write_chunk(self):
+        session = _mock_response("put")
         a = _make_adapter()
+        a._session = session
         ref = await a.write_chunk(_sample_encoded())
         assert ref.adapter_name == "crates-io"
         assert ref.location.startswith("crates://")
 
-    @patch("aiohttp.ClientSession")
-    async def test_write_opaque(self, MockSession):
-        session_cm, _ = _mock_session("put")
-        MockSession.return_value = session_cm
+    async def test_write_opaque(self):
+        session = _mock_response("put")
         a = _make_adapter()
+        a._session = session
         ref = await a.write_chunk("opaque-data")
         assert ref.adapter_name == "crates-io"
 
 
 @pytest.mark.asyncio
 class TestCratesRead:
-    @patch("aiohttp.ClientSession")
-    async def test_read_chunk(self, MockSession):
+    async def test_read_chunk(self):
         enc = _sample_encoded()
-        session_cm, _ = _mock_session("get", json_data={"crate": {"description": enc}})
-        MockSession.return_value = session_cm
+        session = _mock_response("get", json_data={"crate": {"description": enc}})
         a = _make_adapter()
+        a._session = session
         ref = StoredChunkRef(adapter_name="crates-io", location="crates://picard-chunk-abc/0.1.0")
         result = await a.read_chunk(ref)
         assert result == enc
 
-    @patch("aiohttp.ClientSession")
-    async def test_read_not_found(self, MockSession):
-        session_cm, _ = _mock_session("get", json_data={"crate": {"description": ""}})
-        MockSession.return_value = session_cm
+    async def test_read_not_found(self):
+        session = _mock_response("get", json_data={"crate": {"description": ""}})
         a = _make_adapter()
+        a._session = session
         ref = StoredChunkRef(adapter_name="crates-io", location="crates://missing/0.1.0")
         with pytest.raises(KeyError):
             await a.read_chunk(ref)
@@ -99,26 +93,25 @@ class TestCratesRead:
 
 @pytest.mark.asyncio
 class TestCratesDelete:
-    @patch("aiohttp.ClientSession")
-    async def test_delete_success(self, MockSession):
-        session_cm, _ = _mock_session("delete")
-        MockSession.return_value = session_cm
+    async def test_delete_success(self):
+        session = _mock_response("delete")
         a = _make_adapter()
+        a._session = session
         ref = StoredChunkRef(adapter_name="crates-io", location="crates://picard-chunk-abc/0.1.0")
         assert await a.delete_chunk(ref) is True
 
 
 @pytest.mark.asyncio
 class TestCratesHealth:
-    @patch("aiohttp.ClientSession")
-    async def test_health_ok(self, MockSession):
-        session_cm, _ = _mock_session("get")
-        MockSession.return_value = session_cm
+    async def test_health_ok(self):
+        session = _mock_response("get")
         a = _make_adapter()
+        a._session = session
         assert await a.health_check() is True
 
-    @patch("aiohttp.ClientSession")
-    async def test_health_fail(self, MockSession):
-        MockSession.side_effect = Exception("err")
+    async def test_health_fail(self):
         a = _make_adapter()
+        a._session = AsyncMock()
+        a._session.closed = False
+        a._session.get = MagicMock(side_effect=Exception("err"))
         assert await a.health_check() is False

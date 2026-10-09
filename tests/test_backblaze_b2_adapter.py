@@ -1,4 +1,4 @@
-﻿"""Tests for the Backblaze B2 adapter -- mocked, no real B2 calls."""
+"""Tests for the Backblaze B2 adapter -- mocked, no real B2 calls."""
 
 from __future__ import annotations
 
@@ -53,6 +53,13 @@ def _mock_response(status=200, json_data=None, text_data=None):
     return resp
 
 
+def _mock_session():
+    """Create a mock aiohttp session for the persistent-session adapter."""
+    session = AsyncMock()
+    session.closed = False
+    return session
+
+
 @pytest.mark.asyncio
 class TestBackblazeB2Adapter:
     async def test_profile(self):
@@ -79,24 +86,19 @@ class TestBackblazeB2Adapter:
         upload_resp = _mock_response(json_data={"uploadUrl": "https://upload.example.com", "authorizationToken": "upload-tok"})
         upload_exec_resp = _mock_response()
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
+        session = _mock_session()
+        post_ctx_1 = AsyncMock()
+        post_ctx_1.__aenter__ = AsyncMock(return_value=upload_resp)
+        post_ctx_1.__aexit__ = AsyncMock(return_value=False)
 
-            post_ctx_1 = AsyncMock()
-            post_ctx_1.__aenter__ = AsyncMock(return_value=upload_resp)
-            post_ctx_1.__aexit__ = AsyncMock(return_value=False)
+        post_ctx_2 = AsyncMock()
+        post_ctx_2.__aenter__ = AsyncMock(return_value=upload_exec_resp)
+        post_ctx_2.__aexit__ = AsyncMock(return_value=False)
 
-            post_ctx_2 = AsyncMock()
-            post_ctx_2.__aenter__ = AsyncMock(return_value=upload_exec_resp)
-            post_ctx_2.__aexit__ = AsyncMock(return_value=False)
+        session.post = MagicMock(side_effect=[post_ctx_1, post_ctx_2])
+        a._session = session
 
-            session.post = MagicMock(side_effect=[post_ctx_1, post_ctx_2])
-
-            ref = await a.write_chunk(enc)
+        ref = await a.write_chunk(enc)
 
         assert ref.adapter_name == "backblaze-b2"
         assert ref.location == "picard/m1/b0_c0.pchk"
@@ -106,21 +108,15 @@ class TestBackblazeB2Adapter:
         enc = _sample_encoded()
 
         read_resp = _mock_response(text_data=enc)
+        session = _mock_session()
+        get_ctx = AsyncMock()
+        get_ctx.__aenter__ = AsyncMock(return_value=read_resp)
+        get_ctx.__aexit__ = AsyncMock(return_value=False)
+        session.get = MagicMock(return_value=get_ctx)
+        a._session = session
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
-
-            get_ctx = AsyncMock()
-            get_ctx.__aenter__ = AsyncMock(return_value=read_resp)
-            get_ctx.__aexit__ = AsyncMock(return_value=False)
-            session.get = MagicMock(return_value=get_ctx)
-
-            ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
-            result = await a.read_chunk(ref)
+        ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
+        result = await a.read_chunk(ref)
 
         assert result == enc
 
@@ -128,35 +124,25 @@ class TestBackblazeB2Adapter:
         a = _make_adapter()
 
         del_resp = _mock_response(status=200)
+        session = _mock_session()
+        post_ctx = AsyncMock()
+        post_ctx.__aenter__ = AsyncMock(return_value=del_resp)
+        post_ctx.__aexit__ = AsyncMock(return_value=False)
+        session.post = MagicMock(return_value=post_ctx)
+        a._session = session
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
-
-            post_ctx = AsyncMock()
-            post_ctx.__aenter__ = AsyncMock(return_value=del_resp)
-            post_ctx.__aexit__ = AsyncMock(return_value=False)
-            session.post = MagicMock(return_value=post_ctx)
-
-            ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
-            assert await a.delete_chunk(ref) is True
+        ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
+        assert await a.delete_chunk(ref) is True
 
     async def test_delete_chunk_exception(self):
         a = _make_adapter()
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
-            session.post = MagicMock(side_effect=Exception("network error"))
+        session = _mock_session()
+        session.post = MagicMock(side_effect=Exception("network error"))
+        a._session = session
 
-            ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
-            assert await a.delete_chunk(ref) is False
+        ref = StoredChunkRef(adapter_name="backblaze-b2", location="picard/m1/b0_c0.pchk")
+        assert await a.delete_chunk(ref) is False
 
     async def test_list_chunks(self):
         a = _make_adapter()
@@ -168,19 +154,14 @@ class TestBackblazeB2Adapter:
             ]
         })
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
+        session = _mock_session()
+        post_ctx = AsyncMock()
+        post_ctx.__aenter__ = AsyncMock(return_value=list_resp)
+        post_ctx.__aexit__ = AsyncMock(return_value=False)
+        session.post = MagicMock(return_value=post_ctx)
+        a._session = session
 
-            post_ctx = AsyncMock()
-            post_ctx.__aenter__ = AsyncMock(return_value=list_resp)
-            post_ctx.__aexit__ = AsyncMock(return_value=False)
-            session.post = MagicMock(return_value=post_ctx)
-
-            refs = await a.list_chunks("m1")
+        refs = await a.list_chunks("m1")
 
         assert len(refs) == 2
         assert all(r.adapter_name == "backblaze-b2" for r in refs)
@@ -190,20 +171,14 @@ class TestBackblazeB2Adapter:
         a = _make_adapter()
 
         list_resp = _mock_response(json_data={"files": []})
+        session = _mock_session()
+        post_ctx = AsyncMock()
+        post_ctx.__aenter__ = AsyncMock(return_value=list_resp)
+        post_ctx.__aexit__ = AsyncMock(return_value=False)
+        session.post = MagicMock(return_value=post_ctx)
+        a._session = session
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
-
-            post_ctx = AsyncMock()
-            post_ctx.__aenter__ = AsyncMock(return_value=list_resp)
-            post_ctx.__aexit__ = AsyncMock(return_value=False)
-            session.post = MagicMock(return_value=post_ctx)
-
-            refs = await a.list_chunks("m1")
+        refs = await a.list_chunks("m1")
 
         assert refs == []
 
@@ -213,17 +188,13 @@ class TestBackblazeB2Adapter:
 
     async def test_health_check_fail(self):
         a = _make_adapter()
-        a._auth = None  # force re-auth
+        a._auth = None
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
-            session.get = MagicMock(side_effect=Exception("connection refused"))
+        session = _mock_session()
+        session.get = MagicMock(side_effect=Exception("connection refused"))
+        a._session = session
 
-            assert await a.health_check() is False
+        assert await a.health_check() is False
 
     async def test_authorize_caches(self):
         a = _make_adapter()
@@ -236,25 +207,32 @@ class TestBackblazeB2Adapter:
         upload_resp = _mock_response(json_data={"uploadUrl": "https://upload.example.com", "authorizationToken": "upload-tok"})
         upload_exec_resp = _mock_response()
 
-        with patch("picard.adapters.backblaze_b2.aiohttp.ClientSession") as mock_session_cls:
-            session = AsyncMock()
-            cm = MagicMock()
-            cm.__aenter__ = AsyncMock(return_value=session)
-            cm.__aexit__ = AsyncMock(return_value=False)
-            mock_session_cls.return_value = cm
+        session = _mock_session()
+        post_ctx_1 = AsyncMock()
+        post_ctx_1.__aenter__ = AsyncMock(return_value=upload_resp)
+        post_ctx_1.__aexit__ = AsyncMock(return_value=False)
 
-            post_ctx_1 = AsyncMock()
-            post_ctx_1.__aenter__ = AsyncMock(return_value=upload_resp)
-            post_ctx_1.__aexit__ = AsyncMock(return_value=False)
+        post_ctx_2 = AsyncMock()
+        post_ctx_2.__aenter__ = AsyncMock(return_value=upload_exec_resp)
+        post_ctx_2.__aexit__ = AsyncMock(return_value=False)
 
-            post_ctx_2 = AsyncMock()
-            post_ctx_2.__aenter__ = AsyncMock(return_value=upload_exec_resp)
-            post_ctx_2.__aexit__ = AsyncMock(return_value=False)
+        session.post = MagicMock(side_effect=[post_ctx_1, post_ctx_2])
+        a._session = session
 
-            session.post = MagicMock(side_effect=[post_ctx_1, post_ctx_2])
-
-            ref = await a.write_chunk("not-a-valid-chunk")
+        ref = await a.write_chunk("not-a-valid-chunk")
 
         assert ref.adapter_name == "backblaze-b2"
         assert ref.location.startswith("picard/")
         assert ref.location.endswith(".pchk")
+
+    async def test_close_session(self):
+        a = _make_adapter()
+        session = _mock_session()
+        a._session = session
+        await a.close()
+        session.close.assert_awaited_once()
+        assert a._session is None
+
+    async def test_close_no_session(self):
+        a = _make_adapter()
+        await a.close()

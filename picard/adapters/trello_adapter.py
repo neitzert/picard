@@ -35,12 +35,22 @@ class TrelloAdapter(Adapter):
         self._list_id = list_id
         self._max = max_chunk_bytes
         self._client: object | None = None
+        self._session = None
 
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
     async def _ensure_client(self):
         if self._client is not None:
             return self._client
-        import aiohttp
-
         self._client = aiohttp.ClientSession()
         return self._client
 

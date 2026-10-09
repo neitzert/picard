@@ -38,6 +38,19 @@ class LorawanAdapter(Adapter):
         self._max = max_chunk_bytes
         self._written: dict[str, str] = {}
         self._f_cnt = 0
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -49,8 +62,6 @@ class LorawanAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             key = f"{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
@@ -60,22 +71,22 @@ class LorawanAdapter(Adapter):
         payload_b64 = base64.b64encode(encoded_chunk.encode()).decode()
         self._f_cnt += 1
 
-        async with aiohttp.ClientSession() as session:
-            url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
-            headers = {
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
+        session = await self._get_session()
+        url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "deviceQueueItem": {
+                "data": payload_b64,
+                "fPort": self._f_port,
+                "confirmed": False,
             }
-            body = {
-                "deviceQueueItem": {
-                    "data": payload_b64,
-                    "fPort": self._f_port,
-                    "confirmed": False,
-                }
-            }
-            async with session.post(url, json=body, headers=headers) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        }
+        async with session.post(url, json=body, headers=headers) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         loc = f"lora://{self._app_id}/{self._dev_eui}/{self._f_cnt}"
         self._written[loc] = encoded_chunk
@@ -85,14 +96,12 @@ class LorawanAdapter(Adapter):
         if ref.location in self._written:
             return self._written[ref.location]
 
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         for item in data.get("deviceQueueItems", []):
             decoded = base64.b64decode(item["data"]).decode()
@@ -104,13 +113,11 @@ class LorawanAdapter(Adapter):
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         if ref.location not in self._written:
             return False
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
-            headers = {"Authorization": f"Bearer {self._api_key}"}
-            async with session.delete(url, headers=headers) as resp:
-                pass
+        session = await self._get_session()
+        url = f"{self._api_url}/api/devices/{self._dev_eui}/queue"
+        headers = {"Authorization": f"Bearer {self._api_key}"}
+        async with session.delete(url, headers=headers) as resp:
+            pass
 
         self._written.pop(ref.location, None)
         return True
@@ -123,14 +130,12 @@ class LorawanAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                url = f"{self._api_url}/api/devices/{self._dev_eui}"
-                headers = {"Authorization": f"Bearer {self._api_key}"}
-                async with session.get(url, headers=headers) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            url = f"{self._api_url}/api/devices/{self._dev_eui}"
+            headers = {"Authorization": f"Bearer {self._api_key}"}
+            async with session.get(url, headers=headers) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

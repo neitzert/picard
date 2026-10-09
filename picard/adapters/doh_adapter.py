@@ -38,6 +38,19 @@ class DohAdapter(Adapter):
         self._nameserver = nameserver
         self._ns_port = nameserver_port
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -77,7 +90,6 @@ class DohAdapter(Adapter):
 
             await asyncio.to_thread(_write)
         else:
-            import aiohttp
             import dns.message
             import dns.rdatatype
 
@@ -85,22 +97,21 @@ class DohAdapter(Adapter):
             update.replace(name, 300, "TXT", f'"{encoded_chunk}"')
             wire = update.to_wire()
 
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._resolver_url,
-                    data=wire,
-                    headers={
-                        "Content-Type": "application/dns-message",
-                        "Accept": "application/dns-message",
-                    },
-                ) as resp:
-                    resp.raise_for_status()
+            session = await self._get_session()
+            async with session.post(
+                self._resolver_url,
+                data=wire,
+                headers={
+                    "Content-Type": "application/dns-message",
+                    "Accept": "application/dns-message",
+                },
+            ) as resp:
+                resp.raise_for_status()
 
         loc = f"doh://{self._resolver_url}/{fqdn}"
         return StoredChunkRef(adapter_name="dns-over-https", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
         import dns.message
         import dns.rdatatype
 
@@ -111,14 +122,14 @@ class DohAdapter(Adapter):
         wire = query.to_wire()
         b64 = base64.urlsafe_b64encode(wire).rstrip(b"=").decode()
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                self._resolver_url,
-                params={"dns": b64},
-                headers={"Accept": "application/dns-message"},
-            ) as resp:
-                resp.raise_for_status()
-                response_wire = await resp.read()
+        session = await self._get_session()
+        async with session.get(
+            self._resolver_url,
+            params={"dns": b64},
+            headers={"Accept": "application/dns-message"},
+        ) as resp:
+            resp.raise_for_status()
+            response_wire = await resp.read()
 
         response = dns.message.from_wire(response_wire)
         for rrset in response.answer:
@@ -153,7 +164,6 @@ class DohAdapter(Adapter):
         return []
 
     async def health_check(self) -> bool:
-        import aiohttp
         import dns.message
         import dns.rdatatype
 
@@ -162,12 +172,12 @@ class DohAdapter(Adapter):
             wire = query.to_wire()
             b64 = base64.urlsafe_b64encode(wire).rstrip(b"=").decode()
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self._resolver_url,
-                    params={"dns": b64},
-                    headers={"Accept": "application/dns-message"},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                self._resolver_url,
+                params={"dns": b64},
+                headers={"Accept": "application/dns-message"},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

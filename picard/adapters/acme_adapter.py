@@ -35,6 +35,19 @@ class AcmeAdapter(Adapter):
         self._contact_email = contact_email
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -62,8 +75,6 @@ class AcmeAdapter(Adapter):
         return base64.b32decode(encoded).decode()
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             from picard.chunker import Chunk
             chunk = Chunk.decode(encoded_chunk)
@@ -75,14 +86,14 @@ class AcmeAdapter(Adapter):
 
         async def _create_order():
             identifiers = [{"type": "dns", "value": san} for san in sans]
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self._directory_url}/new-order",
-                    json={"identifiers": identifiers},
-                    headers={"Content-Type": "application/jose+json"},
-                ) as resp:
-                    data = await resp.json()
-                    return data.get("Location", data.get("order_url", chunk_id))
+            session = await self._get_session()
+            async with session.post(
+                f"{self._directory_url}/new-order",
+                json={"identifiers": identifiers},
+                headers={"Content-Type": "application/jose+json"},
+            ) as resp:
+                data = await resp.json()
+                return data.get("Location", data.get("order_url", chunk_id))
 
         order_url = await _create_order()
         location = f"acme://{self._directory_url}/{chunk_id}"
@@ -107,12 +118,10 @@ class AcmeAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self._directory_url) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(self._directory_url) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -40,6 +40,18 @@ class GooglePubSubAdapter(Adapter):
         self._subscription = subscription_id
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -76,19 +88,19 @@ class GooglePubSubAdapter(Adapter):
 
         b64_data = base64.b64encode(encoded_chunk.encode()).decode()
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                f"{_PUBSUB_API}/{self._topic_path}:publish",
-                headers=self._headers(),
-                json={
-                    "messages": [{
-                        "data": b64_data,
-                        "attributes": {"picard_key": key},
-                    }],
-                },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.post(
+            f"{_PUBSUB_API}/{self._topic_path}:publish",
+            headers=self._headers(),
+            json={
+                "messages": [{
+                    "data": b64_data,
+                    "attributes": {"picard_key": key},
+                }],
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         msg_ids = data.get("messageIds", [key])
         msg_id = msg_ids[0] if msg_ids else key
@@ -103,14 +115,14 @@ class GooglePubSubAdapter(Adapter):
         if not self._subscription_path:
             raise KeyError(f"No subscription configured; chunk not in cache: {ref.location}")
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                f"{_PUBSUB_API}/{self._subscription_path}:pull",
-                headers=self._headers(),
-                json={"maxMessages": 100},
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.post(
+            f"{_PUBSUB_API}/{self._subscription_path}:pull",
+            headers=self._headers(),
+            json={"maxMessages": 100},
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         msg_id = ref.location.split("/")[-1]
         for msg in data.get("receivedMessages", []):
@@ -132,12 +144,12 @@ class GooglePubSubAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    f"{_PUBSUB_API}/{self._topic_path}",
-                    headers=self._headers(),
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                f"{_PUBSUB_API}/{self._topic_path}",
+                headers=self._headers(),
+            )
+            return resp.status == 200
         except Exception:
             return False
 

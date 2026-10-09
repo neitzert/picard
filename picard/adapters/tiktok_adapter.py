@@ -41,6 +41,19 @@ class TikTokAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -60,28 +73,26 @@ class TikTokAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/v2/post/publish/",
-                headers=self._headers(),
-                json={
-                    "post_info": {
-                        "title": encoded_chunk,
-                        "privacy_level": "SELF_ONLY",
-                    },
-                    "source_info": {
-                        "source": "PULL_FROM_URL",
-                        "video_url": "https://example.com/placeholder.mp4",
-                    },
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/v2/post/publish/",
+            headers=self._headers(),
+            json={
+                "post_info": {
+                    "title": encoded_chunk,
+                    "privacy_level": "SELF_ONLY",
                 },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                publish_id = data.get("data", {}).get(
-                    "publish_id", uuid.uuid4().hex
-                )
+                "source_info": {
+                    "source": "PULL_FROM_URL",
+                    "video_url": "https://example.com/placeholder.mp4",
+                },
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            publish_id = data.get("data", {}).get(
+                "publish_id", uuid.uuid4().hex
+            )
         loc = f"tiktok://{self._open_id}/{publish_id}"
         self._cache[loc] = encoded_chunk
         return StoredChunkRef(adapter_name="tiktok", location=loc)
@@ -91,21 +102,19 @@ class TikTokAdapter(Adapter):
         if cached:
             return cached
 
-        import aiohttp
-
         video_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/v2/video/query/",
-                headers=self._headers(),
-                json={"filters": {"video_ids": [video_id]}},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                videos = data.get("data", {}).get("videos", [])
-                if not videos:
-                    raise KeyError(f"video not found: {video_id}")
-                return videos[0].get("title", "")
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/v2/video/query/",
+            headers=self._headers(),
+            json={"filters": {"video_ids": [video_id]}},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            videos = data.get("data", {}).get("videos", [])
+            if not videos:
+                raise KeyError(f"video not found: {video_id}")
+            return videos[0].get("title", "")
 
     # ── Browser mode ────────────────────────────────────────────
 
@@ -188,14 +197,12 @@ class TikTokAdapter(Adapter):
             except Exception:
                 return False
 
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/v2/user/info/",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/v2/user/info/",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

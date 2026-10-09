@@ -34,6 +34,18 @@ class GcsAdapter(Adapter):
         self._project_id = project_id
         self._prefix = prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def _key(self, manifest_id: str, block: int, chunk_index: int) -> str:
         return f"{self._prefix}{manifest_id}/b{block}_c{chunk_index}.pchk"
@@ -72,11 +84,11 @@ class GcsAdapter(Adapter):
             f"{self._bucket}/o?uploadType=media&name={key}"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, data=encoded_chunk.encode(), headers=headers
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(
+            url, data=encoded_chunk.encode(), headers=headers
+        ) as resp:
+            resp.raise_for_status()
 
         return StoredChunkRef(adapter_name="gcs", location=key)
 
@@ -87,10 +99,10 @@ class GcsAdapter(Adapter):
             f"{self._bucket}/o/{ref.location}?alt=media"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                return await resp.text()
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         headers = await asyncio.to_thread(self._get_headers)
@@ -100,9 +112,9 @@ class GcsAdapter(Adapter):
         )
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=headers) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(url, headers=headers) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
@@ -115,14 +127,14 @@ class GcsAdapter(Adapter):
         )
         refs: list[StoredChunkRef] = []
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                for item in data.get("items", []):
-                    refs.append(
-                        StoredChunkRef(adapter_name="gcs", location=item["name"])
-                    )
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            for item in data.get("items", []):
+                refs.append(
+                    StoredChunkRef(adapter_name="gcs", location=item["name"])
+                )
 
         return refs
 
@@ -131,9 +143,9 @@ class GcsAdapter(Adapter):
         url = f"https://storage.googleapis.com/storage/v1/b/{self._bucket}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(url, headers=headers) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -33,6 +33,19 @@ class WhoisAdapter(Adapter):
         self._write_url = write_url
         self._ripe_auth = ripe_auth
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -51,8 +64,6 @@ class WhoisAdapter(Adapter):
             obj_key = f"PCHK-{uuid.uuid4().hex[:16]}"
 
         if self._write_url:
-            import aiohttp
-
             payload = {
                 "objects": {
                     "object": [
@@ -70,11 +81,11 @@ class WhoisAdapter(Adapter):
             headers = {}
             if self._ripe_auth:
                 headers["Authorization"] = f"Bearer {self._ripe_auth}"
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._write_url, json=payload, headers=headers
-                ) as resp:
-                    resp.raise_for_status()
+            session = await self._get_session()
+            async with session.post(
+                self._write_url, json=payload, headers=headers
+            ) as resp:
+                resp.raise_for_status()
         else:
             reader, writer = await asyncio.open_connection(self._host, self._port)
             try:
@@ -109,17 +120,15 @@ class WhoisAdapter(Adapter):
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         obj_key = ref.location.rsplit("/", 1)[1]
         if self._write_url:
-            import aiohttp
-
             headers = {}
             if self._ripe_auth:
                 headers["Authorization"] = f"Bearer {self._ripe_auth}"
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.delete(
-                        f"{self._write_url}/{obj_key}", headers=headers
-                    ) as resp:
-                        return resp.status in (200, 204)
+                session = await self._get_session()
+                async with session.delete(
+                    f"{self._write_url}/{obj_key}", headers=headers
+                ) as resp:
+                    return resp.status in (200, 204)
             except Exception:
                 return False
         return False

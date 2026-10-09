@@ -36,7 +36,19 @@ class SentryAdapter(Adapter):
         self._max = max_chunk_bytes
         self._store_url, self._public_key = self._parse_dsn(dsn)
         self._api_base = f"https://sentry.io/api/0"
+        self._session = None
 
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
     @staticmethod
     def _parse_dsn(dsn: str) -> tuple[str, str]:
         parsed = urlparse(dsn)
@@ -66,8 +78,6 @@ class SentryAdapter(Adapter):
             return uid, uid
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         manifest_id, chunk_key = self._chunk_key(encoded_chunk)
         event_id = uuid.uuid4().hex
 
@@ -95,11 +105,11 @@ class SentryAdapter(Adapter):
             ),
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._store_url, json=event, headers=headers
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(
+            self._store_url, json=event, headers=headers
+        ) as resp:
+            resp.raise_for_status()
 
         return StoredChunkRef(
             adapter_name="sentry",
@@ -107,8 +117,6 @@ class SentryAdapter(Adapter):
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         event_id = ref.location.rsplit("/", 1)[-1]
         url = (
             f"{self._api_base}/projects/{self._org_slug}/{self._project_slug}"
@@ -116,24 +124,22 @@ class SentryAdapter(Adapter):
         )
         headers = {"Authorization": f"Bearer {self._auth_token}"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                ctx = data.get("context", {})
-                picard_data = ctx.get("picard_data")
-                if picard_data is None:
-                    for entry in data.get("entries", []):
-                        if entry.get("type") == "message":
-                            extra = entry.get("data", {}).get("params", {})
-                            picard_data = extra.get("picard_data")
-                if picard_data is None:
-                    raise KeyError(f"event has no picard data: {event_id}")
-                return picard_data
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            ctx = data.get("context", {})
+            picard_data = ctx.get("picard_data")
+            if picard_data is None:
+                for entry in data.get("entries", []):
+                    if entry.get("type") == "message":
+                        extra = entry.get("data", {}).get("params", {})
+                        picard_data = extra.get("picard_data")
+            if picard_data is None:
+                raise KeyError(f"event has no picard data: {event_id}")
+            return picard_data
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         event_id = ref.location.rsplit("/", 1)[-1]
         url = (
             f"{self._api_base}/projects/{self._org_slug}/{self._project_slug}"
@@ -141,15 +147,13 @@ class SentryAdapter(Adapter):
         )
         headers = {"Authorization": f"Bearer {self._auth_token}"}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=headers) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(url, headers=headers) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         url = (
             f"{self._api_base}/projects/{self._org_slug}/{self._project_slug}"
             f"/events/"
@@ -158,12 +162,12 @@ class SentryAdapter(Adapter):
         params = {"query": f"picard_manifest:{manifest_id}", "full": "true"}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, headers=headers, params=params
-                ) as resp:
-                    resp.raise_for_status()
-                    events = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                url, headers=headers, params=params
+            ) as resp:
+                resp.raise_for_status()
+                events = await resp.json()
             return [
                 StoredChunkRef(
                     adapter_name="sentry",
@@ -175,14 +179,12 @@ class SentryAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._api_base}/",
-                    headers={"Authorization": f"Bearer {self._auth_token}"},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._api_base}/",
+                headers={"Authorization": f"Bearer {self._auth_token}"},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

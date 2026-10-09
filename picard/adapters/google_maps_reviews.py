@@ -31,6 +31,18 @@ class GoogleMapsAdapter(Adapter):
         self._place_id = place_id
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -49,18 +61,18 @@ class GoogleMapsAdapter(Adapter):
             key = uuid.uuid4().hex
 
         review_text = f"PICARD:{key}:{encoded_chunk}"
-        async with aiohttp.ClientSession() as session:
-            resp = await session.post(
-                "https://maps.googleapis.com/maps/api/place/reviews/submit",
-                params={"key": self._api_key},
-                json={
-                    "place_id": self._place_id,
-                    "text": review_text,
-                    "rating": 5,
-                },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.post(
+            "https://maps.googleapis.com/maps/api/place/reviews/submit",
+            params={"key": self._api_key},
+            json={
+                "place_id": self._place_id,
+                "text": review_text,
+                "rating": 5,
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         review_id = data.get("review_id", key)
         loc = f"gmaps://{self._place_id}/{review_id}"
@@ -71,17 +83,17 @@ class GoogleMapsAdapter(Adapter):
         if ref.location in self._cache:
             return self._cache[ref.location]
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.get(
-                "https://maps.googleapis.com/maps/api/place/details/json",
-                params={
-                    "key": self._api_key,
-                    "place_id": self._place_id,
-                    "fields": "reviews",
-                },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.get(
+            "https://maps.googleapis.com/maps/api/place/details/json",
+            params={
+                "key": self._api_key,
+                "place_id": self._place_id,
+                "fields": "reviews",
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         review_id = ref.location.split("/")[-1]
         for review in data.get("result", {}).get("reviews", []):
@@ -103,16 +115,16 @@ class GoogleMapsAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    "https://maps.googleapis.com/maps/api/place/details/json",
-                    params={
-                        "key": self._api_key,
-                        "place_id": self._place_id,
-                        "fields": "name",
-                    },
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                "https://maps.googleapis.com/maps/api/place/details/json",
+                params={
+                    "key": self._api_key,
+                    "place_id": self._place_id,
+                    "fields": "name",
+                },
+            )
+            return resp.status == 200
         except Exception:
             return False
 

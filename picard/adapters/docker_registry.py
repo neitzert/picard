@@ -13,6 +13,7 @@ import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 
 class DockerRegistryAdapter(Adapter):

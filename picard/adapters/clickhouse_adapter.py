@@ -39,6 +39,18 @@ class ClickHouseAdapter(Adapter):
         self._username = username
         self._password = password
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -80,12 +92,12 @@ class ClickHouseAdapter(Adapter):
         row = json.dumps({"key": key, "data": encoded_chunk, "manifest_id": manifest_id})
         query = f"INSERT INTO {self._table} FORMAT JSONEachRow"
 
-        async with aiohttp.ClientSession() as session:
-            await self._ensure_table(session)
-            async with session.post(
-                self._base_url, params=self._params(query), data=row
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        await self._ensure_table(session)
+        async with session.post(
+            self._base_url, params=self._params(query), data=row
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"clickhouse://{self._database}/{self._table}/{key}"
         return StoredChunkRef(adapter_name="clickhouse", location=loc)
@@ -97,26 +109,26 @@ class ClickHouseAdapter(Adapter):
             "FORMAT JSONEachRow"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                self._base_url, params=self._params(query)
-            ) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
-                if not text.strip():
-                    raise KeyError(f"chunk not found: {ref.location}")
-                return json.loads(text.strip().split("\n")[0])["data"]
+        session = await self._get_session()
+        async with session.get(
+            self._base_url, params=self._params(query)
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+            if not text.strip():
+                raise KeyError(f"chunk not found: {ref.location}")
+            return json.loads(text.strip().split("\n")[0])["data"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         key = ref.location.split("/", 3)[-1]
         query = f"ALTER TABLE {self._table} DELETE WHERE key = '{key}'"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._base_url, params=self._params(query)
-                ) as resp:
-                    resp.raise_for_status()
+            session = await self._get_session()
+            async with session.post(
+                self._base_url, params=self._params(query)
+            ) as resp:
+                resp.raise_for_status()
             return True
         except Exception:
             return False
@@ -127,27 +139,27 @@ class ClickHouseAdapter(Adapter):
             f"WHERE manifest_id = '{manifest_id}' FORMAT JSONEachRow"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                self._base_url, params=self._params(query)
-            ) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
-                refs = []
-                for line in text.strip().split("\n"):
-                    if line:
-                        k = json.loads(line)["key"]
-                        loc = f"clickhouse://{self._database}/{self._table}/{k}"
-                        refs.append(StoredChunkRef(adapter_name="clickhouse", location=loc))
-                return refs
+        session = await self._get_session()
+        async with session.get(
+            self._base_url, params=self._params(query)
+        ) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
+            refs = []
+            for line in text.strip().split("\n"):
+                if line:
+                    k = json.loads(line)["key"]
+                    loc = f"clickhouse://{self._database}/{self._table}/{k}"
+                    refs.append(StoredChunkRef(adapter_name="clickhouse", location=loc))
+            return refs
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self._base_url, params=self._params("SELECT 1")
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                self._base_url, params=self._params("SELECT 1")
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
@@ -157,17 +169,17 @@ class ClickHouseAdapter(Adapter):
             f"FROM {self._table} FORMAT JSONEachRow"
         )
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self._base_url, params=self._params(query)
-                ) as resp:
-                    resp.raise_for_status()
-                    row = json.loads((await resp.text()).strip())
-                    return {
-                        "used_bytes": row["bytes"],
-                        "free_bytes": None,
-                        "total_bytes": None,
-                        "chunk_count": row["cnt"],
-                    }
+            session = await self._get_session()
+            async with session.get(
+                self._base_url, params=self._params(query)
+            ) as resp:
+                resp.raise_for_status()
+                row = json.loads((await resp.text()).strip())
+                return {
+                    "used_bytes": row["bytes"],
+                    "free_bytes": None,
+                    "total_bytes": None,
+                    "chunk_count": row["cnt"],
+                }
         except Exception:
             return {"used_bytes": None, "free_bytes": None, "total_bytes": None, "chunk_count": None}

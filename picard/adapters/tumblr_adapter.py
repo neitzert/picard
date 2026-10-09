@@ -42,6 +42,19 @@ class TumblrAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -61,67 +74,59 @@ class TumblrAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/blog/{self._blog}/post",
-                headers=self._headers(),
-                json={
-                    "type": "text",
-                    "title": "pchk",
-                    "body": encoded_chunk,
-                    "state": "draft",
-                },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                post_id = data.get("response", {}).get("id", "")
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/blog/{self._blog}/post",
+            headers=self._headers(),
+            json={
+                "type": "text",
+                "title": "pchk",
+                "body": encoded_chunk,
+                "state": "draft",
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            post_id = data.get("response", {}).get("id", "")
         loc = f"tumblr://{self._blog}/{post_id}"
         return StoredChunkRef(adapter_name="tumblr", location=loc)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/blog/{self._blog}/posts/{post_id}",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/blog/{self._blog}/posts/{post_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         posts = data.get("response", {}).get("posts", [])
         if not posts:
             raise KeyError(f"post not found: {post_id}")
         return posts[0].get("body", "")
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{_API_BASE}/blog/{self._blog}/post/delete",
-                    headers=self._headers(),
-                    json={"id": post_id},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.post(
+                f"{_API_BASE}/blog/{self._blog}/post/delete",
+                headers=self._headers(),
+                json={"id": post_id},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/blog/{self._blog}/drafts",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/blog/{self._blog}/drafts",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         for post in data.get("response", {}).get("posts", []):
             body = post.get("body", "")
             if manifest_id in body:
@@ -221,14 +226,12 @@ class TumblrAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/user/info",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/user/info",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

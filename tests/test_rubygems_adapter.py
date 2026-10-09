@@ -35,10 +35,8 @@ def _mock_session(method="get", status=200, json_data=None):
     cm.__aexit__ = AsyncMock(return_value=False)
     session = AsyncMock()
     setattr(session, method, MagicMock(return_value=cm))
-    session_cm = AsyncMock()
-    session_cm.__aenter__ = AsyncMock(return_value=session)
-    session_cm.__aexit__ = AsyncMock(return_value=False)
-    return session_cm, session
+    session.closed = False
+    return session, session
 
 
 @pytest.mark.asyncio

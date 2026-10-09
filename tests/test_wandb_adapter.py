@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
-
 import pytest
 
 from picard.adapters.wandb_adapter import WandbAdapter
@@ -25,6 +23,7 @@ class _FakeSession:
     def __init__(self):
         self._counter = 0
         self._artifacts: dict[str, str] = {}
+        self.closed = False
 
     async def post(self, url, **kwargs):
         body = kwargs.get("json", {})
@@ -79,27 +78,27 @@ class TestProfile:
 class TestWriteRead:
     @pytest.mark.asyncio
     async def test_roundtrip(self, adapter, fake):
-        with patch("aiohttp.ClientSession", return_value=fake):
-            ref = await adapter.write_chunk("mlchunk")
-            assert ref.adapter_name == "wandb"
-            assert "wandb://" in ref.location
-            result = await adapter.read_chunk(ref)
-            assert result == "mlchunk"
+        adapter._session = fake
+        ref = await adapter.write_chunk("mlchunk")
+        assert ref.adapter_name == "wandb"
+        assert "wandb://" in ref.location
+        result = await adapter.read_chunk(ref)
+        assert result == "mlchunk"
 
     @pytest.mark.asyncio
     async def test_multi(self, adapter, fake):
-        with patch("aiohttp.ClientSession", return_value=fake):
-            refs = [await adapter.write_chunk(f"w{i}") for i in range(3)]
-            for i, ref in enumerate(refs):
-                assert await adapter.read_chunk(ref) == f"w{i}"
+        adapter._session = fake
+        refs = [await adapter.write_chunk(f"w{i}") for i in range(3)]
+        for i, ref in enumerate(refs):
+            assert await adapter.read_chunk(ref) == f"w{i}"
 
 
 class TestDelete:
     @pytest.mark.asyncio
     async def test_delete(self, adapter, fake):
-        with patch("aiohttp.ClientSession", return_value=fake):
-            ref = await adapter.write_chunk("bye")
-            assert await adapter.delete_chunk(ref) is True
+        adapter._session = fake
+        ref = await adapter.write_chunk("bye")
+        assert await adapter.delete_chunk(ref) is True
 
 
 class TestList:
@@ -113,8 +112,8 @@ class TestList:
 class TestHealth:
     @pytest.mark.asyncio
     async def test_healthy(self, adapter, fake):
-        with patch("aiohttp.ClientSession", return_value=fake):
-            assert await adapter.health_check() is True
+        adapter._session = fake
+        assert await adapter.health_check() is True
 
 
 class TestCapacity:

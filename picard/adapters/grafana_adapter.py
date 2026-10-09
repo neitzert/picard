@@ -31,6 +31,19 @@ class GrafanaAdapter(Adapter):
         self._api_key = api_key
         self._dashboard_id = dashboard_id
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -60,8 +73,6 @@ class GrafanaAdapter(Adapter):
             return uid, uid
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         manifest_id, chunk_key = self._chunk_key(encoded_chunk)
         body: dict = {
             "text": encoded_chunk,
@@ -72,15 +83,15 @@ class GrafanaAdapter(Adapter):
         if self._dashboard_id is not None:
             body["dashboardId"] = self._dashboard_id
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._url}/api/annotations",
-                json=body,
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                ann_id = data.get("id", chunk_key)
+        session = await self._get_session()
+        async with session.post(
+            f"{self._url}/api/annotations",
+            json=body,
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            ann_id = data.get("id", chunk_key)
 
         return StoredChunkRef(
             adapter_name="grafana",
@@ -88,47 +99,41 @@ class GrafanaAdapter(Adapter):
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         ann_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
+        session = await self._get_session()
+        async with session.get(
+            f"{self._url}/api/annotations/{ann_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            text = data.get("text")
+            if text is None:
+                raise KeyError(f"annotation not found: {ann_id}")
+            return text
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        ann_id = ref.location.rsplit("/", 1)[-1]
+        try:
+            session = await self._get_session()
+            async with session.delete(
                 f"{self._url}/api/annotations/{ann_id}",
                 headers=self._headers(),
             ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                text = data.get("text")
-                if text is None:
-                    raise KeyError(f"annotation not found: {ann_id}")
-                return text
-
-    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
-        ann_id = ref.location.rsplit("/", 1)[-1]
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._url}/api/annotations/{ann_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status < 400
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         params = {"tags": ["picard", f"mid:{manifest_id}"], "limit": 5000}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._url}/api/annotations",
-                params=params,
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._url}/api/annotations",
+            params=params,
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return [
             StoredChunkRef(
                 adapter_name="grafana",
@@ -138,14 +143,12 @@ class GrafanaAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/api/health",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/api/health",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

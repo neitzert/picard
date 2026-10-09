@@ -32,6 +32,21 @@ class QuicAdapter(Adapter):
         self._verify_ssl = verify_ssl
         self._max = max_chunk_bytes
         self._parsed = urlparse(self._url)
+        self._client = None
+
+    def _get_client(self):
+        import httpx
+        if self._client is None:
+            self._client = httpx.AsyncClient(
+                http2=True, verify=self._verify_ssl, headers=self._headers,
+                timeout=30.0,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -56,79 +71,49 @@ class QuicAdapter(Adapter):
         return f"quic://{self._parsed.hostname}{self._parsed.path}/chunks/{chunk_id}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import httpx
-
         loc = self._location_key(encoded_chunk)
         chunk_id = loc.split("/chunks/", 1)[1]
         url = self._chunk_url(chunk_id)
-
-        async with httpx.AsyncClient(
-            http2=True, verify=self._verify_ssl, headers=self._headers
-        ) as client:
-            resp = await client.put(url, content=encoded_chunk.encode())
-            resp.raise_for_status()
-
+        resp = await self._get_client().put(url, content=encoded_chunk.encode())
+        resp.raise_for_status()
         return StoredChunkRef(adapter_name="quic", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import httpx
-
         chunk_id = ref.location.split("/chunks/", 1)[1]
         url = self._chunk_url(chunk_id)
-
-        async with httpx.AsyncClient(
-            http2=True, verify=self._verify_ssl, headers=self._headers
-        ) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            return resp.text
+        resp = await self._get_client().get(url)
+        resp.raise_for_status()
+        return resp.text
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import httpx
-
         chunk_id = ref.location.split("/chunks/", 1)[1]
         url = self._chunk_url(chunk_id)
-
         try:
-            async with httpx.AsyncClient(
-                http2=True, verify=self._verify_ssl, headers=self._headers
-            ) as client:
-                resp = await client.delete(url)
-                return resp.status_code < 400
+            resp = await self._get_client().delete(url)
+            return resp.status_code < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import httpx
-
         url = f"{self._url}/chunks/{manifest_id}/"
-
         try:
-            async with httpx.AsyncClient(
-                http2=True, verify=self._verify_ssl, headers=self._headers
-            ) as client:
-                resp = await client.get(url)
-                resp.raise_for_status()
-                items = resp.json()
-                return [
-                    StoredChunkRef(
-                        adapter_name="quic",
-                        location=f"quic://{self._parsed.hostname}{self._parsed.path}/chunks/{manifest_id}/{item}",
-                    )
-                    for item in items
-                ]
+            resp = await self._get_client().get(url)
+            resp.raise_for_status()
+            items = resp.json()
+            return [
+                StoredChunkRef(
+                    adapter_name="quic",
+                    location=f"quic://{self._parsed.hostname}{self._parsed.path}/chunks/{manifest_id}/{item}",
+                )
+                for item in items
+            ]
         except Exception:
             return []
 
     async def health_check(self) -> bool:
-        import httpx
-
         try:
-            async with httpx.AsyncClient(
-                http2=True, verify=self._verify_ssl, headers=self._headers
-            ) as client:
-                resp = await client.head(self._url)
-                return resp.status_code < 500
+            resp = await self._get_client().head(self._url)
+            return resp.status_code < 500
         except Exception:
             return False
 

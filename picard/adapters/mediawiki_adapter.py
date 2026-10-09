@@ -37,6 +37,18 @@ class MediaWikiAdapter(Adapter):
         self._max = max_chunk_bytes
         self._token: str | None = None
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -86,20 +98,20 @@ class MediaWikiAdapter(Adapter):
 
         page_title = f"{self._page_prefix}{key}"
 
-        async with aiohttp.ClientSession() as session:
-            token = await self._login(session)
-            resp = await session.post(
-                self._api_url,
-                data={
-                    "action": "edit",
-                    "title": page_title,
-                    "text": encoded_chunk,
-                    "summary": "picard chunk",
-                    "token": token,
-                    "format": "json",
-                },
-            )
-            resp.raise_for_status()
+        session = await self._get_session()
+        token = await self._login(session)
+        resp = await session.post(
+            self._api_url,
+            data={
+                "action": "edit",
+                "title": page_title,
+                "text": encoded_chunk,
+                "summary": "picard chunk",
+                "token": token,
+                "format": "json",
+            },
+        )
+        resp.raise_for_status()
 
         loc = f"wiki://{self._api_url}/{page_title}"
         self._cache[loc] = encoded_chunk
@@ -111,18 +123,18 @@ class MediaWikiAdapter(Adapter):
 
         page_title = ref.location.split("/", 3)[-1] if "/" in ref.location else ref.location
 
-        async with aiohttp.ClientSession() as session:
-            resp = await session.get(
-                self._api_url,
-                params={
-                    "action": "parse",
-                    "page": page_title,
-                    "prop": "wikitext",
-                    "format": "json",
-                },
-            )
-            resp.raise_for_status()
-            data = await resp.json()
+        session = await self._get_session()
+        resp = await session.get(
+            self._api_url,
+            params={
+                "action": "parse",
+                "page": page_title,
+                "prop": "wikitext",
+                "format": "json",
+            },
+        )
+        resp.raise_for_status()
+        data = await resp.json()
 
         return data["parse"]["wikitext"]["*"]
 
@@ -131,20 +143,20 @@ class MediaWikiAdapter(Adapter):
         page_title = ref.location.split("/", 3)[-1] if "/" in ref.location else ref.location
 
         try:
-            async with aiohttp.ClientSession() as session:
-                token = await self._login(session)
-                resp = await session.post(
-                    self._api_url,
-                    data={
-                        "action": "edit",
-                        "title": page_title,
-                        "text": "",
-                        "summary": "picard chunk removed",
-                        "token": token,
-                        "format": "json",
-                    },
-                )
-                resp.raise_for_status()
+            session = await self._get_session()
+            token = await self._login(session)
+            resp = await session.post(
+                self._api_url,
+                data={
+                    "action": "edit",
+                    "title": page_title,
+                    "text": "",
+                    "summary": "picard chunk removed",
+                    "token": token,
+                    "format": "json",
+                },
+            )
+            resp.raise_for_status()
             return True
         except Exception:
             return False
@@ -158,12 +170,12 @@ class MediaWikiAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            async with aiohttp.ClientSession() as session:
-                resp = await session.get(
-                    self._api_url,
-                    params={"action": "query", "meta": "siteinfo", "format": "json"},
-                )
-                return resp.status == 200
+            session = await self._get_session()
+            resp = await session.get(
+                self._api_url,
+                params={"action": "query", "meta": "siteinfo", "format": "json"},
+            )
+            return resp.status == 200
         except Exception:
             return False
 

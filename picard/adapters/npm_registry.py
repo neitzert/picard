@@ -33,6 +33,19 @@ class NpmRegistryAdapter(Adapter):
         self._registry = registry_url.rstrip("/")
         self._scope = scope
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -54,8 +67,6 @@ class NpmRegistryAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             pkg_name = self._pkg_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -80,31 +91,29 @@ class NpmRegistryAdapter(Adapter):
             "_attachments": {},
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                f"{self._registry}/{pkg_name}",
-                headers=self._headers(),
-                json=body,
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(
+            f"{self._registry}/{pkg_name}",
+            headers=self._headers(),
+            json=body,
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"npm://{pkg_name}/{version}"
         return StoredChunkRef(adapter_name="npm-registry", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         # location: npm://@scope/name/version
         parts = ref.location.removeprefix("npm://").rsplit("/", 1)
         pkg_name = parts[0]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._registry}/{pkg_name}",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._registry}/{pkg_name}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         desc = data.get("description")
         if not desc:
@@ -112,34 +121,30 @@ class NpmRegistryAdapter(Adapter):
         return desc
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.removeprefix("npm://").rsplit("/", 1)
         pkg_name = parts[0]
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._registry}/{pkg_name}/-rev/latest",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(
+                f"{self._registry}/{pkg_name}/-rev/latest",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         search_text = f"pchk-"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._registry}/-/v1/search",
-                    params={"text": f"scope:{self._scope} {search_text}", "size": 250},
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{self._registry}/-/v1/search",
+                params={"text": f"scope:{self._scope} {search_text}", "size": 250},
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
             refs = []
             for obj in data.get("objects", []):
@@ -155,11 +160,9 @@ class NpmRegistryAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self._registry}/-/ping") as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.get(f"{self._registry}/-/ping") as resp:
+                return resp.status < 400
         except Exception:
             return False

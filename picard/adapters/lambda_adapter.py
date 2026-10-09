@@ -41,6 +41,19 @@ class LambdaAdapter(Adapter):
             f"https://lambda.{region}.amazonaws.com"
             f"/2015-03-31/functions/{function_name}/invocations"
         )
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -102,73 +115,65 @@ class LambdaAdapter(Adapter):
         return headers
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         key = self._chunk_key(encoded_chunk)
         payload = json.dumps(
             {"action": "write", "key": key, "data": encoded_chunk}
         ).encode()
         headers = self._sign_request(payload)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._endpoint, data=payload, headers=headers
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.post(
+            self._endpoint, data=payload, headers=headers
+        ) as resp:
+            resp.raise_for_status()
         return StoredChunkRef(
             adapter_name="aws-lambda",
             location=f"lambda://{self._function_name}/{key}",
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         key = ref.location.split("/", 2)[-1] if "://" in ref.location else ref.location
         payload = json.dumps({"action": "read", "key": key}).encode()
         headers = self._sign_request(payload)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._endpoint, data=payload, headers=headers
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
-                data = result.get("data")
-                if data is None:
-                    raise KeyError(f"chunk not found: {key}")
-                return data
+        session = await self._get_session()
+        async with session.post(
+            self._endpoint, data=payload, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+            data = result.get("data")
+            if data is None:
+                raise KeyError(f"chunk not found: {key}")
+            return data
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         key = ref.location.split("/", 2)[-1] if "://" in ref.location else ref.location
         payload = json.dumps({"action": "delete", "key": key}).encode()
         headers = self._sign_request(payload)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._endpoint, data=payload, headers=headers
-                ) as resp:
-                    result = await resp.json()
-                    return result.get("deleted", False)
+            session = await self._get_session()
+            async with session.post(
+                self._endpoint, data=payload, headers=headers
+            ) as resp:
+                result = await resp.json()
+                return result.get("deleted", False)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         payload = json.dumps(
             {"action": "list", "prefix": f"picard/{manifest_id}/"}
         ).encode()
         headers = self._sign_request(payload)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._endpoint, data=payload, headers=headers
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            self._endpoint, data=payload, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
         return [
             StoredChunkRef(
                 adapter_name="aws-lambda",
@@ -178,16 +183,14 @@ class LambdaAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         payload = json.dumps({"action": "ping"}).encode()
         headers = self._sign_request(payload)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._endpoint, data=payload, headers=headers
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.post(
+                self._endpoint, data=payload, headers=headers
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

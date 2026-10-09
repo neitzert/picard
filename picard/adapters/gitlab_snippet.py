@@ -28,6 +28,19 @@ class GitLabSnippetAdapter(Adapter):
         self._token = private_token
         self._url = gitlab_url.rstrip("/")
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -42,8 +55,6 @@ class GitLabSnippetAdapter(Adapter):
         return {"PRIVATE-TOKEN": self._token}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             filename = f"{chunk.manifest_id}_{chunk.block_index}_{chunk.chunk_index}.pchk"
@@ -57,14 +68,14 @@ class GitLabSnippetAdapter(Adapter):
             "visibility": "private",
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._url}/api/v4/snippets",
-                json=payload,
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{self._url}/api/v4/snippets",
+            json=payload,
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         snippet_id = data["id"]
         return StoredChunkRef(
@@ -72,45 +83,39 @@ class GitLabSnippetAdapter(Adapter):
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         snippet_id = ref.location.split("://", 1)[1]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._url}/api/v4/snippets/{snippet_id}/raw",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.text()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._url}/api/v4/snippets/{snippet_id}/raw",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         snippet_id = ref.location.split("://", 1)[1]
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._url}/api/v4/snippets/{snippet_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 204
+            session = await self._get_session()
+            async with session.delete(
+                f"{self._url}/api/v4/snippets/{snippet_id}",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 204
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/api/v4/snippets",
-                    headers=self._headers(),
-                ) as resp:
-                    resp.raise_for_status()
-                    snippets = await resp.json()
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/api/v4/snippets",
+                headers=self._headers(),
+            ) as resp:
+                resp.raise_for_status()
+                snippets = await resp.json()
 
             for s in snippets:
                 if manifest_id in s.get("title", ""):
@@ -125,13 +130,11 @@ class GitLabSnippetAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/api/v4/user", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/api/v4/user", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

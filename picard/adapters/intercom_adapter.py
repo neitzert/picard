@@ -30,6 +30,19 @@ class IntercomAdapter(Adapter):
         self._admin_id = admin_id
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -42,8 +55,6 @@ class IntercomAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         chunk_id = uuid.uuid4().hex[:12]
         # Create a contact, then start a conversation with the data
         payload = {
@@ -56,14 +67,14 @@ class IntercomAdapter(Adapter):
             "Accept": "application/json",
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_URL}/conversations",
-                json=payload,
-                headers=headers,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_URL}/conversations",
+            json=payload,
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         convo_id = data.get("conversation_id", data.get("id", chunk_id))
         location = f"intercom://conversations/{convo_id}"
@@ -85,19 +96,17 @@ class IntercomAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             headers = {
                 "Authorization": f"Bearer {self._access_token}",
                 "Accept": "application/json",
             }
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_URL}/me",
-                    headers=headers,
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_URL}/me",
+                headers=headers,
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

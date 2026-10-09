@@ -14,6 +14,7 @@ from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
+import aiohttp
 
 
 class GitLabCIAdapter(Adapter):
@@ -31,6 +32,18 @@ class GitLabCIAdapter(Adapter):
         self._token = private_token
         self._project_id = project_id
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -48,8 +61,6 @@ class GitLabCIAdapter(Adapter):
         return f"{self._url}/api/v4/projects/{self._project_id}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             artifact_name = f"picard-{chunk.manifest_id}-b{chunk.block_index}-c{chunk.chunk_index}"
@@ -65,28 +76,26 @@ class GitLabCIAdapter(Adapter):
             content_type="application/octet-stream",
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, data=data, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            url, data=data, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            body = await resp.json()
 
         upload_url = body.get("url", body.get("full_path", artifact_name))
         location = f"glci://{self._project_id}/{upload_url}"
         return StoredChunkRef(adapter_name="gitlab-ci", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.split("/", 2)
         path = parts[2] if len(parts) > 2 else parts[-1]
         url = f"{self._url}{path}" if path.startswith("/") else f"{self._api()}/{path}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers()) as resp:
-                resp.raise_for_status()
-                raw = await resp.read()
+        session = await self._get_session()
+        async with session.get(url, headers=self._headers()) as resp:
+            resp.raise_for_status()
+            raw = await resp.read()
 
         return raw.decode()
 
@@ -97,12 +106,10 @@ class GitLabCIAdapter(Adapter):
         return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         url = f"{self._api()}"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self._headers()) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(url, headers=self._headers()) as resp:
+                return resp.status == 200
         except Exception:
             return False

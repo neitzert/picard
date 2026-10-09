@@ -35,6 +35,19 @@ class SpotifyAdapter(Adapter):
         self._user_id = user_id
         self._max = max_chunk_bytes
         self._access_token: str | None = None
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -48,8 +61,6 @@ class SpotifyAdapter(Adapter):
     async def _ensure_token(self, session) -> str:
         if self._access_token:
             return self._access_token
-        import aiohttp
-
         async with session.post(
             "https://accounts.spotify.com/api/token",
             data={
@@ -68,93 +79,83 @@ class SpotifyAdapter(Adapter):
         return {"Authorization": f"Bearer {self._access_token}"}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            await self._ensure_token(session)
-            async with session.post(
-                f"{_API_BASE}/users/{self._user_id}/playlists",
-                headers=self._headers(),
-                json={
-                    "name": f"pchk-{uuid.uuid4().hex[:8]}",
-                    "description": encoded_chunk,
-                    "public": False,
-                },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        await self._ensure_token(session)
+        async with session.post(
+            f"{_API_BASE}/users/{self._user_id}/playlists",
+            headers=self._headers(),
+            json={
+                "name": f"pchk-{uuid.uuid4().hex[:8]}",
+                "description": encoded_chunk,
+                "public": False,
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return StoredChunkRef(
             adapter_name="spotify",
             location=f"spotify://{self._user_id}/{data['id']}",
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         playlist_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            await self._ensure_token(session)
-            async with session.get(
-                f"{_API_BASE}/playlists/{playlist_id}",
-                headers=self._headers(),
-                params={"fields": "description"},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        await self._ensure_token(session)
+        async with session.get(
+            f"{_API_BASE}/playlists/{playlist_id}",
+            headers=self._headers(),
+            params={"fields": "description"},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return data["description"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         playlist_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                await self._ensure_token(session)
-                async with session.delete(
-                    f"{_API_BASE}/playlists/{playlist_id}/followers",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            await self._ensure_token(session)
+            async with session.delete(
+                f"{_API_BASE}/playlists/{playlist_id}/followers",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            await self._ensure_token(session)
-            url = f"{_API_BASE}/users/{self._user_id}/playlists"
-            params: dict[str, int] = {"limit": 50, "offset": 0}
-            while True:
-                async with session.get(
-                    url, headers=self._headers(), params=params
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
-                for item in data.get("items", []):
-                    desc = item.get("description", "")
-                    if manifest_id in desc:
-                        refs.append(
-                            StoredChunkRef(
-                                adapter_name="spotify",
-                                location=f"spotify://{self._user_id}/{item['id']}",
-                            )
+        session = await self._get_session()
+        await self._ensure_token(session)
+        url = f"{_API_BASE}/users/{self._user_id}/playlists"
+        params: dict[str, int] = {"limit": 50, "offset": 0}
+        while True:
+            async with session.get(
+                url, headers=self._headers(), params=params
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+            for item in data.get("items", []):
+                desc = item.get("description", "")
+                if manifest_id in desc:
+                    refs.append(
+                        StoredChunkRef(
+                            adapter_name="spotify",
+                            location=f"spotify://{self._user_id}/{item['id']}",
                         )
-                if not data.get("next"):
-                    break
-                params["offset"] += 50
+                    )
+            if not data.get("next"):
+                break
+            params["offset"] += 50
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                await self._ensure_token(session)
-                async with session.get(
-                    f"{_API_BASE}/me", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            await self._ensure_token(session)
+            async with session.get(
+                f"{_API_BASE}/me", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

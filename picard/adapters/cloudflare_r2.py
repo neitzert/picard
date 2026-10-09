@@ -39,6 +39,19 @@ class CloudflareR2Adapter(Adapter):
         self._prefix = prefix
         self._max = max_chunk_bytes
         self._endpoint = f"https://{account_id}.r2.cloudflarestorage.com"
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -96,62 +109,54 @@ class CloudflareR2Adapter(Adapter):
         return headers
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         key = self._object_key(encoded_chunk)
         url = f"{self._endpoint}/{self._bucket}/{key}"
         payload = encoded_chunk.encode()
         headers = {"host": f"{self._account_id}.r2.cloudflarestorage.com"}
         headers = self._sign_v4("PUT", f"/{self._bucket}/{key}", headers, payload)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.put(url, data=payload, headers=headers) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(url, data=payload, headers=headers) as resp:
+            resp.raise_for_status()
         return StoredChunkRef(
             adapter_name="cloudflare-r2",
             location=f"r2://{self._bucket}/{key}",
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         key = ref.location.removeprefix(f"r2://{self._bucket}/")
         url = f"{self._endpoint}/{self._bucket}/{key}"
         headers = {"host": f"{self._account_id}.r2.cloudflarestorage.com"}
         headers = self._sign_v4("GET", f"/{self._bucket}/{key}", headers, b"")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                return (await resp.read()).decode()
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            return (await resp.read()).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         key = ref.location.removeprefix(f"r2://{self._bucket}/")
         url = f"{self._endpoint}/{self._bucket}/{key}"
         headers = {"host": f"{self._account_id}.r2.cloudflarestorage.com"}
         headers = self._sign_v4("DELETE", f"/{self._bucket}/{key}", headers, b"")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=headers) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(url, headers=headers) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         prefix = f"{self._prefix}{manifest_id}/"
         url = f"{self._endpoint}/{self._bucket}?list-type=2&prefix={quote(prefix, safe='')}"
         headers = {"host": f"{self._account_id}.r2.cloudflarestorage.com"}
         headers = self._sign_v4("GET", f"/{self._bucket}", headers, b"")
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers) as resp:
-                resp.raise_for_status()
-                text = await resp.text()
+        session = await self._get_session()
+        async with session.get(url, headers=headers) as resp:
+            resp.raise_for_status()
+            text = await resp.text()
 
         import re
         keys = re.findall(r"<Key>(.*?)</Key>", text)
@@ -164,15 +169,13 @@ class CloudflareR2Adapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         url = f"{self._endpoint}/{self._bucket}"
         headers = {"host": f"{self._account_id}.r2.cloudflarestorage.com"}
         headers = self._sign_v4("HEAD", f"/{self._bucket}", headers, b"")
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.head(url, headers=headers) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.head(url, headers=headers) as resp:
+                return resp.status == 200
         except Exception:
             return False

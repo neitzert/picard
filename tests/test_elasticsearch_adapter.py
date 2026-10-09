@@ -93,11 +93,15 @@ class _FakeES:
 
 def _mock_session(es):
     session = AsyncMock()
+    session.closed = False
     session.put = lambda url, **kw: es.handle("PUT", url, **kw)
     session.get = lambda url, **kw: es.handle("GET", url, **kw)
     session.delete = lambda url, **kw: es.handle("DELETE", url, **kw)
     session.post = lambda url, **kw: es.handle("POST", url, **kw)
-    return session
+    cm = AsyncMock()
+    cm.__aenter__ = AsyncMock(return_value=session)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return cm
 
 
 @pytest.mark.asyncio
@@ -110,9 +114,7 @@ class TestElasticsearchAdapter:
 
     async def test_write_read_round_trip(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             ref = await adapter.write_chunk(_ROUND)
             assert ref.adapter_name == "elasticsearch"
             result = await adapter.read_chunk(ref)
@@ -120,26 +122,20 @@ class TestElasticsearchAdapter:
 
     async def test_read_missing_raises(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             ref = StoredChunkRef(adapter_name="elasticsearch", location="es://test-index/nope")
             with pytest.raises(KeyError):
                 await adapter.read_chunk(ref)
 
     async def test_delete(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             ref = await adapter.write_chunk(_ROUND)
             assert await adapter.delete_chunk(ref) is True
 
     async def test_list_chunks(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             await adapter.write_chunk(_C1)
             await adapter.write_chunk(_C2)
             refs = await adapter.list_chunks("m1")
@@ -147,29 +143,25 @@ class TestElasticsearchAdapter:
 
     async def test_health_check_ok(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             assert await adapter.health_check() is True
 
     async def test_health_check_fail(self, adapter):
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(side_effect=Exception("no"))
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(side_effect=Exception("no"))
+        cm.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=cm):
             assert await adapter.health_check() is False
 
     async def test_capacity(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             cap = await adapter.capacity()
             assert cap["used_bytes"] == 1024
 
     async def test_location_format(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             ref = await adapter.write_chunk(_ROUND)
             assert ref.location.startswith("es://test-index/")
 
@@ -186,9 +178,7 @@ class TestElasticsearchAdapter:
 
     async def test_write_opaque_data(self, adapter):
         es = _FakeES()
-        with patch("aiohttp.ClientSession") as mock_cs:
-            mock_cs.return_value.__aenter__ = AsyncMock(return_value=_mock_session(es))
-            mock_cs.return_value.__aexit__ = AsyncMock(return_value=False)
+        with patch("aiohttp.ClientSession", return_value=_mock_session(es)):
             ref = await adapter.write_chunk("opaque-sealed")
             result = await adapter.read_chunk(ref)
             assert result == "opaque-sealed"

@@ -31,6 +31,19 @@ class IppAdapter(Adapter):
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
         self._request_id = 1
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -59,8 +72,6 @@ class IppAdapter(Adapter):
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         import asyncio
-        import aiohttp
-
         try:
             from picard.chunker import Chunk
             chunk = Chunk.decode(encoded_chunk)
@@ -84,13 +95,13 @@ class IppAdapter(Adapter):
             "ipps://", "https://"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                http_url,
-                data=ipp_data,
-                headers={"Content-Type": "application/ipp"},
-            ) as resp:
-                response_data = await resp.read()
+        session = await self._get_session()
+        async with session.post(
+            http_url,
+            data=ipp_data,
+            headers={"Content-Type": "application/ipp"},
+        ) as resp:
+            response_data = await resp.read()
 
         location = f"ipp://{self._printer_url}/{chunk_id}"
         self._cache[location] = encoded_chunk
@@ -113,8 +124,6 @@ class IppAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             http_url = self._printer_url.replace("ipp://", "http://").replace(
                 "ipps://", "https://"
@@ -127,13 +136,13 @@ class IppAdapter(Adapter):
                     "printer-uri": self._printer_url,
                 },
             )
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    http_url,
-                    data=ipp_data,
-                    headers={"Content-Type": "application/ipp"},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.post(
+                http_url,
+                data=ipp_data,
+                headers={"Content-Type": "application/ipp"},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

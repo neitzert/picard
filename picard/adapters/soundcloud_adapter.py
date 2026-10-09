@@ -13,6 +13,7 @@ import struct
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 _API_BASE = "https://api.soundcloud.com"
 
@@ -58,6 +59,18 @@ class SoundCloudAdapter(Adapter):
         self._client_id = client_id
         self._oauth_token = oauth_token
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -72,8 +85,6 @@ class SoundCloudAdapter(Adapter):
         return {"Authorization": f"OAuth {self._oauth_token}"}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         wav_data = _silent_wav()
         form = aiohttp.FormData()
         form.add_field("track[title]", f"pchk-{hash(encoded_chunk) & 0xFFFF:04x}")
@@ -86,57 +97,51 @@ class SoundCloudAdapter(Adapter):
             content_type="audio/wav",
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/tracks",
-                headers=self._headers(),
-                data=form,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/tracks",
+            headers=self._headers(),
+            data=form,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         loc = f"soundcloud://{data.get('user_id', '0')}/{data['id']}"
         return StoredChunkRef(adapter_name="soundcloud", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         track_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/tracks/{track_id}",
-                headers=self._headers(),
-                params={"client_id": self._client_id},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/tracks/{track_id}",
+            headers=self._headers(),
+            params={"client_id": self._client_id},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return data.get("description", "")
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         track_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API_BASE}/tracks/{track_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API_BASE}/tracks/{track_id}",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/me/tracks",
-                headers=self._headers(),
-                params={"client_id": self._client_id, "limit": 200},
-            ) as resp:
-                resp.raise_for_status()
-                tracks = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/me/tracks",
+            headers=self._headers(),
+            params={"client_id": self._client_id, "limit": 200},
+        ) as resp:
+            resp.raise_for_status()
+            tracks = await resp.json()
         for track in tracks:
             desc = track.get("description", "")
             if manifest_id in desc:
@@ -149,14 +154,12 @@ class SoundCloudAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/me",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/me",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

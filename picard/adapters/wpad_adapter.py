@@ -38,6 +38,19 @@ class WpadAdapter(Adapter):
         self._wpad_port = wpad_port
         self._update_url = update_endpoint or f"http://{wpad_host}:{wpad_port}/wpad.dat"
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -70,41 +83,37 @@ class WpadAdapter(Adapter):
         return chunks
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         key = self._chunk_key(encoded_chunk)
         comment = self._encode_comment(key, encoded_chunk)
 
-        async with aiohttp.ClientSession() as session:
-            # Fetch current PAC file
-            async with session.get(self._update_url) as resp:
-                if resp.status == 200:
-                    current = await resp.text()
-                else:
-                    current = 'function FindProxyForURL(url, host) { return "DIRECT"; }'
+        session = await self._get_session()
+        # Fetch current PAC file
+        async with session.get(self._update_url) as resp:
+            if resp.status == 200:
+                current = await resp.text()
+            else:
+                current = 'function FindProxyForURL(url, host) { return "DIRECT"; }'
 
-            new_content = current.rstrip() + "\n" + comment + "\n"
+        new_content = current.rstrip() + "\n" + comment + "\n"
 
-            async with session.put(
-                self._update_url,
-                data=new_content,
-                headers={"Content-Type": "application/x-ns-proxy-autoconfig"},
-            ) as resp:
-                resp.raise_for_status()
+        async with session.put(
+            self._update_url,
+            data=new_content,
+            headers={"Content-Type": "application/x-ns-proxy-autoconfig"},
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"wpad://{self._wpad_host}/{key}"
         return StoredChunkRef(adapter_name="wpad", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.replace("wpad://", "").split("/", 1)
         key = parts[1] if len(parts) > 1 else ""
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(self._update_url) as resp:
-                resp.raise_for_status()
-                content = await resp.text()
+        session = await self._get_session()
+        async with session.get(self._update_url) as resp:
+            resp.raise_for_status()
+            content = await resp.text()
 
         chunks = self._decode_comments(content)
         if key not in chunks:
@@ -112,40 +121,36 @@ class WpadAdapter(Adapter):
         return chunks[key]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.replace("wpad://", "").split("/", 1)
         key = parts[1] if len(parts) > 1 else ""
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self._update_url) as resp:
-                    content = await resp.text()
+            session = await self._get_session()
+            async with session.get(self._update_url) as resp:
+                content = await resp.text()
 
-                comment = None
-                pattern = re.escape(_CHUNK_MARKER) + re.escape(key) + r":[^*]+" + re.escape(_CHUNK_END)
-                match = re.search(pattern, content)
-                if not match:
-                    return False
+            comment = None
+            pattern = re.escape(_CHUNK_MARKER) + re.escape(key) + r":[^*]+" + re.escape(_CHUNK_END)
+            match = re.search(pattern, content)
+            if not match:
+                return False
 
-                new_content = content[:match.start()] + content[match.end():]
+            new_content = content[:match.start()] + content[match.end():]
 
-                async with session.put(
-                    self._update_url,
-                    data=new_content,
-                    headers={"Content-Type": "application/x-ns-proxy-autoconfig"},
-                ) as resp:
-                    return resp.status in (200, 204)
+            async with session.put(
+                self._update_url,
+                data=new_content,
+                headers={"Content-Type": "application/x-ns-proxy-autoconfig"},
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self._update_url) as resp:
-                    content = await resp.text()
+            session = await self._get_session()
+            async with session.get(self._update_url) as resp:
+                content = await resp.text()
 
             chunks = self._decode_comments(content)
             return [
@@ -160,13 +165,11 @@ class WpadAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"http://{self._wpad_host}:{self._wpad_port}/wpad.dat"
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"http://{self._wpad_host}:{self._wpad_port}/wpad.dat"
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

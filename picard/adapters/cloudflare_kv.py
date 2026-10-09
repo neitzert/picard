@@ -35,6 +35,18 @@ class CloudflareKvAdapter(Adapter):
             f"https://api.cloudflare.com/client/v4/accounts/{account_id}"
             f"/storage/kv/namespaces/{namespace_id}"
         )
+        self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -59,53 +71,45 @@ class CloudflareKvAdapter(Adapter):
             return f"picard/{uuid.uuid4().hex}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         key = self._chunk_key(encoded_chunk)
         url = f"{self._base}/values/{key}"
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                url, data=encoded_chunk.encode(), headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(
+            url, data=encoded_chunk.encode(), headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
         return StoredChunkRef(
             adapter_name="cloudflare-kv",
             location=f"cfkv://{self._namespace_id}/{key}",
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         key = ref.location.split("/", 2)[-1] if "://" in ref.location else ref.location
         url = f"{self._base}/values/{key}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers()) as resp:
-                resp.raise_for_status()
-                return (await resp.read()).decode()
+        session = await self._get_session()
+        async with session.get(url, headers=self._headers()) as resp:
+            resp.raise_for_status()
+            return (await resp.read()).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         key = ref.location.split("/", 2)[-1] if "://" in ref.location else ref.location
         url = f"{self._base}/values/{key}"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=self._headers()) as resp:
-                    return resp.status < 400
+            session = await self._get_session()
+            async with session.delete(url, headers=self._headers()) as resp:
+                return resp.status < 400
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         url = f"{self._base}/keys"
         params = {"prefix": f"picard/{manifest_id}/"}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, params=params, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            url, params=params, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return [
             StoredChunkRef(
                 adapter_name="cloudflare-kv",
@@ -115,16 +119,14 @@ class CloudflareKvAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         url = f"{self._base}/keys"
         params = {"limit": "1"}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, params=params, headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                url, params=params, headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

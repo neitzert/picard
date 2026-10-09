@@ -35,6 +35,7 @@ def _mock_session(method="get", status=200, json_data=None):
     cm.__aexit__ = AsyncMock(return_value=False)
     session = AsyncMock()
     setattr(session, method, MagicMock(return_value=cm))
+    session.closed = False
     session_cm = AsyncMock()
     session_cm.__aenter__ = AsyncMock(return_value=session)
     session_cm.__aexit__ = AsyncMock(return_value=False)
@@ -81,21 +82,37 @@ class TestPypiWrite:
 
 @pytest.mark.asyncio
 class TestPypiRead:
-    @patch("aiohttp.ClientSession")
-    async def test_read_chunk(self, MockSession):
+    async def test_read_chunk(self):
         enc = _sample_encoded()
-        session_cm, session = _mock_session("get", json_data={"info": {"description": enc}})
-        MockSession.return_value = session_cm
+        resp = AsyncMock()
+        resp.status = 200
+        resp.raise_for_status = MagicMock()
+        resp.json = AsyncMock(return_value={"info": {"description": enc}})
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        session.closed = False
+        session.get = MagicMock(return_value=cm)
         a = _make_adapter()
+        a._session = session
         ref = StoredChunkRef(adapter_name="pypi", location="pypi://picard-chunk-abc/0.0.1")
         result = await a.read_chunk(ref)
         assert result == enc
 
-    @patch("aiohttp.ClientSession")
-    async def test_read_not_found(self, MockSession):
-        session_cm, _ = _mock_session("get", json_data={"info": {"description": ""}})
-        MockSession.return_value = session_cm
+    async def test_read_not_found(self):
+        resp = AsyncMock()
+        resp.status = 200
+        resp.raise_for_status = MagicMock()
+        resp.json = AsyncMock(return_value={"info": {"description": ""}})
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        session.closed = False
+        session.get = MagicMock(return_value=cm)
         a = _make_adapter()
+        a._session = session
         ref = StoredChunkRef(adapter_name="pypi", location="pypi://missing/0.0.1")
         with pytest.raises(KeyError):
             await a.read_chunk(ref)
@@ -115,15 +132,24 @@ class TestPypiDelete:
 
 @pytest.mark.asyncio
 class TestPypiHealth:
-    @patch("aiohttp.ClientSession")
-    async def test_health_ok(self, MockSession):
-        session_cm, _ = _mock_session("get")
-        MockSession.return_value = session_cm
+    async def test_health_ok(self):
+        resp = AsyncMock()
+        resp.status = 200
+        resp.raise_for_status = MagicMock()
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        session = AsyncMock()
+        session.closed = False
+        session.get = MagicMock(return_value=cm)
         a = _make_adapter()
+        a._session = session
         assert await a.health_check() is True
 
-    @patch("aiohttp.ClientSession")
-    async def test_health_fail(self, MockSession):
-        MockSession.side_effect = Exception("err")
+    async def test_health_fail(self):
+        session = AsyncMock()
+        session.closed = False
+        session.get = MagicMock(side_effect=Exception("err"))
         a = _make_adapter()
+        a._session = session
         assert await a.health_check() is False

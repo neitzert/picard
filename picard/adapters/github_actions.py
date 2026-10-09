@@ -36,6 +36,19 @@ class GitHubActionsAdapter(Adapter):
         self._repo = repo
         self._api_url = api_url.rstrip("/")
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -57,8 +70,6 @@ class GitHubActionsAdapter(Adapter):
         return f"{self._api_url}/repos/{self._owner}/{self._repo}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             artifact_name = f"picard-{chunk.manifest_id}-b{chunk.block_index}-c{chunk.chunk_index}"
@@ -71,55 +82,49 @@ class GitHubActionsAdapter(Adapter):
             "data": base64.b64encode(encoded_chunk.encode()).decode(),
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, json=payload, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            url, json=payload, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            body = await resp.json()
 
         artifact_id = body.get("id", artifact_name)
         location = f"gha://{self._owner}/{self._repo}/artifacts/{artifact_id}"
         return StoredChunkRef(adapter_name="github-actions", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         artifact_id = ref.location.rsplit("/", 1)[-1]
         url = f"{self._repo_url()}/actions/artifacts/{artifact_id}/zip"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers()) as resp:
-                resp.raise_for_status()
-                raw = await resp.read()
+        session = await self._get_session()
+        async with session.get(url, headers=self._headers()) as resp:
+            resp.raise_for_status()
+            raw = await resp.read()
 
         return base64.b64decode(raw).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         artifact_id = ref.location.rsplit("/", 1)[-1]
         url = f"{self._repo_url()}/actions/artifacts/{artifact_id}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=self._headers()) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(url, headers=self._headers()) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         url = f"{self._repo_url()}/actions/artifacts"
         params = {"per_page": 100, "name": f"picard-{manifest_id}"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, params=params, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            url, params=params, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            body = await resp.json()
 
         refs: list[StoredChunkRef] = []
         for a in body.get("artifacts", []):
@@ -129,15 +134,13 @@ class GitHubActionsAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         url = f"{self._repo_url()}/actions/runs"
         params = {"per_page": 1}
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, params=params, headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                url, params=params, headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

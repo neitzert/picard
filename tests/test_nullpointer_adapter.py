@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,29 +30,15 @@ def _make_adapter(**kwargs) -> NullPointerAdapter:
     return NullPointerAdapter(**defaults)
 
 
-def _mock_session(response_mock):
-    """Build an async-context-manager mock for aiohttp.ClientSession."""
+def _mock_response(response_mock):
     session = MagicMock()
-    # session.post(...) returns an async-CM yielding response_mock
-    post_cm = AsyncMock()
-    post_cm.__aenter__ = AsyncMock(return_value=response_mock)
-    post_cm.__aexit__ = AsyncMock(return_value=False)
-    session.post.return_value = post_cm
-
-    get_cm = AsyncMock()
-    get_cm.__aenter__ = AsyncMock(return_value=response_mock)
-    get_cm.__aexit__ = AsyncMock(return_value=False)
-    session.get.return_value = get_cm
-
-    head_cm = AsyncMock()
-    head_cm.__aenter__ = AsyncMock(return_value=response_mock)
-    head_cm.__aexit__ = AsyncMock(return_value=False)
-    session.head.return_value = head_cm
-
-    cm = MagicMock()
-    cm.__aenter__ = AsyncMock(return_value=session)
-    cm.__aexit__ = AsyncMock(return_value=False)
-    return cm, session
+    session.closed = False
+    for method in ("post", "get", "head"):
+        cm = AsyncMock()
+        cm.__aenter__ = AsyncMock(return_value=response_mock)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        setattr(session, method, MagicMock(return_value=cm))
+    return session
 
 
 @pytest.mark.asyncio
@@ -77,11 +63,9 @@ class TestNullPointerAdapter:
         resp = AsyncMock()
         resp.raise_for_status = MagicMock()
         resp.text = AsyncMock(return_value="https://0x0.st/abc.pchk\n")
-        cm, session = _mock_session(resp)
+        a._session = _mock_response(resp)
 
-        with patch("aiohttp.ClientSession", return_value=cm):
-            ref = await a.write_chunk(enc)
-
+        ref = await a.write_chunk(enc)
         assert ref.adapter_name == "0x0"
         assert ref.location.startswith("0x0://")
 
@@ -92,11 +76,9 @@ class TestNullPointerAdapter:
         resp = AsyncMock()
         resp.raise_for_status = MagicMock()
         resp.text = AsyncMock(return_value="https://0x0.st/xyz.pchk\n")
-        cm, session = _mock_session(resp)
+        a._session = _mock_response(resp)
 
-        with patch("aiohttp.ClientSession", return_value=cm):
-            ref = await a.write_chunk(enc)
-
+        ref = await a.write_chunk(enc)
         assert ref.location == "0x0://https://0x0.st/xyz.pchk"
 
     async def test_read_chunk(self):
@@ -106,13 +88,10 @@ class TestNullPointerAdapter:
         resp = AsyncMock()
         resp.raise_for_status = MagicMock()
         resp.text = AsyncMock(return_value=enc)
-        cm, session = _mock_session(resp)
+        a._session = _mock_response(resp)
 
         ref = StoredChunkRef(adapter_name="0x0", location="0x0://https://0x0.st/abc.pchk")
-
-        with patch("aiohttp.ClientSession", return_value=cm):
-            result = await a.read_chunk(ref)
-
+        result = await a.read_chunk(ref)
         assert result == enc
 
     async def test_delete_chunk_always_false(self):
@@ -127,33 +106,25 @@ class TestNullPointerAdapter:
 
     async def test_health_check_ok(self):
         a = _make_adapter()
-
         resp = AsyncMock()
         resp.status = 200
-        cm, session = _mock_session(resp)
-
-        with patch("aiohttp.ClientSession", return_value=cm):
-            assert await a.health_check() is True
+        a._session = _mock_response(resp)
+        assert await a.health_check() is True
 
     async def test_health_check_fail(self):
         a = _make_adapter()
-
         resp = AsyncMock()
         resp.status = 503
-        cm, session = _mock_session(resp)
-
-        with patch("aiohttp.ClientSession", return_value=cm):
-            assert await a.health_check() is False
+        a._session = _mock_response(resp)
+        assert await a.health_check() is False
 
     async def test_health_check_exception(self):
         a = _make_adapter()
-
-        cm = MagicMock()
-        cm.__aenter__ = AsyncMock(side_effect=Exception("connection refused"))
-        cm.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("aiohttp.ClientSession", return_value=cm):
-            assert await a.health_check() is False
+        session = MagicMock()
+        session.closed = False
+        session.head = MagicMock(side_effect=Exception("connection refused"))
+        a._session = session
+        assert await a.health_check() is False
 
     async def test_capacity_default(self):
         a = _make_adapter()

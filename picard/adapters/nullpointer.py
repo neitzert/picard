@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 
 class NullPointerAdapter(Adapter):
@@ -24,6 +25,18 @@ class NullPointerAdapter(Adapter):
     ) -> None:
         self._url = url.rstrip("/")
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -35,8 +48,6 @@ class NullPointerAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         form = aiohttp.FormData()
         form.add_field(
             "file",
@@ -45,22 +56,20 @@ class NullPointerAdapter(Adapter):
             content_type="application/octet-stream",
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(self._url, data=form) as resp:
-                resp.raise_for_status()
-                file_url = (await resp.text()).strip()
+        session = await self._get_session()
+        async with session.post(self._url, data=form) as resp:
+            resp.raise_for_status()
+            file_url = (await resp.text()).strip()
 
         return StoredChunkRef(adapter_name="0x0", location=f"0x0://{file_url}")
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         file_url = ref.location.split("://", 1)[1]
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(file_url) as resp:
-                resp.raise_for_status()
-                return await resp.text()
+        session = await self._get_session()
+        async with session.get(file_url) as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         return False
@@ -69,11 +78,9 @@ class NullPointerAdapter(Adapter):
         return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.head(self._url) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.head(self._url) as resp:
+                return resp.status == 200
         except Exception:
             return False

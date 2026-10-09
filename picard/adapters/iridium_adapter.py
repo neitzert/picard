@@ -15,6 +15,7 @@ import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+import aiohttp
 
 
 class IridiumAdapter(Adapter):
@@ -35,6 +36,18 @@ class IridiumAdapter(Adapter):
         self._password = password
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -46,8 +59,6 @@ class IridiumAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         from picard.chunker import Chunk
 
         try:
@@ -56,21 +67,21 @@ class IridiumAdapter(Adapter):
         except ValueError:
             key = uuid.uuid4().hex
 
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                "imei": self._imei,
-                "data": encoded_chunk,
-                "priority": 1,
-            }
-            auth = aiohttp.BasicAuth(self._username, self._password)
-            async with session.post(
-                f"{self._api_url}/send_message",
-                json=payload,
-                auth=auth,
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
-                msg_id = result.get("message_id", uuid.uuid4().hex)
+        session = await self._get_session()
+        payload = {
+            "imei": self._imei,
+            "data": encoded_chunk,
+            "priority": 1,
+        }
+        auth = aiohttp.BasicAuth(self._username, self._password)
+        async with session.post(
+            f"{self._api_url}/send_message",
+            json=payload,
+            auth=auth,
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+            msg_id = result.get("message_id", uuid.uuid4().hex)
 
         loc = f"iridium://{self._imei}/{msg_id}"
         self._cache[loc] = encoded_chunk
@@ -81,23 +92,21 @@ class IridiumAdapter(Adapter):
         if cached is not None:
             return cached
 
-        import aiohttp
-
         msg_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            auth = aiohttp.BasicAuth(self._username, self._password)
-            async with session.get(
-                f"{self._api_url}/check_messages",
-                params={"imei": self._imei, "message_id": msg_id},
-                auth=auth,
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
-                messages = result.get("messages", [])
-                for msg in messages:
-                    if str(msg.get("message_id")) == msg_id:
-                        return msg["data"]
-                raise KeyError(f"message not found: {ref.location}")
+        session = await self._get_session()
+        auth = aiohttp.BasicAuth(self._username, self._password)
+        async with session.get(
+            f"{self._api_url}/check_messages",
+            params={"imei": self._imei, "message_id": msg_id},
+            auth=auth,
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+            messages = result.get("messages", [])
+            for msg in messages:
+                if str(msg.get("message_id")) == msg_id:
+                    return msg["data"]
+            raise KeyError(f"message not found: {ref.location}")
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         return self._cache.pop(ref.location, None) is not None
@@ -110,17 +119,15 @@ class IridiumAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                auth = aiohttp.BasicAuth(self._username, self._password)
-                async with session.get(
-                    f"{self._api_url}/status",
-                    auth=auth,
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            auth = aiohttp.BasicAuth(self._username, self._password)
+            async with session.get(
+                f"{self._api_url}/status",
+                auth=auth,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -37,6 +37,19 @@ class WordPressAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -62,87 +75,79 @@ class WordPressAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                self._api_url("/posts"),
-                headers=self._headers(),
-                json={
-                    "title": "pchk",
-                    "content": encoded_chunk,
-                    "status": "draft" if self._use_drafts else "private",
-                },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.post(
+            self._api_url("/posts"),
+            headers=self._headers(),
+            json={
+                "title": "pchk",
+                "content": encoded_chunk,
+                "status": "draft" if self._use_drafts else "private",
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         loc = f"wp://{self._site_url}/{data['id']}"
         return StoredChunkRef(adapter_name="wordpress", location=loc)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                self._api_url(f"/posts/{post_id}"),
-                headers=self._headers(),
-                params={"context": "edit"},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            self._api_url(f"/posts/{post_id}"),
+            headers=self._headers(),
+            params={"context": "edit"},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         raw = data.get("content", {}).get("raw", "")
         return raw if raw else data.get("content", {}).get("rendered", "")
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         post_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    self._api_url(f"/posts/{post_id}"),
-                    headers=self._headers(),
-                    params={"force": "true"},
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.delete(
+                self._api_url(f"/posts/{post_id}"),
+                headers=self._headers(),
+                params={"force": "true"},
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
         page = 1
-        async with aiohttp.ClientSession() as session:
-            while True:
-                async with session.get(
-                    self._api_url("/posts"),
-                    headers=self._headers(),
-                    params={
-                        "status": "draft,private",
-                        "per_page": 100,
-                        "page": page,
-                        "context": "edit",
-                    },
-                ) as resp:
-                    if resp.status != 200:
-                        break
-                    posts = await resp.json()
-                if not posts:
+        session = await self._get_session()
+        while True:
+            async with session.get(
+                self._api_url("/posts"),
+                headers=self._headers(),
+                params={
+                    "status": "draft,private",
+                    "per_page": 100,
+                    "page": page,
+                    "context": "edit",
+                },
+            ) as resp:
+                if resp.status != 200:
                     break
-                for post in posts:
-                    raw = post.get("content", {}).get("raw", "")
-                    if manifest_id in raw:
-                        refs.append(
-                            StoredChunkRef(
-                                adapter_name="wordpress",
-                                location=f"wp://{self._site_url}/{post['id']}",
-                            )
+                posts = await resp.json()
+            if not posts:
+                break
+            for post in posts:
+                raw = post.get("content", {}).get("raw", "")
+                if manifest_id in raw:
+                    refs.append(
+                        StoredChunkRef(
+                            adapter_name="wordpress",
+                            location=f"wp://{self._site_url}/{post['id']}",
                         )
-                if len(posts) < 100:
-                    break
-                page += 1
+                    )
+            if len(posts) < 100:
+                break
+            page += 1
         return refs
 
     # ── Browser mode ────────────────────────────────────────────
@@ -239,14 +244,12 @@ class WordPressAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    self._api_url("/users/me"),
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                self._api_url("/users/me"),
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

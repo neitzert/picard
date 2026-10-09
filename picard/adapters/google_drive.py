@@ -37,6 +37,18 @@ class GoogleDriveAdapter(Adapter):
         self._folder_id = folder_id
         self._prefix = prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def _get_headers(self) -> dict[str, str]:
         try:
@@ -87,39 +99,39 @@ class GoogleDriveAdapter(Adapter):
 
         headers["Content-Type"] = f"multipart/related; boundary={boundary}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API}/upload/drive/v3/files?uploadType=multipart",
-                data=body.encode(),
-                headers=headers,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                file_id = data["id"]
+        session = await self._get_session()
+        async with session.post(
+            f"{_API}/upload/drive/v3/files?uploadType=multipart",
+            data=body.encode(),
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            file_id = data["id"]
 
         return StoredChunkRef(adapter_name="google-drive", location=file_id)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         headers = await asyncio.to_thread(self._get_headers)
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API}/drive/v3/files/{ref.location}?alt=media",
-                headers=headers,
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.text()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API}/drive/v3/files/{ref.location}?alt=media",
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         headers = await asyncio.to_thread(self._get_headers)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API}/drive/v3/files/{ref.location}",
-                    headers=headers,
-                ) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API}/drive/v3/files/{ref.location}",
+                headers=headers,
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
@@ -130,18 +142,18 @@ class GoogleDriveAdapter(Adapter):
             query += f" and '{self._folder_id}' in parents"
         refs: list[StoredChunkRef] = []
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API}/drive/v3/files",
-                params={"q": query, "fields": "files(id,name)"},
-                headers=headers,
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                for f in data.get("files", []):
-                    refs.append(
-                        StoredChunkRef(adapter_name="google-drive", location=f["id"])
-                    )
+        session = await self._get_session()
+        async with session.get(
+            f"{_API}/drive/v3/files",
+            params={"q": query, "fields": "files(id,name)"},
+            headers=headers,
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            for f in data.get("files", []):
+                refs.append(
+                    StoredChunkRef(adapter_name="google-drive", location=f["id"])
+                )
 
         return refs
 
@@ -149,11 +161,11 @@ class GoogleDriveAdapter(Adapter):
         headers = await asyncio.to_thread(self._get_headers)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API}/drive/v3/about?fields=user",
-                    headers=headers,
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API}/drive/v3/about?fields=user",
+                headers=headers,
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

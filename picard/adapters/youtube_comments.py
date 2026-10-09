@@ -31,6 +31,19 @@ class YouTubeCommentsAdapter(Adapter):
         self._api_key = api_key
         self._max = max_chunk_bytes
         self._base = "https://www.googleapis.com/youtube/v3"
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -48,8 +61,6 @@ class YouTubeCommentsAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         body = {
             "snippet": {
                 "videoId": self._video_id,
@@ -61,32 +72,30 @@ class YouTubeCommentsAdapter(Adapter):
             }
         }
 
-        async with aiohttp.ClientSession() as session:
-            url = f"{self._base}/commentThreads?part=snippet"
-            async with session.post(
-                url, json=body, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                comment_id = data["id"]
+        session = await self._get_session()
+        url = f"{self._base}/commentThreads?part=snippet"
+        async with session.post(
+            url, json=body, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            comment_id = data["id"]
 
         location = f"yt://{self._video_id}/{comment_id}"
         return StoredChunkRef(adapter_name="youtube-comments", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         comment_id = ref.location.rsplit("/", 1)[1]
         params = {"part": "snippet", "id": comment_id}
         if self._api_key:
             params["key"] = self._api_key
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self._base}/comments", params=params, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{self._base}/comments", params=params, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
 
         items = data.get("items", [])
         if not items:
@@ -97,24 +106,20 @@ class YouTubeCommentsAdapter(Adapter):
         return text
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         comment_id = ref.location.rsplit("/", 1)[1]
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{self._base}/comments",
-                    params={"id": comment_id},
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(
+                f"{self._base}/comments",
+                params={"id": comment_id},
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
         params = {
             "part": "snippet",
@@ -126,33 +131,31 @@ class YouTubeCommentsAdapter(Adapter):
             params["key"] = self._api_key
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._base}/commentThreads",
-                    params=params,
-                    headers=self._headers(),
-                ) as resp:
-                    if resp.status != 200:
-                        return []
-                    data = await resp.json()
-                    for item in data.get("items", []):
-                        text = item["snippet"]["topLevelComment"]["snippet"][
-                            "textOriginal"
-                        ]
-                        if _MARKER in text and manifest_id in text:
-                            refs.append(
-                                StoredChunkRef(
-                                    adapter_name="youtube-comments",
-                                    location=f"yt://{self._video_id}/{item['id']}",
-                                )
+            session = await self._get_session()
+            async with session.get(
+                f"{self._base}/commentThreads",
+                params=params,
+                headers=self._headers(),
+            ) as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+                for item in data.get("items", []):
+                    text = item["snippet"]["topLevelComment"]["snippet"][
+                        "textOriginal"
+                    ]
+                    if _MARKER in text and manifest_id in text:
+                        refs.append(
+                            StoredChunkRef(
+                                adapter_name="youtube-comments",
+                                location=f"yt://{self._video_id}/{item['id']}",
                             )
+                        )
         except Exception:
             pass
         return refs
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             params = {
                 "part": "snippet",
@@ -161,12 +164,12 @@ class YouTubeCommentsAdapter(Adapter):
             }
             if self._api_key:
                 params["key"] = self._api_key
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._base}/commentThreads",
-                    params=params,
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._base}/commentThreads",
+                params=params,
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

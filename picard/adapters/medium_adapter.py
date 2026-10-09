@@ -38,6 +38,19 @@ class MediumAdapter(Adapter):
         self._headless = headless
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -57,22 +70,20 @@ class MediumAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/users/{self._author_id}/posts",
-                headers=self._headers(),
-                json={
-                    "title": "pchk",
-                    "contentFormat": "markdown",
-                    "content": encoded_chunk,
-                    "publishStatus": "draft",
-                },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
-                post_id = data.get("data", {}).get("id", "")
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/users/{self._author_id}/posts",
+            headers=self._headers(),
+            json={
+                "title": "pchk",
+                "contentFormat": "markdown",
+                "content": encoded_chunk,
+                "publishStatus": "draft",
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+            post_id = data.get("data", {}).get("id", "")
         loc = f"medium://{self._author_id}/{post_id}"
         self._cache[loc] = encoded_chunk
         return StoredChunkRef(adapter_name="medium", location=loc)
@@ -197,14 +208,12 @@ class MediumAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/me", headers=self._headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/me", headers=self._headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

@@ -36,6 +36,19 @@ class PinterestAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -55,66 +68,58 @@ class PinterestAdapter(Adapter):
     # ── API mode ────────────────────────────────────────────────
 
     async def _api_write(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{_API_BASE}/pins",
-                headers=self._headers(),
-                json={
-                    "board_id": self._board_id,
-                    "description": encoded_chunk,
-                    "title": "pchk",
-                    "media_source": {
-                        "source_type": "image_url",
-                        "url": "https://via.placeholder.com/1",
-                    },
+        session = await self._get_session()
+        async with session.post(
+            f"{_API_BASE}/pins",
+            headers=self._headers(),
+            json={
+                "board_id": self._board_id,
+                "description": encoded_chunk,
+                "title": "pchk",
+                "media_source": {
+                    "source_type": "image_url",
+                    "url": "https://via.placeholder.com/1",
                 },
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+            },
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         loc = f"pinterest://{self._board_id}/{data['id']}"
         return StoredChunkRef(adapter_name="pinterest", location=loc)
 
     async def _api_read(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         pin_id = ref.location.rsplit("/", 1)[-1]
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/pins/{pin_id}",
-                headers=self._headers(),
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/pins/{pin_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         return data.get("description", "")
 
     async def _api_delete(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         pin_id = ref.location.rsplit("/", 1)[-1]
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(
-                    f"{_API_BASE}/pins/{pin_id}",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(
+                f"{_API_BASE}/pins/{pin_id}",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def _api_list(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         refs: list[StoredChunkRef] = []
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{_API_BASE}/boards/{self._board_id}/pins",
-                headers=self._headers(),
-                params={"page_size": 100},
-            ) as resp:
-                resp.raise_for_status()
-                data = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_BASE}/boards/{self._board_id}/pins",
+            headers=self._headers(),
+            params={"page_size": 100},
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
         for pin in data.get("items", []):
             desc = pin.get("description", "")
             if manifest_id in desc:
@@ -213,14 +218,12 @@ class PinterestAdapter(Adapter):
                 return True
             except Exception:
                 return False
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{_API_BASE}/user_account",
-                    headers=self._headers(),
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{_API_BASE}/user_account",
+                headers=self._headers(),
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False

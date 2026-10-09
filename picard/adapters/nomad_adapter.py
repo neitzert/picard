@@ -32,6 +32,19 @@ class NomadAdapter(Adapter):
         self._namespace = namespace
         self._prefix = path_prefix
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -49,8 +62,6 @@ class NomadAdapter(Adapter):
         return h
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             key = f"{chunk.manifest_id}-b{chunk.block_index}-c{chunk.chunk_index}"
@@ -65,53 +76,47 @@ class NomadAdapter(Adapter):
             "Items": {"data": encoded_chunk},
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.put(
-                url, json=payload, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
+        session = await self._get_session()
+        async with session.put(
+            url, json=payload, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
 
         location = f"nomad://{self._namespace}/var/{path}"
         return StoredChunkRef(adapter_name="nomad", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         path = ref.location.split("/var/", 1)[-1]
         url = f"{self._address}/v1/var/{path}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers()) as resp:
-                resp.raise_for_status()
-                body = await resp.json()
+        session = await self._get_session()
+        async with session.get(url, headers=self._headers()) as resp:
+            resp.raise_for_status()
+            body = await resp.json()
 
         return body["Items"]["data"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         path = ref.location.split("/var/", 1)[-1]
         url = f"{self._address}/v1/var/{path}"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.delete(url, headers=self._headers()) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.delete(url, headers=self._headers()) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         url = f"{self._address}/v1/vars"
         params = {"prefix": f"{self._prefix}/{manifest_id}"}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url, params=params, headers=self._headers()
-            ) as resp:
-                resp.raise_for_status()
-                items = await resp.json()
+        session = await self._get_session()
+        async with session.get(
+            url, params=params, headers=self._headers()
+        ) as resp:
+            resp.raise_for_status()
+            items = await resp.json()
 
         return [
             StoredChunkRef(
@@ -122,12 +127,10 @@ class NomadAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         url = f"{self._address}/v1/status/leader"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=self._headers()) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(url, headers=self._headers()) as resp:
+                return resp.status == 200
         except Exception:
             return False

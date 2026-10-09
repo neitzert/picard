@@ -40,6 +40,19 @@ class SyslogAdapter(Adapter):
         self._read_api_url = read_api_url
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -99,23 +112,21 @@ class SyslogAdapter(Adapter):
                 "syslog read-back requires read_api_url (Elasticsearch/Loki)"
             )
 
-        import aiohttp
-
         query = {"query": {"match": {"syslog_msgid": msg_id}}}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._read_api_url}/_search",
-                json=query,
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
-                hits = result.get("hits", {}).get("hits", [])
-                if not hits:
-                    raise KeyError(f"syslog message not found: {msg_id}")
-                sd = hits[0]["_source"].get("syslog_sd", "")
-                data = _extract_sd_field(sd, "data")
-                return base64.b64decode(data).decode()
+        session = await self._get_session()
+        async with session.post(
+            f"{self._read_api_url}/_search",
+            json=query,
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
+            hits = result.get("hits", {}).get("hits", [])
+            if not hits:
+                raise KeyError(f"syslog message not found: {msg_id}")
+            sd = hits[0]["_source"].get("syslog_sd", "")
+            data = _extract_sd_field(sd, "data")
+            return base64.b64decode(data).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         msg_id = ref.location.rsplit("/", 1)[-1]

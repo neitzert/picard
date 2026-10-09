@@ -36,6 +36,19 @@ class InfluxdbAdapter(Adapter):
         self._bucket = bucket
         self._measurement = measurement
         self._max = max_chunk_bytes
+        self._session = None
+
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    async def _get_session(self):
+        import aiohttp
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -68,7 +81,6 @@ class InfluxdbAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
         from picard.chunker import Chunk
 
         try:
@@ -90,20 +102,18 @@ class InfluxdbAdapter(Adapter):
             f"&precision=ns"
         )
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, data=line, headers=self._auth_headers()
-            ) as resp:
-                if resp.status not in (200, 204):
-                    body = await resp.text()
-                    raise IOError(f"influxdb write failed: {resp.status} {body}")
+        session = await self._get_session()
+        async with session.post(
+            url, data=line, headers=self._auth_headers()
+        ) as resp:
+            if resp.status not in (200, 204):
+                body = await resp.text()
+                raise IOError(f"influxdb write failed: {resp.status} {body}")
 
         location = f"influx://{self._bucket}/{manifest_id}/{block_idx}_{chunk_idx}"
         return StoredChunkRef(adapter_name="influxdb", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         parts = ref.location.removeprefix("influx://").split("/")
         manifest_id = parts[1]
         block_chunk = parts[2].split("_")
@@ -125,18 +135,16 @@ class InfluxdbAdapter(Adapter):
         headers["Content-Type"] = "application/vnd.flux"
         headers["Accept"] = "application/csv"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url, data=flux_query, headers=headers
-            ) as resp:
-                resp.raise_for_status()
-                csv_body = await resp.text()
-                b64_data = _extract_csv_value(csv_body)
-                return base64.b64decode(b64_data).decode()
+        session = await self._get_session()
+        async with session.post(
+            url, data=flux_query, headers=headers
+        ) as resp:
+            resp.raise_for_status()
+            csv_body = await resp.text()
+            b64_data = _extract_csv_value(csv_body)
+            return base64.b64decode(b64_data).decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         parts = ref.location.removeprefix("influx://").split("/")
         manifest_id = parts[1]
         block_chunk = parts[2].split("_")
@@ -158,15 +166,13 @@ class InfluxdbAdapter(Adapter):
         headers["Content-Type"] = "application/json"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body, headers=headers) as resp:
-                    return resp.status in (200, 204)
+            session = await self._get_session()
+            async with session.post(url, json=body, headers=headers) as resp:
+                return resp.status in (200, 204)
         except Exception:
             return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         flux_query = (
             f'from(bucket: "{self._bucket}")\n'
             f"  |> range(start: -30d)\n"
@@ -182,25 +188,23 @@ class InfluxdbAdapter(Adapter):
         headers["Accept"] = "application/csv"
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    url, data=flux_query, headers=headers
-                ) as resp:
-                    resp.raise_for_status()
-                    csv_body = await resp.text()
-                    return _parse_chunk_list(csv_body, self._bucket, manifest_id)
+            session = await self._get_session()
+            async with session.post(
+                url, data=flux_query, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                csv_body = await resp.text()
+                return _parse_chunk_list(csv_body, self._bucket, manifest_id)
         except Exception:
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._url}/health", headers=self._auth_headers()
-                ) as resp:
-                    return resp.status == 200
+            session = await self._get_session()
+            async with session.get(
+                f"{self._url}/health", headers=self._auth_headers()
+            ) as resp:
+                return resp.status == 200
         except Exception:
             return False
 

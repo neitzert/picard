@@ -13,6 +13,7 @@ import os
 import stat
 import threading
 import time
+from datetime import datetime, timezone
 from io import BytesIO
 from typing import TYPE_CHECKING
 
@@ -218,8 +219,6 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
         m = self._index.get_manifest_by_path(path)
         if m is None:
             raise FuseOSError(errno.ENOENT)
-        from datetime import datetime, timezone
-
         if times:
             atime_s, mtime_s = times
             atime = datetime.fromtimestamp(atime_s, tz=timezone.utc).isoformat()
@@ -363,8 +362,6 @@ def mount(
 
 
 def _manifest_to_stat(m) -> dict:
-    from datetime import datetime
-
     mode = m.mode
     if m.file_type == "directory":
         mode = stat.S_IFDIR | (mode & 0o7777)
