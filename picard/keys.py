@@ -7,6 +7,8 @@ Compromising one adapter's sub-key reveals nothing about others.
 
 from __future__ import annotations
 
+import base64
+import ctypes
 import hashlib
 import hmac
 import os
@@ -58,8 +60,7 @@ def load_master_key(
         try:
             key = hkdf.derive(bytes(raw))
         finally:
-            for i in range(len(raw)):
-                raw[i] = 0
+            ctypes.memset((ctypes.c_char * len(raw)).from_buffer(raw), 0, len(raw))
         return MasterKey(key=key, salt=salt, source="keyfile")
 
     dk, _cipher = derive_key(passphrase, salt=salt)
@@ -79,8 +80,6 @@ def derive_correlation_tag(sub_key: SubKey, manifest_id: str) -> bytes:
 
 def export_master_key_salt(master: MasterKey) -> dict:
     """Export the non-secret parts needed to re-derive on another machine."""
-    import base64
-
     return {"salt": base64.b64encode(master.salt).decode(), "source": master.source}
 
 
@@ -90,8 +89,6 @@ def import_master_key(
     keyfile: Path | None = None,
 ) -> MasterKey:
     """Re-derive a MasterKey on another machine using exported salt."""
-    import base64
-
     salt = base64.b64decode(portable["salt"])
     return load_master_key(passphrase=passphrase, keyfile=keyfile, salt=salt)
 

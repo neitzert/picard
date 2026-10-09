@@ -8,9 +8,13 @@ and edit files with native tooling.
 from __future__ import annotations
 
 import asyncio
+import base64
+import hmac
 import io
 import logging
+import mimetypes
 import os
+import posixpath
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,7 +82,6 @@ class PicardFile(DAVNonCollection):
         return self._manifest.original_size
 
     def get_content_type(self) -> str | None:
-        import mimetypes
         mt, _ = mimetypes.guess_type(self._manifest.path)
         return mt or "application/octet-stream"
 
@@ -300,8 +303,6 @@ class _AuthMiddleware:
     def __call__(self, environ, start_response):
         if not self._enabled:
             return self._app(environ, start_response)
-        import base64
-        import hmac
         auth = environ.get("HTTP_AUTHORIZATION", "")
         if not auth.startswith("Basic "):
             return self._reject(start_response)
@@ -341,7 +342,6 @@ class _PutInterceptor:
             path = environ.get("PATH_INFO", "/").rstrip("/")
             if not path:
                 path = "/"
-            import posixpath
             normalized = posixpath.normpath(path)
             if not normalized.startswith("/"):
                 normalized = "/" + normalized

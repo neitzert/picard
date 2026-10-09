@@ -10,6 +10,7 @@ import asyncio
 import copy
 import hashlib
 import hmac
+import logging
 import math
 import uuid
 from datetime import datetime, timezone
@@ -356,7 +357,6 @@ class Orchestrator:
                 if isinstance(results[i], Exception)
             ]
             if failed:
-                import logging
                 logging.getLogger(__name__).warning(
                     "rm %s: %d chunk deletes failed, manifest retained", path, len(failed),
                 )

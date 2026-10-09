@@ -10,14 +10,14 @@ Serves a single-page app at http://localhost:8471 that provides:
 from __future__ import annotations
 
 import asyncio
-import inspect
 import importlib
+import inspect
+import logging
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
-
-import time
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -755,7 +755,6 @@ def _save_config(cfg: PicardConfig) -> None:
                         section.append(f"{_format_toml_key(sk)} = {_toml_value(sv)}\n")
                     preserved_sections.append("".join(section))
         except Exception as exc:
-            import logging
             logging.getLogger("picard.web").warning(
                 "could not read existing config for section preservation: %s", exc
             )

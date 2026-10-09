@@ -7,7 +7,9 @@ adapters can be scanned (slowly) to rebuild it via ``list_chunks``.
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import tempfile
 import threading
 from pathlib import Path
 
@@ -578,7 +580,6 @@ class Index:
         self._write_encrypted()
 
     def _write_encrypted(self) -> None:
-        import tempfile
         from picard.crypto import encrypt
         with self._write_lock:
             sql_text = "\n".join(self._conn.iterdump()) + "\n"
@@ -588,10 +589,8 @@ class Index:
         try:
             with open(fd, "wb") as f:
                 f.write(_PCIX_MAGIC + ct)
-            import os
             os.replace(tmp, str(dest))
         except BaseException:
-            import os
             try:
                 os.unlink(tmp)
             except OSError:
