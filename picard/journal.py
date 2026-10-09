@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -48,15 +49,18 @@ CREATE TABLE IF NOT EXISTS journal_entries (
 class Journal:
     """WAL backed by a SQLite table."""
 
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(
+        self, conn: sqlite3.Connection, *, write_lock: threading.Lock | None = None,
+    ) -> None:
         self._conn = conn
         self._conn.row_factory = sqlite3.Row
+        self._lock = write_lock or threading.Lock()
         self._conn.executescript(_JOURNAL_SCHEMA)
 
     def begin(self, operation: str, path: str, manifest_id: str) -> str:
         jid = uuid.uuid4().hex
         now = datetime.now(timezone.utc).isoformat()
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "INSERT INTO journal_entries VALUES (?,?,?,?,?,?,?)",
                 (jid, operation, path, manifest_id, JournalState.PENDING.value, now, "{}"),
@@ -64,21 +68,21 @@ class Journal:
         return jid
 
     def mark_in_progress(self, journal_id: str, metadata: dict | None = None) -> None:
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE journal_entries SET state=?, metadata=? WHERE journal_id=?",
                 (JournalState.IN_PROGRESS.value, json.dumps(metadata or {}), journal_id),
             )
 
     def update_metadata(self, journal_id: str, metadata: dict) -> None:
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE journal_entries SET metadata=? WHERE journal_id=?",
                 (json.dumps(metadata), journal_id),
             )
 
     def commit(self, journal_id: str) -> None:
-        with self._conn:
+        with self._lock, self._conn:
             self._commit_raw(journal_id)
 
     def _commit_raw(self, journal_id: str) -> None:
@@ -89,7 +93,7 @@ class Journal:
         )
 
     def rollback(self, journal_id: str) -> None:
-        with self._conn:
+        with self._lock, self._conn:
             self._conn.execute(
                 "UPDATE journal_entries SET state=? WHERE journal_id=?",
                 (JournalState.ROLLED_BACK.value, journal_id),
@@ -120,7 +124,7 @@ class Journal:
         Pass a positive value to retain recent entries for auditing.
         """
         if max_age_hours <= 0:
-            with self._conn:
+            with self._lock, self._conn:
                 cur = self._conn.execute(
                     "DELETE FROM journal_entries WHERE state IN (?, ?)",
                     (JournalState.COMMITTED.value, JournalState.ROLLED_BACK.value),
@@ -130,7 +134,7 @@ class Journal:
         cutoff = (
             datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
         ).isoformat()
-        with self._conn:
+        with self._lock, self._conn:
             cur = self._conn.execute(
                 "DELETE FROM journal_entries WHERE state IN (?, ?) "
                 "AND created_at < ?",

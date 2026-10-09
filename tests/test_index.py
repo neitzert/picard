@@ -1,5 +1,7 @@
 """Tests for the SQLite index."""
 
+import threading
+
 from picard.index import Index
 from picard.manifest import BlockRecord, ChunkRecord, ChunkStatus, Manifest
 
@@ -91,3 +93,38 @@ class TestIndex:
         chunk = loaded.blocks[0].chunks[0]
         assert chunk.status == ChunkStatus.VERIFIED
         assert chunk.location == "new://loc"
+
+    def test_concurrent_version_increment(self):
+        idx = Index()
+        versions: list[int] = []
+        errors: list[Exception] = []
+
+        def _get_version():
+            try:
+                v = idx.get_next_version("/race.txt")
+                versions.append(v)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=_get_version) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert not errors
+        assert len(versions) == 10
+
+    def test_cross_thread_access(self):
+        idx = Index()
+        m = _sample_manifest("/thread.txt")
+        idx.save_manifest(m)
+        result = [None]
+
+        def _read():
+            result[0] = idx.get_manifest_by_path("/thread.txt")
+
+        t = threading.Thread(target=_read)
+        t.start()
+        t.join()
+        assert result[0] is not None
+        assert result[0].path == "/thread.txt"

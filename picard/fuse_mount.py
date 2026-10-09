@@ -321,6 +321,7 @@ class PicardFS(Operations if HAS_FUSE else object):  # type: ignore[misc]
             try:
                 self._loop.call_soon_threadsafe(self._loop.stop)
                 self._thread.join(timeout=5)
+                self._loop.close()
             finally:
                 self._passphrase = ""
 

@@ -31,6 +31,20 @@ class ArweaveAdapter(Adapter):
         self._wallet = wallet_jwk
         self._gateway = gateway_url.rstrip("/")
         self._max = max_chunk_bytes
+        self._session: object | None = None
+
+    async def _ensure_session(self):
+        if self._session is not None:
+            return self._session
+        import aiohttp
+
+        self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -74,16 +88,14 @@ class ArweaveAdapter(Adapter):
         ), hashes.SHA256())
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         data_bytes = encoded_chunk.encode()
+        session = await self._ensure_session()
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self._gateway}/price/{len(data_bytes)}") as resp:
-                reward = (await resp.text()).strip()
+        async with session.get(f"{self._gateway}/price/{len(data_bytes)}") as resp:
+            reward = (await resp.text()).strip()
 
-            async with session.get(f"{self._gateway}/tx_anchor") as resp:
-                last_tx = (await resp.text()).strip()
+        async with session.get(f"{self._gateway}/tx_anchor") as resp:
+            last_tx = (await resp.text()).strip()
 
         tx = {
             "format": 2,
@@ -121,57 +133,53 @@ class ArweaveAdapter(Adapter):
         tx["signature"] = self._b64url(signature)
         tx["id"] = self._b64url(hashlib.sha256(signature).digest())
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{self._gateway}/tx",
-                json=tx,
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                resp.raise_for_status()
+        async with session.post(
+            f"{self._gateway}/tx",
+            json=tx,
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            resp.raise_for_status()
 
         loc = f"ar://{tx['id']}"
         return StoredChunkRef(adapter_name="arweave", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         tx_id = ref.location.removeprefix("ar://")
+        session = await self._ensure_session()
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self._gateway}/{tx_id}") as resp:
-                if resp.status == 404:
-                    raise KeyError(f"chunk not found: {ref.location}")
-                resp.raise_for_status()
-                data = await resp.read()
-                return data.decode()
+        async with session.get(f"{self._gateway}/{tx_id}") as resp:
+            if resp.status == 404:
+                raise KeyError(f"chunk not found: {ref.location}")
+            resp.raise_for_status()
+            data = await resp.read()
+            return data.decode()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        import aiohttp
-
         query = """
-        query {
+        query($owners: [String!]) {
             transactions(
-                owners: ["%s"],
+                owners: $owners,
                 tags: [{name: "App-Name", values: ["PICARD"]}],
                 first: 100
             ) {
                 edges { node { id } }
             }
         }
-        """ % self._get_address()
+        """
+        variables = {"owners": [self._get_address()]}
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self._gateway}/graphql",
-                    json={"query": query},
-                    headers={"Content-Type": "application/json"},
-                ) as resp:
-                    resp.raise_for_status()
-                    data = await resp.json()
+            session = await self._ensure_session()
+            async with session.post(
+                f"{self._gateway}/graphql",
+                json={"query": query, "variables": variables},
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
 
             refs = []
             for edge in data.get("data", {}).get("transactions", {}).get("edges", []):
@@ -185,24 +193,20 @@ class ArweaveAdapter(Adapter):
             return []
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self._gateway}/info") as resp:
-                    return resp.status == 200
+            session = await self._ensure_session()
+            async with session.get(f"{self._gateway}/info") as resp:
+                return resp.status == 200
         except Exception:
             return False
 
     async def capacity(self) -> dict[str, int | None]:
-        import aiohttp
-
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self._gateway}/wallet/{self._get_address()}/balance"
-                ) as resp:
-                    balance = int((await resp.text()).strip())
+            session = await self._ensure_session()
+            async with session.get(
+                f"{self._gateway}/wallet/{self._get_address()}/balance"
+            ) as resp:
+                balance = int((await resp.text()).strip())
             return {
                 "used_bytes": None,
                 "free_bytes": balance,

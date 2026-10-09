@@ -7,11 +7,14 @@ Requires: pip install picard[postgresql]  (asyncpg)
 
 from __future__ import annotations
 
+import re
 import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
+
+_VALID_TABLE_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
 
 
 class PostgresqlAdapter(Adapter):
@@ -24,6 +27,8 @@ class PostgresqlAdapter(Adapter):
         table: str = "picard_chunks",
         max_chunk_bytes: int = 100_000_000,
     ) -> None:
+        if not _VALID_TABLE_RE.match(table):
+            raise ValueError(f"invalid table name: {table!r}")
         self._dsn = dsn
         self._table = table
         self._max = max_chunk_bytes

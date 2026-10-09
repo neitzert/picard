@@ -44,7 +44,7 @@ class EthereumAdapter(Adapter):
             return self._client
         import httpx
 
-        self._client = httpx.AsyncClient()
+        self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
 
     def _key_hash(self, msg_id: str) -> str:
@@ -118,3 +118,8 @@ class EthereumAdapter(Adapter):
             return "result" in result
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None

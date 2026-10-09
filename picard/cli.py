@@ -111,7 +111,7 @@ def _make_orchestrator(
     adapters = _adapters_from_config(store_dir)
     idx_pp = index_passphrase or os.environ.get("PICARD_INDEX_PASSPHRASE") or None
     index = Index(db_path, passphrase=idx_pp)
-    journal = Journal(index.connection)
+    journal = Journal(index.connection, write_lock=index.write_lock)
 
     if profile_name:
         cfg = load_config()

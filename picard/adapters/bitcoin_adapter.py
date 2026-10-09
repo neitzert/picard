@@ -34,6 +34,22 @@ class BitcoinAdapter(Adapter):
         self._rpc_password = rpc_password
         self._wallet = wallet_name
         self._max = max_chunk_bytes
+        self._session: object | None = None
+
+    async def _ensure_session(self):
+        if self._session is not None:
+            return self._session
+        import aiohttp
+
+        self._session = aiohttp.ClientSession(
+            auth=aiohttp.BasicAuth(self._rpc_user, self._rpc_password),
+        )
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None:
+            await self._session.close()
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -45,25 +61,22 @@ class BitcoinAdapter(Adapter):
         )
 
     async def _rpc(self, method: str, params: list | None = None) -> dict:
-        import aiohttp
-
         payload = {
             "jsonrpc": "2.0",
             "id": "picard",
             "method": method,
             "params": params or [],
         }
-        auth = aiohttp.BasicAuth(self._rpc_user, self._rpc_password)
         url = f"{self._rpc_url}/wallet/{self._wallet}"
+        session = await self._ensure_session()
 
-        async with aiohttp.ClientSession(auth=auth) as session:
-            async with session.post(
-                url,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
+        async with session.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+        ) as resp:
+            resp.raise_for_status()
+            result = await resp.json()
 
         if result.get("error"):
             raise RuntimeError(f"RPC error: {result['error']}")

@@ -30,9 +30,10 @@ _CIPHER_CACHE_MAX = 64
 
 
 def _get_cipher(key: bytes) -> AESGCM:
-    cipher = _cipher_cache.get(key)
-    if cipher is not None:
-        return cipher
+    with _cipher_lock:
+        cipher = _cipher_cache.get(key)
+        if cipher is not None:
+            return cipher
     cipher = AESGCM(key)
     with _cipher_lock:
         if len(_cipher_cache) >= _CIPHER_CACHE_MAX:

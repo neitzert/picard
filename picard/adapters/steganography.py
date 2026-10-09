@@ -84,6 +84,8 @@ class SteganographyAdapter(Adapter):
     def _extract_data(pixel_bytes: bytes) -> bytes:
         """Extract embedded data from the LSBs of *pixel_bytes*."""
         header_bits = 32
+        if len(pixel_bytes) < header_bits:
+            raise ValueError("image too small to contain embedded data")
         header_bytes = bytearray(4)
         for i in range(header_bits):
             bit = pixel_bytes[i] & 1
@@ -91,6 +93,11 @@ class SteganographyAdapter(Adapter):
             bit_idx = 7 - (i % 8)
             header_bytes[byte_idx] |= bit << bit_idx
         length = struct.unpack(">I", header_bytes)[0]
+        max_length = len(pixel_bytes) // 8 - 4
+        if length > max_length:
+            raise ValueError(
+                f"embedded length {length} exceeds capacity {max_length}"
+            )
         total_bits = (4 + length) * 8
         all_bytes = bytearray(4 + length)
         for i in range(total_bits):
@@ -101,6 +108,10 @@ class SteganographyAdapter(Adapter):
         return bytes(all_bytes[4:])
 
     # -- adapter interface --------------------------------------------
+
+    def _check_path(self, p: Path) -> None:
+        if not p.resolve().is_relative_to(self._image_dir.resolve()):
+            raise ValueError(f"path escapes image directory: {p}")
 
     def _filename(self, chunk: Chunk) -> str:
         return f"pchk_{chunk.manifest_id}_b{chunk.block_index}_c{chunk.chunk_index}.png"
@@ -121,8 +132,9 @@ class SteganographyAdapter(Adapter):
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         def _read():
-            path = str(self._image_dir / ref.location)
-            pixels, _, _ = self._load_image(path)
+            p = self._image_dir / ref.location
+            self._check_path(p)
+            pixels, _, _ = self._load_image(str(p))
             return self._extract_data(pixels).decode("utf-8")
 
         return await asyncio.to_thread(_read)
@@ -130,7 +142,9 @@ class SteganographyAdapter(Adapter):
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         def _delete():
             try:
-                (self._image_dir / ref.location).unlink()
+                p = self._image_dir / ref.location
+                self._check_path(p)
+                p.unlink()
                 return True
             except FileNotFoundError:
                 return False

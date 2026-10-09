@@ -158,7 +158,7 @@ async def fsck(
 
     if check_journal:
         try:
-            journal = Journal(index.connection)
+            journal = Journal(index.connection, write_lock=index.write_lock)
             incomplete = journal.get_incomplete()
             report.journal_incomplete = len(incomplete)
             for entry in incomplete:
@@ -191,7 +191,7 @@ async def repair(
         for err in report.errors:
             if err["type"] == "incomplete_journal":
                 try:
-                    journal = Journal(index.connection)
+                    journal = Journal(index.connection, write_lock=index.write_lock)
                     journal.rollback(err["journal_id"])
                     fixed += 1
                 except Exception:

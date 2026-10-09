@@ -11,6 +11,7 @@ import asyncio
 import io
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,18 +32,24 @@ from picard.orchestrator import Orchestrator
 logger = logging.getLogger("picard.webdav")
 
 
-def _run(coro):
-    """Run an async coroutine synchronously, reusing the current event loop if possible."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
+_webdav_loop: asyncio.AbstractEventLoop | None = None
+_webdav_thread: threading.Thread | None = None
 
-    if loop and loop.is_running():
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, coro).result()
-    return asyncio.run(coro)
+
+def _ensure_loop() -> asyncio.AbstractEventLoop:
+    global _webdav_loop, _webdav_thread
+    if _webdav_loop is not None and _webdav_loop.is_running():
+        return _webdav_loop
+    _webdav_loop = asyncio.new_event_loop()
+    _webdav_thread = threading.Thread(target=_webdav_loop.run_forever, daemon=True)
+    _webdav_thread.start()
+    return _webdav_loop
+
+
+def _run(coro):
+    """Run an async coroutine on a shared background event loop."""
+    loop = _ensure_loop()
+    return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
 
 def _parse_iso(s: str) -> datetime:
@@ -437,7 +444,7 @@ def serve_webdav(
         store_dir.mkdir(parents=True, exist_ok=True)
         adapters = [FilesystemAdapter(store_dir)]
 
-    journal = Journal(index.connection)
+    journal = Journal(index.connection, write_lock=index.write_lock)
     orch = Orchestrator(adapters, index, journal=journal)
 
     pp = passphrase or os.environ.get("PICARD_PASSPHRASE", "")
@@ -465,3 +472,9 @@ def serve_webdav(
         server.stop()
     finally:
         _run(orch.close())
+        index.close()
+        if _webdav_loop is not None:
+            _webdav_loop.call_soon_threadsafe(_webdav_loop.stop)
+            if _webdav_thread is not None:
+                _webdav_thread.join(timeout=5)
+            _webdav_loop.close()

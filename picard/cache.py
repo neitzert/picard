@@ -109,9 +109,12 @@ class BlockCache:
                     k for k in self._store if k[0] == manifest_id
                 ]
                 for k in to_remove:
-                    entry = self._store.pop(k)
-                    _zeroize(entry.data)
-                    self._current_bytes -= len(entry.data)
+                    entry = self._store.pop(k, None)
+                    if entry is not None:
+                        _zeroize(entry.data)
+                        self._current_bytes -= len(entry.data)
+            if self._current_bytes < 0:
+                self._current_bytes = 0
 
     def clear(self) -> None:
         with self._lock:
@@ -137,10 +140,13 @@ class BlockCache:
             k for k, v in self._store.items() if now > v.expires_at
         ]
         for k in to_remove:
-            entry = self._store.pop(k)
-            _zeroize(entry.data)
-            self._current_bytes -= len(entry.data)
-            self._evictions += 1
+            entry = self._store.pop(k, None)
+            if entry is not None:
+                _zeroize(entry.data)
+                self._current_bytes -= len(entry.data)
+                self._evictions += 1
+        if self._current_bytes < 0:
+            self._current_bytes = 0
 
     def _evict_lru(self) -> None:
         if self._store:

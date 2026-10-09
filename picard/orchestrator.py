@@ -66,6 +66,8 @@ class Orchestrator:
     async def close(self) -> None:
         for adapter in self._adapters:
             await adapter.close()
+        if self._block_cache is not None:
+            self._block_cache.clear()
 
     # --- public API --------------------------------------------------------
 
@@ -112,7 +114,7 @@ class Orchestrator:
                     )
 
             if self._journal and jid:
-                with self._index.connection:
+                with self._index.write_lock, self._index.connection:
                     self._index._save_manifest_raw(manifest)
                     self._journal._commit_raw(jid)
             else:
@@ -254,7 +256,7 @@ class Orchestrator:
             manifest.plaintext_hash = hasher.hexdigest()
 
             if self._journal and jid:
-                with self._index.connection:
+                with self._index.write_lock, self._index.connection:
                     self._index._save_manifest_raw(manifest)
                     self._journal._commit_raw(jid)
             else:

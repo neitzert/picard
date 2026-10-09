@@ -65,7 +65,7 @@ def _get_orchestrator() -> tuple[Orchestrator, Index]:
         except Exception:
             pass
 
-    journal = Journal(idx.connection)
+    journal = Journal(idx.connection, write_lock=idx.write_lock)
     _orch = Orchestrator(adapters, idx, journal=journal)
     _index = idx
     return _orch, idx
@@ -263,8 +263,6 @@ async def call_tool(name: str, arguments: dict):
             "picard_mkdir", "picard_stat", "picard_verify",
             "picard_ls", "picard_tree",
         }
-        if name in _PATH_TOOLS and "path" in arguments:
-            arguments["path"] = _sanitize_path(arguments["path"])
         _PATH_REQUIRED = {
             "picard_put", "picard_get", "picard_rm",
             "picard_mkdir", "picard_stat", "picard_verify",
@@ -273,6 +271,8 @@ async def call_tool(name: str, arguments: dict):
             err = _validate_path(arguments.get("path", ""))
             if err:
                 return [TextContent(type="text", text=f"error: {err}")]
+        if name in _PATH_TOOLS and "path" in arguments:
+            arguments["path"] = _sanitize_path(arguments["path"])
 
         if name == "picard_put":
             path = arguments["path"]

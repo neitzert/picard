@@ -38,6 +38,7 @@ class SlackAdapter(Adapter):
 
         self._client = httpx.AsyncClient(
             headers={"Authorization": f"Bearer {self._bot_token}"},
+            timeout=30.0,
         )
         return self._client
 
@@ -128,3 +129,8 @@ class SlackAdapter(Adapter):
             return resp.json().get("ok", False)
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None

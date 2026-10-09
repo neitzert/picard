@@ -43,6 +43,10 @@ async def _lifespan(application: FastAPI):
     yield
     if _orch:
         await _orch.close()
+    if _index:
+        _index.close()
+    if _fallback_index:
+        _fallback_index.close()
 
 
 app = FastAPI(title="PICARD", docs_url=None, redoc_url=None, lifespan=_lifespan)
@@ -595,7 +599,7 @@ async def api_remove_peer(url: str):
 async def journal_status():
     idx = _ensure_index()
     from picard.journal import Journal
-    journal = Journal(idx.connection)
+    journal = Journal(idx.connection, write_lock=idx.write_lock)
     entries = journal.get_incomplete()
     return [
         {
@@ -830,7 +834,7 @@ def serve(host: str = "127.0.0.1", port: int = 8471) -> None:
         store_dir.mkdir(parents=True, exist_ok=True)
         adapters = [FilesystemAdapter(store_dir)]
 
-    journal = Journal(index.connection)
+    journal = Journal(index.connection, write_lock=index.write_lock)
     orch = Orchestrator(adapters, index, journal=journal)
     _set_state(orch, index)
 

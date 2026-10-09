@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 from picard.manifest import (
@@ -100,9 +101,10 @@ class Index:
         self._db_path = str(db_path)
         self._passphrase = passphrase
         self._encrypted = False
+        self._write_lock = threading.Lock()
 
         if str(db_path) == ":memory:" or passphrase is None:
-            self._conn = sqlite3.connect(self._db_path)
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         else:
             p = Path(db_path)
             if p.exists() and p.stat().st_size > 0:
@@ -110,17 +112,17 @@ class Index:
                 if raw[: len(_PCIX_MAGIC)] == _PCIX_MAGIC:
                     from picard.crypto import decrypt
                     sql_bytes = decrypt(raw[len(_PCIX_MAGIC) :], passphrase)
-                    self._conn = sqlite3.connect(":memory:")
+                    self._conn = sqlite3.connect(":memory:", check_same_thread=False)
                     self._conn.executescript(sql_bytes.decode("utf-8"))
                     self._encrypted = True
                 else:
-                    self._conn = sqlite3.connect(":memory:")
+                    self._conn = sqlite3.connect(":memory:", check_same_thread=False)
                     file_conn = sqlite3.connect(str(db_path))
                     file_conn.backup(self._conn)
                     file_conn.close()
                     self._encrypted = True
             else:
-                self._conn = sqlite3.connect(":memory:")
+                self._conn = sqlite3.connect(":memory:", check_same_thread=False)
                 self._encrypted = True
 
         self._conn.row_factory = sqlite3.Row
@@ -137,7 +139,7 @@ class Index:
 
     def save_manifest(self, m: Manifest) -> None:
         """Insert or replace a full manifest (with blocks and chunks)."""
-        with self._conn:
+        with self._write_lock, self._conn:
             self._save_manifest_raw(m)
 
     def _save_manifest_raw(self, m: Manifest) -> None:
@@ -208,7 +210,7 @@ class Index:
         location: str | None = None,
     ) -> None:
         """Update status (and optionally location) of a single chunk."""
-        with self._conn:
+        with self._write_lock, self._conn:
             if location is not None:
                 self._conn.execute(
                     "UPDATE chunks SET status=?, location=? "
@@ -296,7 +298,7 @@ class Index:
 
     def delete_manifest(self, manifest_id: str) -> bool:
         """Remove a manifest and its blocks/chunks from the index."""
-        with self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 "DELETE FROM chunks WHERE manifest_id=?", (manifest_id,)
             )
@@ -373,10 +375,11 @@ class Index:
         )
 
     def get_next_version(self, path: str) -> int:
-        row = self._conn.execute(
-            "SELECT MAX(version) as max_v FROM manifests WHERE path=?", (path,)
-        ).fetchone()
-        return (row["max_v"] or 0) + 1
+        with self._write_lock:
+            row = self._conn.execute(
+                "SELECT MAX(version) as max_v FROM manifests WHERE path=?", (path,)
+            ).fetchone()
+            return (row["max_v"] or 0) + 1
 
     def get_manifest_by_path_version(self, path: str, version: int) -> Manifest | None:
         row = self._conn.execute(
@@ -541,7 +544,7 @@ class Index:
         if not sets:
             return
         vals.append(manifest_id)
-        with self._conn:
+        with self._write_lock, self._conn:
             self._conn.execute(
                 f"UPDATE manifests SET {', '.join(sets)} WHERE manifest_id=?",
                 vals,
@@ -550,6 +553,10 @@ class Index:
     @property
     def connection(self) -> sqlite3.Connection:
         return self._conn
+
+    @property
+    def write_lock(self) -> threading.Lock:
+        return self._write_lock
 
     def flush(self) -> None:
         """Write current database state to disk (encrypted if passphrase set)."""
@@ -578,6 +585,8 @@ class Index:
             raise
 
     def close(self) -> None:
-        if self._encrypted and self._db_path != ":memory:":
-            self._write_encrypted()
-        self._conn.close()
+        try:
+            if self._encrypted and self._db_path != ":memory:":
+                self._write_encrypted()
+        finally:
+            self._conn.close()

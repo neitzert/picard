@@ -35,7 +35,7 @@ class TelegramAdapter(Adapter):
             return self._client
         import httpx
 
-        self._client = httpx.AsyncClient()
+        self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
 
     def profile(self) -> AdapterProfile:
@@ -100,3 +100,8 @@ class TelegramAdapter(Adapter):
             return resp.json().get("ok", False) is True
         except Exception:
             return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None

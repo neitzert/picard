@@ -88,6 +88,20 @@ class AuthorizedKeysAdapter(Adapter):
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         existed = ref.location in self._cache
         self._cache.pop(ref.location, None)
+
+        chunk_id = ref.location.split("://", 1)[-1]
+        marker = f"PICARD:{chunk_id}:"
+        try:
+            if os.path.exists(self._keys_path):
+                with open(self._keys_path, "r") as f:
+                    lines = f.readlines()
+                with open(self._keys_path, "w") as f:
+                    for line in lines:
+                        if marker not in line:
+                            f.write(line)
+        except OSError:
+            pass
+
         return existed
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
@@ -106,7 +120,7 @@ class AuthorizedKeysAdapter(Adapter):
     async def health_check(self) -> bool:
         try:
             parent = os.path.dirname(self._keys_path)
-            return os.path.isdir(parent) or True
+            return os.path.isdir(parent)
         except Exception:
             return False
 
