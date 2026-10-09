@@ -56,6 +56,17 @@ Chunks are scattered round-robin across adapters. RAID pools provide redundancy.
 The sealed envelope format wraps chunks with per-adapter sub-keys and correlation tags,
 producing output indistinguishable from random data.
 
+## Cryptographic Posture
+
+PICARD's data path is entirely symmetric: Argon2id key derivation, HKDF-SHA256
+sub-keys, AES-256-GCM authenticated encryption, HMAC-SHA256 for transport auth
+and correlation tags. No public-key cryptography sits in the storage path.
+
+AES-256 provides 128-bit security against Grover's algorithm on a fault-tolerant
+quantum computer, matching the security target of NIST post-quantum standards.
+The ciphertext format carries a version and algorithm byte so the cipher can be
+replaced without re-encrypting stored data.
+
 ## Adapter Categories
 
 | Category | Count | Examples |

@@ -55,16 +55,19 @@ Every block generates a fresh random salt and nonce, so identical plaintext bloc
 produce different ciphertext. This means each block is independently decryptable
 with no inter-block state.
 
-### Ciphertext Format
+### Ciphertext Format (v2)
 
 ```
-[salt 16B][nonce 12B][AES-256-GCM ciphertext + 16B GCM tag]
+[version 1B][alg 1B][salt 16B][nonce 12B][AES-256-GCM ciphertext + 16B GCM tag]
 ```
 
-The `encrypt()` function generates salt and nonce, derives a key via Argon2id,
-encrypts with AES-256-GCM, and returns the concatenated blob.
-The `decrypt()` function splits salt and nonce from the blob, re-derives the key,
-and decrypts.
+Version is `0x02`. Algorithm `0x01` denotes AES-256-GCM with Argon2id key derivation.
+The version and algorithm bytes enable future cipher rotation without re-encrypting
+every stored chunk across all adapters.
+
+The `encrypt()` function always emits v2 format. The `decrypt()` function accepts
+both v2 and legacy format (no version/alg prefix) for backward compatibility with
+data written before the header was introduced.
 
 ### Derived Key Cache
 

@@ -167,26 +167,60 @@ def derive_key(
 
 _NONCE_LEN = 12  # 96-bit nonce for AES-GCM
 
-# Wire format of an encrypted blob:
-#   [salt 16B][nonce 12B][ciphertext…]
-# The ciphertext includes the 16-byte GCM tag appended by AESGCM.
+# Format v2 wire layout:
+#   [version 1B][alg 1B][salt 16B][nonce 12B][ciphertext+GCM_tag]
+_FORMAT_V2 = 2
+_ALG_AES256GCM = 0x01
+_KNOWN_ALGS = frozenset({_ALG_AES256GCM})
 
-_HEADER = struct.Struct(f"!{_SALT_LEN}s{_NONCE_LEN}s")
+_HEADER_V2 = struct.Struct(f"!BB{_SALT_LEN}s{_NONCE_LEN}s")  # 30 bytes
+
+# Legacy format (pre-v2): [salt 16B][nonce 12B][ciphertext+GCM_tag]
+_HEADER_LEGACY = struct.Struct(f"!{_SALT_LEN}s{_NONCE_LEN}s")  # 28 bytes
 
 
 def encrypt(plaintext: bytes, passphrase: str) -> bytes:
-    """Encrypt *plaintext* under *passphrase*.  Returns salt‖nonce‖ciphertext."""
+    """Encrypt *plaintext* under *passphrase*.  Returns v2 format blob."""
     dk, cipher = derive_key(passphrase)
     nonce = os.urandom(_NONCE_LEN)
     ct = cipher.encrypt(nonce, plaintext, associated_data=None)
-    return _HEADER.pack(dk.salt, nonce) + ct
+    return _HEADER_V2.pack(_FORMAT_V2, _ALG_AES256GCM, dk.salt, nonce) + ct
+
+
+def _decrypt_v2(blob: bytes, passphrase: str) -> bytes:
+    if len(blob) < _HEADER_V2.size:
+        raise ValueError("blob too short to contain v2 header")
+    _ver, alg, salt, nonce = _HEADER_V2.unpack_from(blob)
+    if alg not in _KNOWN_ALGS:
+        raise ValueError(f"unsupported algorithm: 0x{alg:02x}")
+    ct = blob[_HEADER_V2.size:]
+    dk, cipher = derive_key(passphrase, salt=salt)
+    return cipher.decrypt(nonce, ct, associated_data=None)
+
+
+def _decrypt_legacy(blob: bytes, passphrase: str) -> bytes:
+    if len(blob) < _HEADER_LEGACY.size:
+        raise ValueError("blob too short to contain header")
+    salt, nonce = _HEADER_LEGACY.unpack_from(blob)
+    ct = blob[_HEADER_LEGACY.size:]
+    dk, cipher = derive_key(passphrase, salt=salt)
+    return cipher.decrypt(nonce, ct, associated_data=None)
 
 
 def decrypt(blob: bytes, passphrase: str) -> bytes:
-    """Decrypt a blob produced by :func:`encrypt`."""
-    if len(blob) < _HEADER.size:
+    """Decrypt a blob produced by :func:`encrypt`.
+
+    Handles both v2 (version+alg header) and legacy (salt+nonce) formats.
+    """
+    if len(blob) < _HEADER_LEGACY.size:
         raise ValueError("blob too short to contain header")
-    salt, nonce = _HEADER.unpack_from(blob)
-    ct = blob[_HEADER.size :]
-    dk, cipher = derive_key(passphrase, salt=salt)
-    return cipher.decrypt(nonce, ct, associated_data=None)
+    if len(blob) >= _HEADER_V2.size and blob[0] == _FORMAT_V2:
+        if blob[1] not in _KNOWN_ALGS:
+            raise ValueError(f"unsupported algorithm: 0x{blob[1]:02x}")
+        try:
+            return _decrypt_v2(blob, passphrase)
+        except Exception:
+            # 1/65536 chance a legacy blob's salt starts with 0x02 0x01;
+            # GCM auth fails, fall back to legacy parse.
+            return _decrypt_legacy(blob, passphrase)
+    return _decrypt_legacy(blob, passphrase)
