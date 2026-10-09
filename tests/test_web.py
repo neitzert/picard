@@ -327,3 +327,72 @@ class TestPeersEndpoint:
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
+
+
+class TestCSRFProtection:
+    @pytest.fixture()
+    def real_client(self):
+        import httpx
+        transport = httpx.ASGITransport(app=app, client=("127.0.0.1", 12345))
+        return httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1:8471")
+
+    async def test_post_with_valid_origin_passes(self, real_client):
+        resp = await real_client.post(
+            "/api/config",
+            json={"block_size": 4096},
+            headers={"Origin": "http://127.0.0.1:8471"},
+        )
+        assert resp.status_code != 403
+
+    async def test_post_with_valid_referer_passes(self, real_client):
+        resp = await real_client.post(
+            "/api/config",
+            json={"block_size": 4096},
+            headers={"Referer": "http://localhost:8471/dashboard"},
+        )
+        assert resp.status_code != 403
+
+    async def test_post_without_origin_or_referer_rejected(self, real_client):
+        resp = await real_client.post("/api/config", json={"block_size": 4096})
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "CSRF rejected"
+
+    async def test_post_with_wrong_origin_rejected(self, real_client):
+        resp = await real_client.post(
+            "/api/config",
+            json={"block_size": 4096},
+            headers={"Origin": "http://evil.com"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["error"] == "CSRF rejected"
+
+    async def test_get_not_csrf_checked(self, real_client):
+        resp = await real_client.get("/api/stats")
+        assert resp.status_code == 200
+
+
+class TestStorageHealth:
+    def test_health_no_adapters(self, client):
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "adapters" in data
+        assert "summary" in data
+        assert data["summary"]["total"] == 0
+
+    def test_health_with_configured_adapter(self, client):
+        client.post("/api/adapters/configure", json={
+            "name": "mem-test", "type": "memory", "enabled": True, "params": {},
+        })
+        resp = client.get("/api/health")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total"] == 1
+
+    def test_health_disabled_adapter(self, client):
+        client.post("/api/adapters/configure", json={
+            "name": "disabled-1", "type": "memory", "enabled": False, "params": {},
+        })
+        resp = client.get("/api/health")
+        data = resp.json()
+        assert data["summary"]["disabled"] == 1
