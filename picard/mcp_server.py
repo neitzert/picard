@@ -229,6 +229,27 @@ async def list_tools():
     return TOOLS
 
 
+def _sanitize_path(path: str) -> str:
+    """Normalize a virtual path: collapse ``..``, strip nulls."""
+    path = path.replace("\x00", "")
+    import posixpath
+    path = posixpath.normpath(path)
+    if path == ".":
+        path = "/"
+    return path
+
+
+def _validate_path(path: str) -> str | None:
+    """Return an error message if *path* is invalid, else None."""
+    if not path:
+        return "path must not be empty"
+    if "\x00" in path:
+        return "path must not contain null bytes"
+    if len(path) > 4096:
+        return "path must not exceed 4096 characters"
+    return None
+
+
 @server.call_tool()
 async def call_tool(name: str, arguments: dict):
     try:
@@ -237,6 +258,22 @@ async def call_tool(name: str, arguments: dict):
         return [TextContent(type="text", text=f"error: {e}")]
 
     try:
+        _PATH_TOOLS = {
+            "picard_put", "picard_get", "picard_rm",
+            "picard_mkdir", "picard_stat", "picard_verify",
+            "picard_ls", "picard_tree",
+        }
+        if name in _PATH_TOOLS and "path" in arguments:
+            arguments["path"] = _sanitize_path(arguments["path"])
+        _PATH_REQUIRED = {
+            "picard_put", "picard_get", "picard_rm",
+            "picard_mkdir", "picard_stat", "picard_verify",
+        }
+        if name in _PATH_REQUIRED:
+            err = _validate_path(arguments.get("path", ""))
+            if err:
+                return [TextContent(type="text", text=f"error: {err}")]
+
         if name == "picard_put":
             path = arguments["path"]
             content = arguments["content"]
@@ -283,18 +320,17 @@ async def call_tool(name: str, arguments: dict):
 
         elif name == "picard_ls":
             path = arguments.get("path", "/")
-            children = index.list_children(path)
-            entries = []
-            for child_path in children:
-                m = index.get_manifest_by_path(child_path)
-                if m:
-                    entries.append({
-                        "path": m.path,
-                        "name": m.path.rsplit("/", 1)[-1],
-                        "type": m.file_type,
-                        "size": m.original_size,
-                        "version": m.version,
-                    })
+            children = index.list_children_with_metadata(path)
+            entries = [
+                {
+                    "path": c["path"],
+                    "name": c["name"],
+                    "type": c["type"],
+                    "size": c["size"],
+                    "version": c["version"],
+                }
+                for c in children
+            ]
             return [TextContent(type="text", text=json.dumps(entries, indent=2))]
 
         elif name == "picard_rm":
@@ -333,7 +369,6 @@ async def call_tool(name: str, arguments: dict):
 
         elif name == "picard_verify":
             path = arguments["path"]
-            pp = _passphrase()
             report = await orch.verify(path)
             return [TextContent(type="text", text=json.dumps({
                 "path": path,

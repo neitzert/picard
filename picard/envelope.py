@@ -14,6 +14,7 @@ with the adapter's sub-key. Total overhead: 1 + 8 + 12 + 16(GCM tag) = 37 bytes.
 from __future__ import annotations
 
 import os
+import threading
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -23,11 +24,27 @@ _VERSION = 1
 _NONCE_LEN = 12
 ENVELOPE_OVERHEAD = 1 + 8 + _NONCE_LEN + 16  # 37 bytes
 
+_cipher_cache: dict[bytes, AESGCM] = {}
+_cipher_lock = threading.Lock()
+_CIPHER_CACHE_MAX = 64
+
+
+def _get_cipher(key: bytes) -> AESGCM:
+    cipher = _cipher_cache.get(key)
+    if cipher is not None:
+        return cipher
+    cipher = AESGCM(key)
+    with _cipher_lock:
+        if len(_cipher_cache) >= _CIPHER_CACHE_MAX:
+            _cipher_cache.pop(next(iter(_cipher_cache)))
+        _cipher_cache[key] = cipher
+    return cipher
+
 
 def seal(encoded_chunk: str, sub_key: SubKey, manifest_id: str) -> bytes:
     correlation_tag = derive_correlation_tag(sub_key, manifest_id)
     nonce = os.urandom(_NONCE_LEN)
-    ciphertext = AESGCM(sub_key.key).encrypt(
+    ciphertext = _get_cipher(sub_key.key).encrypt(
         nonce, encoded_chunk.encode(), associated_data=correlation_tag
     )
     return bytes([_VERSION]) + correlation_tag + nonce + ciphertext
@@ -42,7 +59,7 @@ def unseal(envelope: bytes, sub_key: SubKey) -> str:
     correlation_tag = envelope[1:9]
     nonce = envelope[9:21]
     ciphertext = envelope[21:]
-    plaintext = AESGCM(sub_key.key).decrypt(
+    plaintext = _get_cipher(sub_key.key).decrypt(
         nonce, ciphertext, associated_data=correlation_tag
     )
     return plaintext.decode()

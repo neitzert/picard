@@ -88,9 +88,14 @@ def load_config(path: Path | None = None) -> PicardConfig:
         raw = tomllib.load(f)
 
     general = raw.get("general", {})
+    block_size = general.get("block_size", DEFAULT_BLOCK_SIZE)
+    if not isinstance(block_size, int) or block_size < 1024 or block_size > 64 * 1024 * 1024:
+        raise ValueError(
+            f"block_size must be between 1024 and 67108864, got {block_size}"
+        )
     cfg = PicardConfig(
         index_db=general.get("index_db", DEFAULT_INDEX_DB),
-        block_size=general.get("block_size", DEFAULT_BLOCK_SIZE),
+        block_size=block_size,
     )
 
     for entry in raw.get("adapters", []):

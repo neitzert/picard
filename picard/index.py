@@ -287,6 +287,7 @@ class Index:
                 "total_blocks": r["total_blocks"],
                 "total_chunks": cnt,
                 "created_at": r["created_at"],
+                "file_type": r["file_type"],
                 "adapters": adapters,
             })
         return result

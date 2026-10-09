@@ -5,11 +5,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import time
 from typing import Sequence
+from urllib.parse import urlparse
 
 import httpx
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+
+_ALLOWED_SCHEMES = {"http", "https"}
 
 
 class RemoteAdapter(Adapter):
@@ -24,6 +28,11 @@ class RemoteAdapter(Adapter):
         timeout: float = 30.0,
         max_chunk_bytes: int = 64 * 1024,
     ) -> None:
+        parsed = urlparse(peer_url)
+        if parsed.scheme not in _ALLOWED_SCHEMES:
+            raise ValueError(
+                f"peer_url scheme must be http or https, got {parsed.scheme!r}"
+            )
         self._peer_url = peer_url.rstrip("/")
         self._adapter_name = adapter_name
         self._secret = secret
@@ -40,21 +49,24 @@ class RemoteAdapter(Adapter):
             tags={"remote": "true", "peer": self._peer_url},
         )
 
-    def _sign(self, body: bytes) -> dict[str, str]:
+    def _sign(self, body: bytes, path: str) -> dict[str, str]:
         if not self._secret:
             return {}
+        ts = str(time.time())
+        msg = path.encode() + b"\n" + ts.encode() + b"\n" + body
         sig = hmac.new(
-            self._secret.encode(), body, hashlib.sha256,
+            self._secret.encode(), msg, hashlib.sha256,
         ).hexdigest()
-        return {"x-signature": sig}
+        return {"x-signature": sig, "x-timestamp": ts}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        path = "/transport/v1/write_chunk"
         payload = {"adapter": self._adapter_name, "data": encoded_chunk}
         body = json.dumps(payload).encode()
         resp = await self._client.post(
-            "/transport/v1/write_chunk",
+            path,
             content=body,
-            headers={"content-type": "application/json", **self._sign(body)},
+            headers={"content-type": "application/json", **self._sign(body, path)},
         )
         resp.raise_for_status()
         result = resp.json()
@@ -64,34 +76,37 @@ class RemoteAdapter(Adapter):
         )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
+        path = "/transport/v1/read_chunk"
         payload = {"adapter": self._adapter_name, "ref": ref.location}
         body = json.dumps(payload).encode()
         resp = await self._client.post(
-            "/transport/v1/read_chunk",
+            path,
             content=body,
-            headers={"content-type": "application/json", **self._sign(body)},
+            headers={"content-type": "application/json", **self._sign(body, path)},
         )
         resp.raise_for_status()
         return resp.json()["data"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        path = "/transport/v1/delete_chunk"
         payload = {"adapter": self._adapter_name, "ref": ref.location}
         body = json.dumps(payload).encode()
         resp = await self._client.post(
-            "/transport/v1/delete_chunk",
+            path,
             content=body,
-            headers={"content-type": "application/json", **self._sign(body)},
+            headers={"content-type": "application/json", **self._sign(body, path)},
         )
         resp.raise_for_status()
         return resp.json().get("deleted", False)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        path = "/transport/v1/list_chunks"
         payload = {"adapter": self._adapter_name, "manifest_id": manifest_id}
         body = json.dumps(payload).encode()
         resp = await self._client.post(
-            "/transport/v1/list_chunks",
+            path,
             content=body,
-            headers={"content-type": "application/json", **self._sign(body)},
+            headers={"content-type": "application/json", **self._sign(body, path)},
         )
         resp.raise_for_status()
         return [
@@ -100,15 +115,21 @@ class RemoteAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
+        path = "/transport/v1/health"
         try:
-            resp = await self._client.get("/transport/v1/health")
+            resp = await self._client.get(
+                path, headers=self._sign(b"", path),
+            )
             return resp.status_code == 200
         except Exception:
             return False
 
     async def capacity(self) -> dict[str, int | None]:
+        path = "/transport/v1/health"
         try:
-            resp = await self._client.get("/transport/v1/health")
+            resp = await self._client.get(
+                path, headers=self._sign(b"", path),
+            )
             data = resp.json()
             caps = data.get("capacities", {})
             remote_cap = caps.get(self._adapter_name)

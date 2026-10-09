@@ -1331,7 +1331,7 @@ function renderOverview() {
   };
   document.getElementById('category-chart').innerHTML = catEntries.map(([cat, count]) => `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span style="font-size:11px;color:var(--text2);width:80px;text-align:right;flex-shrink:0">${cat}</span>
+      <span style="font-size:11px;color:var(--text2);width:80px;text-align:right;flex-shrink:0">${escapeHtml(cat)}</span>
       <div style="flex:1;height:20px;background:var(--surface2);border-radius:4px;overflow:hidden">
         <div style="height:100%;width:${(count/maxCount*100).toFixed(0)}%;background:${barColors[cat] || '#64748b'};border-radius:4px;transition:width 0.3s"></div>
       </div>
@@ -1361,7 +1361,7 @@ function renderAdapters() {
   const categories = [...new Set(registryData.map(a => a.category))].sort();
   const filtersEl = document.getElementById('category-filters');
   filtersEl.innerHTML = `<span class="pill ${currentFilter === 'all' ? 'active' : ''}" onclick="filterAdapters('all')">all</span>` +
-    categories.map(c => `<span class="pill ${currentFilter === c ? 'active' : ''}" onclick="filterAdapters('${c}')">${c}</span>`).join('');
+    categories.map(c => `<span class="pill ${currentFilter === c ? 'active' : ''}" onclick="filterAdapters('${escapeAttr(c)}')">${escapeHtml(c)}</span>`).join('');
 
   const search = (document.getElementById('adapter-search').value || '').toLowerCase();
   let filtered = registryData;
@@ -1377,17 +1377,17 @@ function renderAdapters() {
     const ce = configuredData.find(c => c.type === a.type);
     return `
       <tr>
-        <td style="color:var(--accent);font-weight:600">${a.type}</td>
-        <td><span class="badge badge-${a.category}">${a.category}</span></td>
+        <td style="color:var(--accent);font-weight:600">${escapeHtml(a.type)}</td>
+        <td><span class="badge badge-${escapeAttr(a.category)}">${escapeHtml(a.category)}</span></td>
         <td>
           ${a.params.length === 0 ? '<span style="color:var(--text3)">none</span>' :
             a.params.map(p =>
-              `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${p.name}${p.required ? '*' : ''}</span>`
+              `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${escapeHtml(p.name)}${p.required ? '*' : ''}</span>`
             ).join(', ')}
         </td>
         <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}${ce && ce.tor_proxy ? ' <span class="badge badge-tor">TOR</span>' : ''}${ce && ce.browser_mode === 'headless' ? ' <span class="badge badge-browser">HEADLESS</span>' : ''}${ce && ce.browser_mode === 'headed' ? ' <span class="badge badge-headed">HEADED</span>' : ''}</td>
         <td style="text-align:right">
-          <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;")})'>${isConfigured ? 'Edit' : 'Add'}</button>
+          <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;").replace(/</g, "\\x3c").replace(/>/g, "\\x3e")})'>${isConfigured ? 'Edit' : 'Add'}</button>
         </td>
       </tr>
     `;
@@ -1455,9 +1455,9 @@ function openConfigure(adapter) {
     ${adapter.params.length > 0 ? '<div style="height:1px;background:var(--border);margin:16px 0"></div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:1px">Parameters</div>' : ''}
     ${adapter.params.map(p => `
       <div class="form-group">
-        <label>${p.name} ${p.required ? '<span style="color:var(--red)">*</span>' : ''} ${p.is_credential ? '<span class="lock">&#128274;</span>' : ''}</label>
+        <label>${escapeHtml(p.name)} ${p.required ? '<span style="color:var(--red)">*</span>' : ''} ${p.is_credential ? '<span class="lock">&#128274;</span>' : ''}</label>
         <input type="${p.is_credential ? 'password' : 'text'}"
-               id="param-${p.name}"
+               id="param-${escapeAttr(p.name)}"
                value="${escapeAttr(params[p.name] || (p.default && !p.required ? p.default.replace(/^'|'$/g, '') : ''))}"
                placeholder="${escapeAttr(p.is_credential ? 'Stored in OS keyring' : (p.default || ''))}">
         ${p.annotation ? `<span style="color:var(--text2);font-size:10px">${escapeHtml(p.annotation)}</span>` : ''}
@@ -1542,7 +1542,7 @@ function renderCredentials() {
       <td>${escapeHtml(cfg.type)}</td>
       <td>${credFields.map(f => {
         const hasValue = cfg.params[f.name] && (cfg.params[f.name] === '***' || cfg.params[f.name].startsWith('keyring:'));
-        return `<span style="color:${hasValue ? 'var(--green)' : 'var(--orange)'}">${hasValue ? '&#9679;' : '&#9675;'} ${f.name}</span>`;
+        return `<span style="color:${hasValue ? 'var(--green)' : 'var(--orange)'}">${hasValue ? '&#9679;' : '&#9675;'} ${escapeHtml(f.name)}</span>`;
       }).join('&nbsp;&nbsp;')}</td>
       <td style="text-align:right">
         ${credFields.map(f => `<button class="btn btn-sm" onclick="openCredential('${escapeAttr(cfg.name)}','${escapeAttr(f.name)}')">Set ${escapeHtml(f.name)}</button>`).join(' ')}
@@ -1766,7 +1766,7 @@ function renderBrowserSummary() {
     <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)">
       <span style="font-size:20px;font-weight:700;color:${mode === 'api' ? 'var(--accent)' : 'var(--orange)'}">${count}</span>
       <div>
-        <div style="font-size:12px;font-weight:500;text-transform:uppercase">${mode}</div>
+        <div style="font-size:12px;font-weight:500;text-transform:uppercase">${escapeHtml(mode)}</div>
         <div style="font-size:10px;color:var(--text3)">adapter${count !== 1 ? 's' : ''}</div>
       </div>
     </div>
@@ -1787,7 +1787,7 @@ function renderFiles(files) {
       <td>${formatBytes(f.original_size)}</td>
       <td>${f.total_blocks}</td>
       <td>${f.total_chunks}</td>
-      <td>${f.adapters.map(a => `<span class="badge badge-${getCat(a)}" style="margin:1px">${a}</span>`).join(' ')}</td>
+      <td>${f.adapters.map(a => `<span class="badge badge-${escapeAttr(getCat(a))}" style="margin:1px">${escapeHtml(a)}</span>`).join(' ')}</td>
       <td style="color:var(--text2)">${f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
     </tr>
   `).join('');

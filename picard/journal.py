@@ -50,6 +50,7 @@ class Journal:
 
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
+        self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_JOURNAL_SCHEMA)
 
     def begin(self, operation: str, path: str, manifest_id: str) -> str:

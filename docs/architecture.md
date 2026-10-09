@@ -72,7 +72,9 @@ data written before the header was introduced.
 ### Derived Key Cache
 
 Since Argon2id is intentionally expensive (~100ms per call at these parameters),
-a `DerivedKeyCache` stores recently derived keys keyed by `(SHA256(passphrase), salt)`.
+a `DerivedKeyCache` stores recently derived keys keyed by `(HMAC-SHA256(passphrase), salt)`,
+where the HMAC uses a per-boot random 32-byte secret so cache keys cannot be brute-forced
+from a core dump.
 Max 16 entries, 5-minute TTL. The raw passphrase is never stored.
 
 ## Key Hierarchy

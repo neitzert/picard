@@ -34,22 +34,37 @@ class TestRemoteAdapterProfile:
 class TestRemoteAdapterHMAC:
     def test_sign_empty_without_secret(self):
         ra = RemoteAdapter("http://peer:8471", "memory")
-        assert ra._sign(b"test") == {}
+        assert ra._sign(b"test", "/transport/v1/health") == {}
 
     def test_sign_returns_header_with_secret(self):
         ra = RemoteAdapter("http://peer:8471", "memory", secret="s3cr3t")
-        headers = ra._sign(b"test body")
+        headers = ra._sign(b"test body", "/transport/v1/write_chunk")
         assert "x-signature" in headers
+        assert "x-timestamp" in headers
         assert len(headers["x-signature"]) == 64
 
-    def test_sign_deterministic(self):
+    def test_sign_includes_path_and_timestamp(self):
         ra = RemoteAdapter("http://peer:8471", "memory", secret="key")
-        a = ra._sign(b"data")
-        b = ra._sign(b"data")
-        assert a == b
+        h = ra._sign(b"data", "/some/path")
+        assert "x-signature" in h
+        assert "x-timestamp" in h
+        assert float(h["x-timestamp"]) > 0
 
     def test_sign_differs_for_different_data(self):
         ra = RemoteAdapter("http://peer:8471", "memory", secret="key")
-        a = ra._sign(b"data1")
-        b = ra._sign(b"data2")
-        assert a != b
+        a = ra._sign(b"data1", "/path")
+        b = ra._sign(b"data2", "/path")
+        assert a["x-signature"] != b["x-signature"]
+
+    def test_sign_differs_for_different_paths(self):
+        ra = RemoteAdapter("http://peer:8471", "memory", secret="key")
+        a = ra._sign(b"data", "/path1")
+        b = ra._sign(b"data", "/path2")
+        assert a["x-signature"] != b["x-signature"]
+
+    def test_ssrf_rejects_non_http(self):
+        import pytest
+        with pytest.raises(ValueError, match="http or https"):
+            RemoteAdapter("file:///etc/passwd", "memory")
+        with pytest.raises(ValueError, match="http or https"):
+            RemoteAdapter("gopher://evil.com", "memory")

@@ -80,17 +80,24 @@ class PeerRegistry:
                 (status, time.time(), url),
             )
 
-    async def discover_from_peer(self, url: str) -> list[str]:
+    async def discover_from_peer(
+        self, url: str, *, client: "httpx.AsyncClient | None" = None,
+    ) -> list[str]:
         import httpx
 
+        owns_client = client is None
+        if owns_client:
+            client = httpx.AsyncClient(timeout=10)
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{url}/transport/v1/adapters")
-                resp.raise_for_status()
-                data = resp.json()
-                adapter_names = [a["name"] for a in data.get("adapters", [])]
-                self.add(url, adapter_names)
-                return adapter_names
+            resp = await client.get(f"{url}/transport/v1/adapters")
+            resp.raise_for_status()
+            data = resp.json()
+            adapter_names = [a["name"] for a in data.get("adapters", [])]
+            self.add(url, adapter_names)
+            return adapter_names
         except Exception:
             self.update_status(url, "unreachable")
             return []
+        finally:
+            if owns_client:
+                await client.aclose()

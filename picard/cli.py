@@ -69,8 +69,11 @@ def _adapters_from_config(store_dir: Path) -> list:
             adapter = instantiate(entry.type, **params)
             adapters.append(adapter)
             by_name[entry.name] = adapter
-        except Exception:
-            pass
+        except Exception as exc:
+            err_console.print(
+                f"[yellow]warning:[/yellow] adapter {entry.name!r} ({entry.type}) "
+                f"failed to load: {exc}"
+            )
 
     if cfg.raid:
         pooled_names: set[str] = set()
@@ -151,13 +154,27 @@ def put(
     if not file.is_file():
         typer.echo(f"not a file: {file}", err=True)
         raise typer.Exit(1)
-    data = file.read_bytes()
     vpath = virtual_path or file.name
     pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp, profile_name=profile)
+    file_size = file.stat().st_size
+    block_size = orch._block_size
+
+    async def _do_put():
+        if file_size > block_size:
+            async def _file_stream():
+                with open(file, "rb") as fh:
+                    while True:
+                        chunk = fh.read(block_size)
+                        if not chunk:
+                            break
+                        yield chunk
+            return await orch.put_stream(vpath, _file_stream(), pp, size_hint=file_size)
+        return await orch.put(vpath, file.read_bytes(), pp)
+
     with _spinner("Encrypting and scattering...") as progress:
         progress.add_task("Encrypting and scattering...", total=None)
-        manifest = asyncio.run(orch.put(vpath, data, pp))
+        manifest = asyncio.run(_do_put())
     console.print(
         f"stored {vpath}  ({manifest.total_blocks} blocks, "
         f"{manifest.total_chunks} chunks, manifest={manifest.manifest_id})"
@@ -198,30 +215,37 @@ def list_files(
 ) -> None:
     """List stored virtual paths."""
     orch = _make_orchestrator(store_dir, db_path)
-    paths = asyncio.run(orch.ls(path))
+    idx = orch._index
+    if path:
+        entries = idx.list_children_with_metadata(path)
+    else:
+        summaries = idx.list_file_summaries()
+        entries = [
+            {"path": s["path"], "type": s.get("file_type", "regular"),
+             "size": s["original_size"]}
+            for s in summaries
+        ]
     if as_json:
-        entries = []
-        for p in paths:
-            m = orch._index.get_manifest_by_path(p)
-            entry = {"path": p}
-            if m:
-                entry.update({
-                    "type": m.file_type,
-                    "size": m.original_size,
-                    "version": m.version,
-                })
-            entries.append(entry)
-        typer.echo(json_mod.dumps(entries, indent=2))
+        out = [
+            {"path": e["path"], "type": e.get("type", "regular"),
+             "size": e.get("size", e.get("original_size", 0)),
+             "version": e.get("version", 1)}
+            for e in entries
+        ]
+        typer.echo(json_mod.dumps(out, indent=2))
         return
-    if not paths:
+    if not entries:
         typer.echo("(empty)")
         return
-    for p in paths:
-        m = orch._index.get_manifest_by_path(p)
-        if m and m.file_type == "directory":
+    for e in entries:
+        p = e["path"]
+        ft = e.get("type", "regular")
+        if ft == "directory":
             console.print(f"[blue]{p}/[/blue]")
-        elif m and m.file_type == "symlink":
-            console.print(f"[cyan]{p}[/cyan] -> [dim]{m.symlink_target}[/dim]")
+        elif ft == "symlink":
+            m = idx.get_manifest_by_path(p)
+            target = m.symlink_target if m else "?"
+            console.print(f"[cyan]{p}[/cyan] -> [dim]{target}[/dim]")
         else:
             console.print(p)
 
@@ -818,10 +842,14 @@ def tail(
     """Read the last N bytes of a file."""
     pp = _get_passphrase()
     orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    result = asyncio.run(orch.info(virtual_path))
-    size = result["original_size"]
-    offset = max(0, size - bytes_count)
-    data = asyncio.run(orch.read_range(virtual_path, offset, bytes_count, pp))
+
+    async def _do_tail():
+        result = await orch.info(virtual_path)
+        size = result["original_size"]
+        offset = max(0, size - bytes_count)
+        return await orch.read_range(virtual_path, offset, bytes_count, pp)
+
+    data = asyncio.run(_do_tail())
     sys.stdout.buffer.write(data)
 
 
@@ -1103,8 +1131,10 @@ def tor_mount(
         console.print(f"[bold red]✗[/] Peer unreachable: {onion_url}")
         raise typer.Exit(1)
 
+    import shutil
     import tempfile
-    tmp_db = Path(tempfile.mkdtemp()) / "remote_index.db"
+    tmp_dir = tempfile.mkdtemp()
+    tmp_db = Path(tmp_dir) / "remote_index.db"
     idx = Index(tmp_db)
     orch = Orchestrator([adapter], idx)
 
@@ -1115,6 +1145,10 @@ def tor_mount(
         mount(orch, passphrase, mountpoint, readonly=readonly)
     finally:
         asyncio.run(adapter.close())
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
