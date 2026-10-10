@@ -1,8 +1,13 @@
 """CAN bus adapter — stores chunks as CAN bus frames.
 
-Hides data on the vehicle/industrial CAN bus.  Each chunk is split into
-8-byte CAN frames and reassembled on read.  Works on cars, trucks,
-factory equipment, medical devices — anywhere CAN runs.
+Splits chunk data into 8-byte CAN frames and reassembles on read.
+Suitable for bench/lab CAN bus setups.
+
+WARNING: Do not use on operational vehicles, medical devices, or
+industrial control systems.  Injecting arbitrary CAN frames onto
+a live bus is a physical safety hazard and may violate vehicle
+safety regulations (FMVSS, UN R155) and medical device law (FDA
+21 CFR, EU MDR).
 
 Requires: pip install python-can
 """

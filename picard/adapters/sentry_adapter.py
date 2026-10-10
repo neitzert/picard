@@ -1,8 +1,7 @@
-"""Sentry adapter — stores chunks disguised as error events.
+"""Sentry adapter — stores chunks as Sentry events.
 
 Each chunk becomes a Sentry event with the data in the message or
-extra fields.  Hides in the error tracking system — security teams
-are trained to investigate errors, not suspect them as data channels.
+extra fields, stored in the error tracking system.
 
 Requires: pip install picard[sentry]  (aiohttp)
 """

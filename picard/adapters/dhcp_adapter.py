@@ -1,8 +1,7 @@
 """DHCP adapter -- stores tiny chunks in DHCP vendor-specific options.
 
-A steganographic channel: DHCP option 224-254 (site-specific) or
-option 43 (vendor-specific) carry small payloads in DHCPINFORM
-messages.  Very low bandwidth, very hard to detect.
+Uses DHCP option 224-254 (site-specific) or option 43 (vendor-specific)
+to carry small payloads in DHCPINFORM messages.  Very low bandwidth.
 
 Requires: pip install picard[dhcp]  (scapy)
 """

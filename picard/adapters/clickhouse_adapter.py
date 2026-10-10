@@ -1,8 +1,8 @@
 """ClickHouse adapter — stores chunks in a column-oriented analytics DB.
 
-Hides data in analytics infrastructure. ClickHouse is optimized for
-fast reads over huge datasets — nobody expects exfil data in the OLAP
-cluster.
+Stores data in analytics infrastructure. ClickHouse is optimized for
+fast reads over huge datasets, making it a high-throughput backend for
+chunk storage.
 
 Requires: pip install picard[clickhouse]  (aiohttp)
 """

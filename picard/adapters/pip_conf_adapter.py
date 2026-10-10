@@ -1,10 +1,8 @@
-"""pip.conf adapter — hides chunks in pip configuration extra-index-url entries.
+"""pip.conf adapter — stores chunks in pip configuration extra-index-url entries.
 
-Abuses the pip.conf [global] extra-index-url field by appending fake
+Uses the pip.conf [global] extra-index-url field by appending custom
 package index URLs that encode chunk data in the path component:
   https://picard.local/{chunk_id}/{encoded_data}
-
-These URLs look like legitimate private PyPI mirrors to casual inspection.
 
 Requires: no additional dependencies (stdlib only for file I/O)
 """

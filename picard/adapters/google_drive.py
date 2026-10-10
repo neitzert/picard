@@ -1,8 +1,7 @@
 """Google Drive adapter — stores chunks as Drive files or appProperties.
 
 Each chunk becomes a file in Google Drive, optionally inside a specific
-folder. Data can also be hidden in appProperties (invisible to users in
-the Drive UI).
+folder. Data can also be stored in appProperties (not shown in the Drive UI).
 
 Requires: pip install picard[gdrive]   (aiohttp)
 """

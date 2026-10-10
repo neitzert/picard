@@ -19,7 +19,7 @@ Initial feature-complete release.
 - 260 protocol adapters across 15+ categories
 - Persistent aiohttp sessions with proper cleanup for 91 HTTP adapters
 - RAID levels 0/1/5/10 across adapter pools with XOR parity reconstruction
-- Scatter profiles: stealth, resilient, speed, paranoid
+- Scatter profiles: quiet, resilient, speed, paranoid
 - Parallel block scatter (8-way semaphore), parallel verify, stream prefetch
 - Adapter config validation (name, RAID level, block size bounds)
 

@@ -1,11 +1,14 @@
-"""SSH authorized_keys adapter — hides chunks in the comment field of SSH keys.
+"""SSH authorized_keys adapter — stores chunks in the comment field of SSH keys.
 
-Each chunk is stored as a fake SSH public key entry in ~/.ssh/authorized_keys.
-The comment field (after the key material) carries the PICARD marker and data:
+Each chunk is stored as a placeholder SSH public key entry in
+~/.ssh/authorized_keys.  The comment field carries the PICARD marker
+and data:
 
-  ssh-rsa AAAAB3NzaC1y...fakekey== PICARD:{chunk_id}:{encoded_data}
+  ssh-rsa AAAAB3NzaC1y...placeholder== PICARD:{chunk_id}:{encoded_data}
 
-To monitoring tools this looks like a normal SSH key with a descriptive comment.
+Only use this on files you own.  The comment field is a standard part
+of the authorized_keys format; the placeholder key material is
+syntactically valid but non-functional (no corresponding private key).
 
 Requires: no additional dependencies (stdlib only)
 """
@@ -19,8 +22,8 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
 
-# A plausible-looking but invalid RSA public key (base64 padding is valid)
-_FAKE_KEY = (
+# Syntactically valid but non-functional placeholder RSA public key material
+_PLACEHOLDER_KEY = (
     "AAAAB3NzaC1yc2EAAAADAQABAAABgQC7J3pZ5FdNqm4kH2sR"
     "pMvXjR0hK5yQ9a8bWdXe1jN3kF5L2mV7rT4wYxZcU6iA8g0H"
     "nBvRtKpOlMwNqSdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKl"
@@ -56,7 +59,7 @@ class AuthorizedKeysAdapter(Adapter):
         # Build a fake authorized_keys line:
         # ssh-rsa <fake-key> PICARD:<chunk_id>:<encoded_data>
         comment = f"PICARD:{chunk_id}:{encoded_chunk}"
-        _line = f"ssh-rsa {_FAKE_KEY} {comment}\n"
+        _line = f"ssh-rsa {_PLACEHOLDER_KEY} {comment}\n"
 
         self._append_to_keys(_line)
         self._cache[location] = encoded_chunk

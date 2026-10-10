@@ -11,7 +11,7 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **260 protocol adapters** across 15+ categories (social, network, storage, P2P, exotic)
 - **AES-256-GCM encryption** with Argon2id key derivation (per-block salt + nonce)
 - **RAID redundancy** — levels 0/1/5/10 across adapter pools
-- **Scatter profiles** — stealth, resilient, speed, paranoid (config-driven)
+- **Scatter profiles** — quiet, resilient, speed, paranoid (config-driven)
 - **Full filesystem** — directories, symlinks, versioning, partial reads
 - **FUSE mount** — mount as a real filesystem (Linux/macOS/Windows)
 - **WebDAV server** — mount as a network drive for native OS drag-and-drop
@@ -27,7 +27,7 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **Web dashboard** — dark/light theme, drag-and-drop upload, storage health, per-adapter privacy routing
 - **MCP server** — agent-accessible storage tools for any MCP-compatible client
 - **Tor integration** — per-adapter or global SOCKS5 routing, hidden services, .onion peers
-- **Browser automation** — Playwright headless/headed fallback when API keys unavailable
+- **Browser automation** — Playwright headless/headed mode for adapters that use web interfaces
 - **VPN device binding** — route adapter traffic through specific network interfaces
 
 ## Quickstart
@@ -76,7 +76,7 @@ replaced without re-encrypting stored data.
 | Storage / KV | 11 | S3, Redis, PostgreSQL, DynamoDB, CouchDB |
 | Mail / Calendar | 4 | SMTP/IMAP, CalDAV, CardDAV, WebDAV |
 | P2P / Exotic | 10 | IPFS, BitTorrent DHT, Ethereum, QR codes, Steganography |
-| Format / Stealth | 7+ | XLSX hidden cells, EXIF metadata, PDF, ZIP comments |
+| Format / Encoding | 7+ | XLSX hidden cells, EXIF metadata, PDF, ZIP comments |
 | Broadcast / Discovery | 10+ | mDNS, SSDP, BLE, NFC, WiFi beacons |
 | ... | ... | 180+ more across every protocol gap we could find |
 

@@ -3,8 +3,7 @@
 Creates HTML files with chunk data hidden in comment tags:
   <!-- PICARD:base64-encoded-chunk-data -->
 
-The HTML page itself looks normal; the data is invisible when
-rendered in a browser.
+HTML comment tags are not rendered by browsers.
 """
 
 from __future__ import annotations

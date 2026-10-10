@@ -5,7 +5,7 @@ wraps them in a RaidPool at the specified level, and returns the pool
 ready for use by the orchestrator.
 
 Built-in profiles:
-  - stealth:   low-profile adapters, RAID 1 mirroring
+  - quiet:     low-profile adapters, RAID 1 mirroring
   - resilient: persistent/cloud adapters, RAID 5 parity
   - speed:     local/fast adapters, RAID 0 striping
   - paranoid:  all persistent adapters, RAID 10 striped mirrors
@@ -20,8 +20,8 @@ from picard.config import ScatterProfile
 from picard.raid import RaidLevel, RaidPool
 
 BUILTIN_PROFILES: dict[str, ScatterProfile] = {
-    "stealth": ScatterProfile(
-        name="stealth",
+    "quiet": ScatterProfile(
+        name="quiet",
         raid_level="raid1",
         mirror_count=2,
         adapter_tags=["steganographic", "low-profile"],

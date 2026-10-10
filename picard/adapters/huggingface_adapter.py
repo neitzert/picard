@@ -1,7 +1,6 @@
 """Hugging Face Hub adapter — stores chunks as dataset files.
 
 Chunks are uploaded as files to a Hugging Face dataset repository.
-Looks like normal ML research — just another dataset upload.
 
 Requires: pip install picard[huggingface]  (aiohttp)
 """

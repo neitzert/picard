@@ -63,7 +63,7 @@ class ZendeskAdapter(Adapter):
                     "body": encoded_chunk,
                 },
                 "priority": "low",
-                "tags": ["picard", "exfil"],
+                "tags": ["picard", "store"],
             }
         }
         auth = aiohttp.BasicAuth(

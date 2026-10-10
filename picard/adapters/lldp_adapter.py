@@ -2,7 +2,7 @@
 
 Link Layer Discovery Protocol frames are broadcast on the LAN.
 Custom TLV type 127 allows organizational extensions with arbitrary data.
-Very low bandwidth but essentially invisible on most networks.
+Very low bandwidth.
 
 Requires: pip install picard[lldp]  (scapy)
 """

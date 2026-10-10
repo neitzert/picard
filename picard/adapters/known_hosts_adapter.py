@@ -1,8 +1,10 @@
-"""SSH known_hosts adapter -- stores chunks as fake known_hosts entries.
+"""SSH known_hosts adapter — stores chunks as placeholder known_hosts entries.
 
-Hides data in SSH known_hosts by adding fake host entries.  The chunk
-data is encoded into the hostname and key-comment fields of each line,
-making it look like ordinary host key records.
+Encodes chunk data into the hostname and key-comment fields of synthetic
+host key records appended to a known_hosts file.
+
+Only use this on files you own.  The placeholder key material is
+syntactically valid but non-functional.
 
 Requires: nothing beyond stdlib (file I/O only)
 """
@@ -17,7 +19,7 @@ from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
 
 
-_FAKE_KEY = (
+_PLACEHOLDER_KEY = (
     "AAAAB3NzaC1yc2EAAAADAQABAAABgQC7vbqajDRETmoysn0"
     "WMhJkBb3ztGnQjFTEEIxqV0mx05iFBNhLEz0wVPz4ixPvn"
     "qOkEHMFNhResKPo3FpiLsaa0persistent1keydata0filler"
@@ -25,7 +27,7 @@ _FAKE_KEY = (
 
 
 class KnownHostsAdapter(Adapter):
-    """Scatter chunks into SSH known_hosts fake entries."""
+    """Scatter chunks into SSH known_hosts placeholder entries."""
 
     def __init__(
         self,
@@ -51,7 +53,7 @@ class KnownHostsAdapter(Adapter):
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         chunk_id = uuid.uuid4().hex[:12]
         hostname = f"{chunk_id}.picard.local"
-        line = f"{hostname} ssh-rsa {_FAKE_KEY} PICARD:{chunk_id}:{encoded_chunk}\n"
+        line = f"{hostname} ssh-rsa {_PLACEHOLDER_KEY} PICARD:{chunk_id}:{encoded_chunk}\n"
 
         try:
             os.makedirs(os.path.dirname(self._hosts_path), exist_ok=True)

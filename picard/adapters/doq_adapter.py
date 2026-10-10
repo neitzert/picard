@@ -1,7 +1,7 @@
 """DNS-over-QUIC adapter — chunks as TXT records via DNS over QUIC (RFC 9250).
 
 QUIC traffic looks like generic UDP, and the DNS content is encrypted,
-making this the stealthiest DNS exfil channel available.
+giving this adapter strong transport-layer privacy.
 
 Requires: pip install picard[dns,quic]  (aioquic, dnspython)
 """

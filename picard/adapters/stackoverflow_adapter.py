@@ -1,7 +1,12 @@
-"""StackOverflow adapter — stores chunks as SE answers/comments.
+"""StackExchange adapter — stores chunks as answers on an SE site.
 
 Each chunk becomes an answer on a StackExchange question:
     so://{site}/{answer_id}
+
+WARNING: Use only with a private/self-hosted StackExchange instance
+or a dedicated test account on a site where you have permission to
+post programmatically.  Automated posting on public sites (including
+stackoverflow.com) violates the StackExchange ToS.
 
 Requires: pip install picard[stackoverflow]
 """

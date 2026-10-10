@@ -1,8 +1,8 @@
 """ZIP comment adapter — stores chunks in ZIP archive comment fields.
 
-ZIP files have an archive-level comment field (up to 65535 bytes)
-that is invisible to most tools.  ``unzip -l`` doesn't show it,
-file managers ignore it, and antivirus rarely inspects it.
+ZIP files have an archive-level comment field (up to 65535 bytes).
+``unzip -l`` doesn't show it and most file managers ignore it —
+it's an underused part of the ZIP spec.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """HashiCorp Vault adapter — stores chunks in Vault KV secrets engine.
 
-Hides exfiltrated data in the vault itself — the one place that's
-supposed to be the trusted store. Uses KV v2 secrets engine.
+Stores chunk data in the vault itself — the trusted secret store.
+Uses KV v2 secrets engine.
 
 Requires: pip install picard[vault]  (aiohttp)
 """

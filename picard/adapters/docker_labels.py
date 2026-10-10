@@ -1,7 +1,7 @@
 """Docker Labels adapter — stores chunks as container/image labels.
 
-Hides data in Docker metadata. Labels are arbitrary key-value pairs
-attached to containers and images — commonly ignored by monitoring.
+Stores data in Docker metadata. Labels are arbitrary key-value pairs
+attached to containers and images.
 
 Requires: pip install picard[docker]  (aiodocker)
 """

@@ -1,4 +1,4 @@
-"""IPv6 flow label covert channel adapter.
+"""IPv6 flow label steganographic transport adapter.
 
 Encodes a 20-bit correlation ID in the IPv6 flow label field for
 out-of-band packet correlation.  Chunk data travels in the UDP payload
@@ -35,7 +35,7 @@ def _flow_label_for(msg_id: str) -> int:
 
 
 class IPv6FlowLabelAdapter(Adapter):
-    """Covert channel using IPv6 flow labels for correlation."""
+    """Steganographic transport using IPv6 flow labels for correlation."""
 
     def __init__(
         self,

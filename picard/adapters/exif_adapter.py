@@ -1,9 +1,8 @@
-"""EXIF metadata adapter — hides chunks in JPEG image metadata.
+"""EXIF metadata adapter — stores chunks in JPEG image metadata.
 
 Each chunk is stored in the EXIF UserComment tag of a minimal JPEG.
-The resulting image file looks like a normal photo with GPS, camera
-model, and other plausible-looking metadata — but the UserComment
-field holds encrypted chunk data.
+Standard EXIF fields (GPS, camera model) are populated with placeholder
+values to produce a structurally valid image file.
 
 Requires: pip install picard[exif]  (Pillow)
 """

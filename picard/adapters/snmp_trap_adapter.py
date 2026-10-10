@@ -1,8 +1,7 @@
 """SNMP Trap adapter — chunks hidden in SNMP trap variable bindings.
 
-Sends chunk data as variable bindings in SNMPv2c traps. Network
-monitoring infrastructure forwards these without inspection, making
-them an excellent covert channel in enterprise environments.
+Sends chunk data as variable bindings in SNMPv2c traps. Network monitoring infrastructure routes these traps to collectors
+in standard enterprise deployments.
 
 Requires: UDP socket access.
 """

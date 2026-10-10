@@ -2,7 +2,7 @@
 
 NFS is transparent once mounted, so chunks are regular files under
 the mount point.  Optionally uses extended attributes (xattr) for
-a stealthier storage mode.
+a lower-overhead storage mode.
 
     {mount_path}/{manifest_id}/{block}_{chunk}.pchk
 

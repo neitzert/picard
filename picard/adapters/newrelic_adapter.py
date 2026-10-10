@@ -1,7 +1,6 @@
 """New Relic adapter -- stores chunks as custom events.
 
-Data is injected into New Relic Insights as custom events,
-appearing as normal telemetry ingestion.
+Data is stored in New Relic Insights as custom events.
 
 Requires: pip install picard[newrelic]  (uses aiohttp)
 """

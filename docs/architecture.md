@@ -169,7 +169,7 @@ Four built-in profiles control how adapters are selected and grouped:
 
 | Profile | RAID Level | Strategy |
 |---------|-----------|----------|
-| stealth | RAID 1 | Mirror to multiple adapters for deniability |
+| quiet | RAID 1 | Mirror across multiple adapters for redundancy |
 | resilient | RAID 5 | Parity for fault tolerance |
 | speed | RAID 0 | Stripe for throughput |
 | paranoid | RAID 10 | Striped mirrors for maximum redundancy |

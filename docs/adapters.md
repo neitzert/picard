@@ -12,7 +12,7 @@ Each adapter speaks one protocol or storage backend.
 | Storage / KV | 11 | memory, filesystem, s3, redis, memcached, etcd, consul-kv, couchdb, sqlite-remote, postgresql, dynamodb |
 | Mail / Calendar | 4 | smtp-imap, caldav, carddav, webdav |
 | P2P / Exotic | 10 | ipfs, bittorrent-dht, ethereum, qr-codes, steganography, gopher, gemini, bluetooth-le, nfc-ndef, usb-hid |
-| Format / Stealth | 7+ | xlsx-hidden, exif, pdf-metadata, zip-comment, docx-custom-xml, font-name-table, ico-comment |
+| Format / Encoding | 7+ | xlsx-hidden, exif, pdf-metadata, zip-comment, docx-custom-xml, font-name-table, ico-comment |
 | Broadcast / Discovery | 10+ | mdns, ssdp, wifi-beacon, llmnr, netbios, upnp, bluetooth-le adv, nfc-broadcast |
 | Platform / Browser | 11 | twitter/x, youtube, tiktok, instagram, pinterest, linkedin, medium, notion, trello, jira, confluence |
 | Remote | 1 | remote (proxy to peer's transport API) |
@@ -70,7 +70,7 @@ class AdapterProfile:
 ```
 
 Tags are used by scatter profiles to filter adapters. For example:
-`tags={"category": "social", "stealth": "true"}`.
+`tags={"category": "social", "low-profile": "true"}`.
 
 ### StoredChunkRef
 

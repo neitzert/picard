@@ -1,7 +1,7 @@
 """SMS adapter — stores chunks as text messages via Twilio API.
 
-Each chunk becomes an SMS or concatenated SMS.  Persistent in the
-carrier's message log, billable, and looks like normal texting traffic.
+Each chunk becomes an SMS or concatenated SMS via Twilio.  Persistent
+in the carrier's message log; standard SMS billing applies.
 
 Requires: pip install picard[sms]  (aiohttp)
 """

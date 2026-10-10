@@ -1,8 +1,12 @@
 """Certificate Transparency log adapter — chunks become X.509 extension data.
 
 Stores chunks by submitting pre-certificates with chunk data embedded in
-a custom X.509 extension OID.  CT logs are append-only and permanent —
-once submitted, the data is there forever.
+a custom X.509 extension OID.
+
+WARNING: Use only with a private or self-hosted CT log (e.g. Trillian).
+Do not submit to public CT logs — they are shared, append-only internet
+infrastructure operated by CAs and browser vendors, and submitting
+garbage pre-certificates to them is abuse of critical PKI infrastructure.
 
 Requires: pip install picard[ct]  (aiohttp, cryptography)
 """

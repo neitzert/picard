@@ -1,8 +1,8 @@
 """Grafana adapter — stores chunks as dashboard annotations.
 
-Annotations are a legitimate Grafana feature for marking events on
-dashboards.  Chunk data hides in the annotation text field, tagged
-for retrieval.  Who audits annotation content?
+Annotations are a standard Grafana feature for marking events on
+dashboards.  Chunk data is stored in the annotation text field, tagged
+for retrieval.
 
 Requires: pip install picard[grafana]  (aiohttp)
 """

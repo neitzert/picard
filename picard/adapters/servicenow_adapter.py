@@ -1,7 +1,6 @@
 """ServiceNow adapter -- stores chunks as incident records.
 
-Data is hidden inside ServiceNow incident descriptions,
-blending with routine ITSM traffic.
+Data is stored inside ServiceNow incident descriptions.
 
 Requires: pip install picard[servicenow]  (uses aiohttp)
 """

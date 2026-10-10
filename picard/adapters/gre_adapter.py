@@ -3,9 +3,8 @@
 Crafts GRE-encapsulated packets (RFC 2890) with chunk data as payload,
 using a custom protocol type and optional GRE key for identification.
 
-Data exfil insight: GRE tunnels are common in enterprise networks for
-site-to-site connectivity.  Data hidden in GRE payloads with a custom
-protocol type is invisible to most IDS/IPS that don't inspect GRE.
+Note: GRE tunnels (RFC 2890) are standard enterprise networking
+infrastructure for site-to-site and overlay connectivity.
 
 Requires: elevated privileges for raw sockets.
 """

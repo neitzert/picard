@@ -179,7 +179,7 @@ def put(
         None, "--keyfile", "-k", help="Key file for sub-key derivation."
     ),
     profile: str = typer.Option(
-        None, "--profile", "-p", help="Scatter profile (stealth/resilient/speed/paranoid or custom)."
+        None, "--profile", "-p", help="Scatter profile (quiet/resilient/speed/paranoid or custom)."
     ),
     store_dir: Path = typer.Option(_DEFAULT_STORE, "--store", envvar="PICARD_STORE"),
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),

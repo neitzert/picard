@@ -1,7 +1,7 @@
 """Datadog adapter -- stores chunks as custom events.
 
-Data is smuggled inside Datadog event bodies, blending
-with normal observability traffic.
+Data is embedded inside Datadog event bodies, stored
+alongside normal observability traffic.
 
 Requires: pip install picard[datadog]  (uses aiohttp)
 """
@@ -59,7 +59,7 @@ class DatadogAdapter(Adapter):
         payload = {
             "title": f"PICARD:{chunk_id}",
             "text": encoded_chunk,
-            "tags": ["picard:exfil"],
+            "tags": ["picard:store"],
             "alert_type": "info",
             "source_type_name": "my_apps",
         }

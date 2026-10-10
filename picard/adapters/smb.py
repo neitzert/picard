@@ -3,7 +3,7 @@
 Each chunk becomes a file on a remote SMB share:
     \\{server}\{share}\{manifest_id}\{block}_{chunk}.pchk
 
-Optionally stores data in NTFS alternate data streams (ADS) for stealth.
+Optionally stores data in NTFS alternate data streams (ADS).
 
 Requires: pip install picard[smb]  (smbprotocol)
 """

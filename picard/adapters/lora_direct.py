@@ -1,8 +1,8 @@
 """Direct LoRa radio adapter — stores chunks via raw LoRa modulation.
 
-Not LoRaWAN (the network protocol) — raw LoRa PHY.  A $5 SX1276 module
-on a serial port gives you 10+ km range at low data rates.  No network
-infrastructure, no registration, no logs.  ISM band (915 MHz US, 868 MHz EU).
+Not LoRaWAN (the network protocol) — raw LoRa PHY.  A $5 SX1276 module on a serial port gives you 10+ km range at low data
+rates.  Operates in ISM bands (915 MHz US, 868 MHz EU).  Comply with
+local regulations for maximum EIRP and duty-cycle limits.
 
 Requires: pip install pyserial + a LoRa module (SX1276/SX1262) on UART
 """

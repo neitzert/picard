@@ -1,8 +1,8 @@
 """JWT adapter — chunks hidden in JWT claims.
 
 Embeds chunk data as custom claims in signed JWTs, then stores them
-in an HTTP endpoint (or local cache). Exfiltrated data travels as
-standard bearer tokens that most inspection tools pass through.
+in an HTTP endpoint (or local cache). Chunk data travels as
+standard bearer tokens.
 
 Requires: pip install picard[jwt]  (PyJWT)
 """

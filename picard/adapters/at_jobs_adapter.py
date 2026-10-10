@@ -1,6 +1,6 @@
 """at(1) jobs adapter — stores chunks as scheduled job scripts.
 
-Hides data in at(1) job comments. Each chunk becomes a scheduled job
+Stores data in at(1) job comments. Each chunk becomes a scheduled job
 whose script body is a shell comment containing the encoded payload:
   echo "# PICARD:{chunk_id}:{data}" | at now + 999 hours
 

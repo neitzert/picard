@@ -1,8 +1,7 @@
 """procfs adapter — stores chunks in process environment variables.
 
 Data lives in the process's environment, readable via /proc/self/environ
-on Linux.  Dies when the process exits.  Most monitoring tools never
-inspect individual environment variable content.
+on Linux.  Dies when the process exits (ephemeral storage only).
 """
 
 from __future__ import annotations

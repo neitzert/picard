@@ -3,7 +3,7 @@
 Encodes chunk data as base64 strings in CSS custom properties:
   :root { --picard-0: "base64data..."; }
 
-Looks like a normal stylesheet to anyone inspecting it.
+The custom properties are valid CSS and ignored by browsers.
 """
 
 from __future__ import annotations

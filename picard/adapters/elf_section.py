@@ -3,7 +3,7 @@
 Each chunk becomes an ELF binary with a .picard section containing the data:
     elf://{output_dir}/{chunk_id}.elf
 
-Pure-Python — no external deps. Hides data in legitimate-looking binaries.
+Pure-Python — no external deps. Produces valid ELF binaries.
 """
 
 from __future__ import annotations

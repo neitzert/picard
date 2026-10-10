@@ -3,9 +3,9 @@
 Sends chunk data via HTTP to a storage endpoint reachable only through
 the WireGuard tunnel.  Uses the wg CLI for tunnel management.
 
-Data exfil insight: WireGuard traffic is encrypted and looks like
-ordinary UDP.  Combined with a storage endpoint on the tunnel network,
-data moves out encrypted at the tunnel layer AND at the PICARD layer.
+Note: WireGuard traffic is encrypted and looks like ordinary UDP.
+Combined with a storage endpoint on the tunnel network, chunks are
+encrypted at both the tunnel layer and the PICARD layer.
 
 Requires: pip install picard[wireguard]  (aiohttp, wg CLI)
 """

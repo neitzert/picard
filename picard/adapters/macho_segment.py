@@ -3,7 +3,7 @@
 Each chunk becomes a minimal Mach-O with data in a __PICARD segment:
     macho://{output_dir}/{chunk_id}.macho
 
-Pure-Python — produces a valid 64-bit Mach-O structure. macOS camouflage.
+Pure-Python — produces a valid 64-bit Mach-O binary container.
 """
 
 from __future__ import annotations

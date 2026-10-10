@@ -3,8 +3,8 @@
 Controls the tunnel via the OpenVPN management interface and sends
 chunk data via HTTP to a storage endpoint on the VPN network.
 
-Data exfil insight: OpenVPN traffic on port 443 is indistinguishable
-from HTTPS at the packet level.  Perfect cover for data exfiltration.
+Note: OpenVPN traffic on port 443 is indistinguishable from HTTPS at
+the packet level, providing double-layer encryption for stored chunks.
 
 Requires: pip install picard[openvpn]  (aiohttp)
 """

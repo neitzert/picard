@@ -1,8 +1,8 @@
 """Sysctl adapter — stores chunks in Linux kernel parameters.
 
-Hides data in writable sysctl knobs (e.g. net.picard.*).  The kernel
-parameter namespace is vast; custom keys under a chosen prefix blend
-in with legitimate tuning values.
+Stores data in writable sysctl knobs under a configurable prefix
+(e.g. net.picard.*).  The kernel parameter namespace supports
+custom keys alongside standard tuning values.
 
 Requires: Linux with sysctl write access (root / CAP_SYS_ADMIN)
 """

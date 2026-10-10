@@ -4,10 +4,6 @@ Injects routes with chunk data encoded as extended communities via
 a router API (ExaBGP HTTP, GoBGP gRPC, or FRRouting).  Reading queries
 the RIB for routes with matching community tags.
 
-Data exfil insight: BGP announcements propagate across autonomous
-systems.  A chunk hidden in an extended community rides the global
-routing table.
-
 Requires: pip install picard[bgp]  (aiohttp)
 """
 

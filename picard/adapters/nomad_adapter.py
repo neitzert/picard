@@ -1,7 +1,7 @@
 """HashiCorp Nomad adapter — stores chunks as Nomad Variables.
 
-Hides data in the cluster's variable store alongside legitimate
-application configuration.
+Stores data in the cluster's variable store alongside application
+configuration.
 
 Requires: pip install picard[nomad]  (aiohttp)
 """

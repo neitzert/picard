@@ -2,7 +2,7 @@
 
 NetFlow traffic is ubiquitous in enterprise networks. This adapter
 encodes chunk data into vendor-specific fields in NetFlow v9 data
-records and sends them to a collector. Exfiltrated data blends in
+records and sends them to a collector. Chunk data blends in
 with legitimate network telemetry.
 
 Requires: UDP socket access.

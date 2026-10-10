@@ -3,9 +3,9 @@
 Embeds chunk data as base64 in JavaScript comments within wpad.dat.
 Every browser on the network fetches this file automatically.
 
-Data exfil insight: WPAD is fetched automatically by browsers and OS
-network stacks.  A PAC file with hidden data in comments is a covert
-channel that every machine on the network participates in.
+Note: WPAD is fetched automatically by browsers and OS network stacks.
+A PAC file with embedded chunk data in comments is distributed to
+every machine on the network automatically.
 
 Requires: pip install picard[wpad]  (aiohttp)
 """

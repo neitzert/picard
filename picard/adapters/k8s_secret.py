@@ -1,6 +1,5 @@
 """Kubernetes Secret adapter — stores chunks as K8s Secrets.
 
-The ultimate irony: hiding exfiltrated data in the secrets manager.
 Each chunk becomes a Secret object in the target namespace with the
 chunk data base64-encoded in the data field.
 

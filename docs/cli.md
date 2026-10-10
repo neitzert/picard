@@ -10,7 +10,7 @@ All commands that access stored files accept:
 - `--store PATH` — chunk storage directory (default: `~/.picard/chunks`)
 - `--db PATH` — index database path (default: `~/.picard/index.db`)
 - `--keyfile PATH` — master key file for envelope sealing
-- `--profile NAME` — scatter profile (stealth, resilient, speed, paranoid, or custom)
+- `--profile NAME` — scatter profile (quiet, resilient, speed, paranoid, or custom)
 - `--index-passphrase TEXT` — passphrase for encrypted index database (or set `PICARD_INDEX_PASSPHRASE` env var)
 
 ## Core Commands

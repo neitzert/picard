@@ -1,7 +1,6 @@
 """PagerDuty adapter -- stores chunks as incident notes.
 
-Data hides inside PagerDuty incident bodies and notes,
-making exfiltration look like routine alerting traffic.
+Data is stored inside PagerDuty incident bodies and notes.
 
 Requires: pip install picard[pagerduty]  (uses aiohttp)
 """

@@ -1,6 +1,6 @@
 """Bashrc adapter — stores chunks as shell rc-file comments.
 
-Hides data in .bashrc, .profile, or similar shell startup files.
+Stores data in .bashrc, .profile, or similar shell startup files.
 Each chunk is a comment line:
   # PICARD:{chunk_id}:{encoded_data}
 

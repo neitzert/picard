@@ -1,8 +1,7 @@
-"""SAML adapter — chunks hidden in SAML assertion Attribute values.
+"""SAML adapter — chunks stored in SAML assertion Attribute values.
 
 Embeds chunk data as a custom AttributeStatement value inside a
 signed SAML assertion, then POSTs it to a service provider.
-Data hides inside the identity/auth infrastructure.
 
 Requires: pip install picard[saml]  (lxml)
 """

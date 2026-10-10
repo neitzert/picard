@@ -1,7 +1,7 @@
 """ICMP adapter -- embeds chunks in ICMP echo payloads.
 
-This is a covert-channel adapter: chunks are sent as ICMP echo request
-payloads to a cooperating PICARD cache daemon on the target host.  The
+Chunks are sent as ICMP echo request payloads to a cooperating PICARD
+cache daemon on the target host.  The
 daemon stores inbound payloads and serves them back on request.
 
 Data is ephemeral -- it lasts only as long as the remote cache is running.
@@ -79,7 +79,7 @@ def _parse_picard_payload(payload: bytes) -> tuple[int, int, str, bytes]:
 
 
 class IcmpAdapter(Adapter):
-    """Covert channel: embed chunks in ICMP echo payloads."""
+    """Embed chunks in ICMP echo payloads."""
 
     def __init__(
         self,

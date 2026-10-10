@@ -1,4 +1,4 @@
-"""IRC adapter — covert channel via PRIVMSG to an IRC channel.
+"""IRC adapter — stores chunks via PRIVMSG to an IRC channel.
 
 Chunks are sent as PRIVMSG lines to a channel where a cooperating
 daemon collects them.  Reads and deletes use a simple request/response

@@ -3,7 +3,7 @@
 Each chunk is encoded into the hardware address padding of a
 gratuitous ARP packet and cached locally for read-back.  This is
 a steganographic channel: extremely small capacity, completely
-ephemeral, but very hard to detect or block on a LAN.
+ephemeral.
 
 Requires: pip install picard[arp]  (scapy)
 """

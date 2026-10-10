@@ -1,7 +1,6 @@
 """Elasticsearch adapter — stores chunks as search documents.
 
-Hides data in the search/observability infrastructure. Nobody inspects
-every document in an ES index.
+Stores data in the search/observability infrastructure as indexed documents.
 
 Requires: pip install picard[elasticsearch]  (aiohttp)
 """

@@ -235,7 +235,7 @@ block_size = 65536
 
 # Scatter profiles — named presets for adapter selection and RAID level.
 #
-# [scatter.stealth]
+# [scatter.quiet]
 # description = "Low-visibility scatter across unconventional protocols"
 # raid_level = "raid1"
 # mirror_count = 2

@@ -1,11 +1,11 @@
 """Named pipe adapter — stores chunks via OS named pipes / FIFOs.
 
-On Unix, creates a FIFO per chunk for IPC exfiltration.  On Windows,
+On Unix, creates a FIFO per chunk for IPC transfer.  On Windows,
 writes to regular files in the pipe directory (no mkfifo).  A local
 cache supplements read-back since pipe data is consumed on read.
 
 The pipe write crosses process boundaries, making this useful for
-IPC-based exfiltration between processes.
+IPC-based data transfer between processes.
 """
 
 from __future__ import annotations

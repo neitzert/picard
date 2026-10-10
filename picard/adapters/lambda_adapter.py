@@ -2,7 +2,7 @@
 
 Chunks are written and read via Lambda invocations.  The Lambda function
 acts as a serverless KV store — data lives in the container's /tmp or
-in the function's environment.  Ephemeral but very hard to detect.
+in the function's environment.  Ephemeral storage only.
 
 Requires: pip install picard[lambda]  (aiohttp)
 """

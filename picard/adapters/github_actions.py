@@ -1,7 +1,6 @@
 """GitHub Actions adapter — stores chunks as workflow artifacts.
 
-Hides data in CI/CD build artifacts with 90-day default retention.
-Looks like normal build output to anyone reviewing the repo.
+Stores data as CI/CD build artifacts with 90-day default retention.
 
 Requires: pip install picard[github-actions]  (aiohttp)
 """

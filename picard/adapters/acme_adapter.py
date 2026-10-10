@@ -24,7 +24,7 @@ class AcmeAdapter(Adapter):
 
     def __init__(
         self,
-        directory_url: str = "https://acme-v02.api.letsencrypt.org/directory",
+        directory_url: str = "https://acme-staging-v02.api.letsencrypt.org/directory",
         account_key_pem: str = "",
         contact_email: str = "",
         *,

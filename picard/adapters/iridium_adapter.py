@@ -3,7 +3,7 @@
 Iridium Short Burst Data works EVERYWHERE on Earth — open ocean,
 polar regions, deserts, airborne.  66 satellites provide continuous
 global coverage.  340 bytes per message, but it's the ultimate
-air-gapped exfil channel.
+air-gapped storage channel.
 
 Requires: Iridium SBD modem or gateway API account
 """

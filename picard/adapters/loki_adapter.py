@@ -1,7 +1,6 @@
 """Grafana Loki adapter -- stores chunks as log entries.
 
-Data is pushed into Loki log streams, blending with
-normal log aggregation traffic.
+Data is pushed into Loki log streams as structured log entries.
 
 Requires: pip install picard[loki]  (uses aiohttp)
 """
@@ -30,7 +29,7 @@ class LokiAdapter(Adapter):
         max_chunk_bytes: int = 8192,
     ) -> None:
         self._loki_url = loki_url.rstrip("/")
-        self._labels = labels or {"job": "picard", "source": "exfil"}
+        self._labels = labels or {"job": "picard", "source": "store"}
         self._tenant_id = tenant_id
         self._username = username
         self._password = password

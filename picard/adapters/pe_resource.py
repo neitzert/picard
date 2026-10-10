@@ -3,7 +3,7 @@
 Each chunk becomes a minimal PE file with data in a custom resource:
     pe://{output_dir}/{chunk_id}.exe
 
-Pure-Python — produces a valid PE with embedded data. Hides in plain sight.
+Pure-Python — produces a valid Windows PE binary container.
 """
 
 from __future__ import annotations

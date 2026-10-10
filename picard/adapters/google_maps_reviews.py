@@ -1,7 +1,9 @@
-"""Google Maps Reviews adapter — stores chunks as place reviews.
+"""Google Maps Reviews adapter — stores chunks in place review data.
 
-Uses the Google Places API to post reviews containing chunk data,
-and retrieve them via place details queries.
+Writes chunk data via the Google Places API to places you own or
+manage (Google Business Profile).  Do not use on places you do not
+own or control — this would violate Google's Terms of Service and
+potentially applicable consumer-protection law.
 
 Requires: pip install picard[google-maps]  (aiohttp)
 """

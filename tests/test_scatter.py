@@ -158,9 +158,9 @@ class TestBuildFromProfile:
 
 
 class TestResolveProfile:
-    def test_builtin_stealth(self):
-        p = resolve_profile("stealth")
-        assert p.name == "stealth"
+    def test_builtin_quiet(self):
+        p = resolve_profile("quiet")
+        assert p.name == "quiet"
         assert p.raid_level == "raid1"
 
     def test_builtin_resilient(self):
@@ -176,8 +176,8 @@ class TestResolveProfile:
         assert p.raid_level == "raid10"
 
     def test_custom_overrides_builtin(self):
-        custom = ScatterProfile(name="stealth", raid_level="raid5", description="custom stealth")
-        p = resolve_profile("stealth", [custom])
+        custom = ScatterProfile(name="quiet", raid_level="raid5", description="custom quiet")
+        p = resolve_profile("quiet", [custom])
         assert p.raid_level == "raid5"
 
     def test_unknown_raises(self):
@@ -189,7 +189,7 @@ class TestListProfiles:
     def test_builtins_present(self):
         profiles = list_profiles()
         names = {p.name for p in profiles}
-        assert "stealth" in names
+        assert "quiet" in names
         assert "resilient" in names
         assert "speed" in names
         assert "paranoid" in names
@@ -201,27 +201,27 @@ class TestListProfiles:
         assert "custom-1" in names
 
     def test_custom_overrides(self):
-        custom = ScatterProfile(name="stealth", raid_level="raid0", description="fast stealth")
+        custom = ScatterProfile(name="quiet", raid_level="raid0", description="fast quiet")
         profiles = list_profiles([custom])
-        stealth = next(p for p in profiles if p.name == "stealth")
-        assert stealth.raid_level == "raid0"
+        quiet = next(p for p in profiles if p.name == "quiet")
+        assert quiet.raid_level == "raid0"
 
 
 @pytest.mark.asyncio
 class TestScatterIntegration:
-    async def test_stealth_profile_round_trip(self):
+    async def test_quiet_profile_round_trip(self):
         from picard.index import Index
         from picard.orchestrator import Orchestrator
 
         adapters = [_TaggedAdapter(f"steg-{i}", {"type": "steganographic"}) for i in range(3)]
-        profile = resolve_profile("stealth")
+        profile = resolve_profile("quiet")
         wrapped = build_from_profile(profile, adapters)
 
         index = Index(":memory:")
         orch = Orchestrator(wrapped, index, block_size=64)
-        data = b"stealth scatter test " * 10
-        await orch.put("stealth.bin", data, "pass")
-        recovered = await orch.get("stealth.bin", "pass")
+        data = b"quiet scatter test " * 10
+        await orch.put("quiet.bin", data, "pass")
+        recovered = await orch.get("quiet.bin", "pass")
         assert recovered == data
 
     async def test_speed_profile_round_trip(self):

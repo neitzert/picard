@@ -2,7 +2,11 @@
 
 Broadcasts chunk data as vendor-specific Information Elements in WiFi
 beacon frames.  Every WiFi-capable device within radio range receives
-the data — the ultimate broadcast exfiltration channel.
+the data — a broadcast storage channel.
+
+Note: Transmitting beacon frames requires an RF-capable interface in
+monitor/injection mode.  Comply with local radio regulations (FCC Part 15,
+ETSI EN 300 328, etc.) for your jurisdiction.
 
 Requires: pip install picard[wifi]  (scapy), monitor-mode wireless interface
 """

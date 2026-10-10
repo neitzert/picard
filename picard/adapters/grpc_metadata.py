@@ -1,7 +1,7 @@
 """gRPC metadata adapter — stores chunks via a cooperating gRPC-JSON gateway.
 
 Chunk data is passed in both the request body and the ``x-pchk-data``
-gRPC metadata header, hiding payload in the transport layer.  The
+gRPC metadata header.  The
 cooperating service exposes JSON-transcoded gRPC endpoints so no proto
 compilation is needed on the client side.
 

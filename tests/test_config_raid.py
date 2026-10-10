@@ -74,7 +74,7 @@ class TestScatterConfig:
         cfg = load_config(_write_config(tmp_path, """\
 [general]
 
-[scatter.stealth]
+[scatter.quiet]
 description = "Low visibility"
 raid_level = "raid1"
 mirror_count = 3
@@ -88,11 +88,11 @@ adapter_names = ["fs-a", "fs-b"]
 min_adapters = 2
 """))
         assert len(cfg.scatter_profiles) == 2
-        stealth = next(p for p in cfg.scatter_profiles if p.name == "stealth")
-        assert stealth.raid_level == "raid1"
-        assert stealth.mirror_count == 3
-        assert stealth.adapter_tags == ["steganographic"]
-        assert stealth.min_adapters == 4
+        quiet = next(p for p in cfg.scatter_profiles if p.name == "quiet")
+        assert quiet.raid_level == "raid1"
+        assert quiet.mirror_count == 3
+        assert quiet.adapter_tags == ["steganographic"]
+        assert quiet.min_adapters == 4
 
         speed = next(p for p in cfg.scatter_profiles if p.name == "speed")
         assert speed.raid_level == "raid0"

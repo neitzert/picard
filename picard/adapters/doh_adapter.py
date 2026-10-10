@@ -3,10 +3,8 @@
 Writes via DNS UPDATE encoded as application/dns-message over HTTPS.
 Reads via DoH GET with base64url-encoded DNS queries.
 
-Data exfil insight: DoH traffic is indistinguishable from normal HTTPS
-browsing.  It goes to well-known resolvers (Cloudflare, Google) that
-no firewall can block without breaking the internet.  This is the
-ultimate covert channel.
+Note: DoH traffic is encrypted HTTPS to well-known resolvers
+(Cloudflare, Google), providing standard DNS transport privacy.
 
 Requires: pip install picard[doh]  (aiohttp, dnspython)
 """

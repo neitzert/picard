@@ -1,8 +1,7 @@
 """Git Config adapter — stores chunks in .gitconfig custom sections.
 
-Hides data in git configuration custom sections. Each chunk becomes a
-key-value pair under a configurable section (default ``[picard]``),
-invisible to most tooling that only inspects standard git config keys.
+Stores data in git configuration custom sections. Each chunk becomes a
+key-value pair under a configurable section (default ``[picard]``).
 
 Requires: git CLI available on PATH.
 """

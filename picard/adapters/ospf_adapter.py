@@ -3,8 +3,8 @@
 Injects Opaque LSAs with chunk data into the OSPF LSDB via a router
 management API (FRRouting REST, BIRD, or Quagga).
 
-Data exfil insight: Opaque LSAs flood across the entire OSPF area.
-Every router in the area stores a copy of your chunk in its LSDB.
+Note: Opaque LSAs flood across the entire OSPF area.
+Every router in the area stores a copy of the chunk in its LSDB.
 
 Requires: pip install picard[ospf]  (aiohttp)
 """

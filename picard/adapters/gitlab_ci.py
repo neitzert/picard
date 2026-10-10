@@ -1,7 +1,6 @@
 """GitLab CI adapter — stores chunks as job artifacts.
 
-Hides data in CI pipeline build artifacts. Looks like normal
-build output in the project's CI/CD section.
+Stores data as CI pipeline build artifacts.
 
 Requires: pip install picard[gitlab-ci]  (aiohttp)
 """

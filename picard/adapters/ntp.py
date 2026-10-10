@@ -1,4 +1,4 @@
-"""NTP extension field adapter — covert channel via NTP packets.
+"""NTP extension field adapter — stores chunks via NTP packets.
 
 Embeds chunk data in RFC 7822 extension fields of NTP packets.
 Requires a cooperating NTP server that understands the PICARD

@@ -1,6 +1,6 @@
 """Splunk HEC adapter -- stores chunks as events via HTTP Event Collector.
 
-Data is smuggled through Splunk's HEC endpoint, appearing
+Data is stored through Splunk's HEC endpoint, appearing
 as routine log ingestion traffic.
 
 Requires: pip install picard[splunk]  (uses aiohttp)

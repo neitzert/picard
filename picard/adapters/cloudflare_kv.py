@@ -1,8 +1,7 @@
 """Cloudflare Workers KV adapter — stores chunks in edge KV namespaces.
 
 Data lives at 200+ Cloudflare edge locations worldwide, reachable via
-the REST API.  Hard to block since it shares IPs with millions of
-legitimate sites.
+the REST API.
 
 Requires: pip install picard[cloudflare]  (aiohttp)
 """

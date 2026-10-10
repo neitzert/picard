@@ -4,8 +4,8 @@ Crafts VXLAN packets (RFC 7348) with chunk data as the inner payload,
 sent as UDP datagrams to a remote VTEP.  Reads maintain a local cache
 populated by a listener on the VXLAN port.
 
-Data exfil insight: VXLAN is ubiquitous in cloud/DC networks.  A custom
-VNI with data payloads looks like normal overlay traffic to most monitoring.
+Note: VXLAN is ubiquitous in cloud/DC networks.  A custom VNI with
+chunk payloads blends with normal overlay traffic.
 
 Requires: pip install picard[vxlan]  (no external deps, uses stdlib socket)
 """
