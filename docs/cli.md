@@ -298,6 +298,39 @@ picard decrypt-index
 picard decrypt-index --db /path/to/index.db
 ```
 
+### tor-check
+
+Verify Tor connectivity and SOCKS5 proxy status.
+
+```bash
+picard tor-check
+```
+
+### tor-serve
+
+Start a Tor hidden service exposing the PICARD transport endpoint.
+
+```bash
+picard tor-serve
+picard tor-serve --port 8473
+```
+
+### tor-peer
+
+Connect to a remote PICARD instance via a Tor hidden service.
+
+```bash
+picard tor-peer <onion-address>
+```
+
+### tor-mount
+
+Mount a remote PICARD instance over Tor as a FUSE filesystem.
+
+```bash
+picard tor-mount <onion-address> /mnt/remote-picard
+```
+
 ## JSON Output
 
 Commands with `--json` produce structured output suitable for piping:
