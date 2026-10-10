@@ -331,6 +331,10 @@ class Orchestrator:
             return self._index.list_children(path)
         return self._index.list_paths()
 
+    async def find(self, prefix: str) -> list[str]:
+        """Find paths matching a prefix."""
+        return self._index.list_paths_with_prefix(prefix)
+
     async def rm(self, path: str) -> bool:
         """Delete a file's chunks from adapters and its manifest from the index."""
         manifest = self._index.get_manifest_by_path(path)

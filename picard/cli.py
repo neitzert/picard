@@ -823,7 +823,7 @@ def find(
     with _handle_errors():
         orch = _make_orchestrator(store_dir, db_path)
         if pattern:
-            paths = orch._index.list_paths_with_prefix(pattern)
+            paths = asyncio.run(orch.find(pattern))
         else:
             paths = asyncio.run(orch.ls())
         for p in paths:
