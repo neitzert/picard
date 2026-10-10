@@ -103,3 +103,62 @@ class TestFsck:
         result = _run(["fsck", "--no-digests"], store, db)
         assert result.exit_code == 0
         assert "1 manifests" in result.output
+
+
+class TestErrorHandling:
+    """CLI commands produce clean error messages, not tracebacks."""
+
+    def test_get_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["get", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_info_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["info", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_verify_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["verify", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_cp_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["cp", "/nonexistent", "/dst"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_mv_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["mv", "/nonexistent", "/dst"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_head_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["head", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_tail_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["tail", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_scatter_report_missing_file(self, tmp_picard):
+        store, db = tmp_picard
+        result = _run(["scatter-report", "/nonexistent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output
+
+    def test_rm_nonempty_dir(self, tmp_picard):
+        store, db = tmp_picard
+        _run(["mkdir", "-p", "/parent/child"], store, db)
+        result = _run(["rm", "/parent"], store, db)
+        assert result.exit_code == 1
+        assert "Traceback" not in result.output

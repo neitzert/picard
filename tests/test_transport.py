@@ -1,10 +1,15 @@
 """Tests for the transport API."""
 
+import hashlib
+import hmac
+import json
+import time
+
 import pytest
 from fastapi.testclient import TestClient
 
 from picard.adapters.memory import MemoryAdapter
-from picard.transport import _RateLimiter, configure, transport_app
+from picard.transport import _HMAC_MAX_AGE, _RateLimiter, configure, transport_app
 
 
 @pytest.fixture
@@ -130,3 +135,75 @@ class TestRateLimiter:
         import time
         time.sleep(0.05)
         assert rl.allow("1.2.3.4")
+
+
+class TestTransportHMACTimestampExpiry:
+    """The transport rejects requests whose HMAC timestamp is expired.
+
+    Note: the transport uses timestamp-based HMAC validation but has no
+    nonce-tracking replay protection.  A validly signed request can be
+    replayed within the ``_HMAC_MAX_AGE`` window.  These tests verify
+    the expiry boundary.
+    """
+
+    def _sign(self, secret: str, path: str, body: bytes, timestamp: str) -> str:
+        msg = path.encode() + b"\n" + timestamp.encode() + b"\n" + body
+        return hmac.new(secret.encode(), msg, hashlib.sha256).hexdigest()
+
+    def test_valid_timestamp_accepted(self):
+        secret = "test-hmac-secret"
+        adapter = MemoryAdapter()
+        configure({"memory": adapter}, secret=secret)
+        client = TestClient(transport_app)
+
+        path = "/transport/v1/health"
+        ts = str(time.time())
+        sig = self._sign(secret, path, b"", ts)
+
+        resp = client.get(path, headers={
+            "x-signature": sig,
+            "x-timestamp": ts,
+        })
+        assert resp.status_code == 200
+        configure({})
+
+    def test_expired_timestamp_rejected(self):
+        secret = "test-hmac-secret"
+        adapter = MemoryAdapter()
+        configure({"memory": adapter}, secret=secret)
+        client = TestClient(transport_app)
+
+        path = "/transport/v1/health"
+        # Timestamp well beyond the max-age window.
+        expired_ts = str(time.time() - _HMAC_MAX_AGE - 60)
+        sig = self._sign(secret, path, b"", expired_ts)
+
+        resp = client.get(path, headers={
+            "x-signature": sig,
+            "x-timestamp": expired_ts,
+        })
+        assert resp.status_code == 403
+        configure({})
+
+    def test_signed_write_with_valid_timestamp(self):
+        secret = "write-secret"
+        adapter = MemoryAdapter()
+        configure({"memory": adapter}, secret=secret)
+        client = TestClient(transport_app)
+
+        path = "/transport/v1/write_chunk"
+        body = json.dumps({
+            "adapter": "memory",
+            "data": "PCHK:1:hmactest:0:0:1:dGVzdA==",
+        }).encode()
+        ts = str(time.time())
+        sig = self._sign(secret, path, body, ts)
+
+        resp = client.post(path, content=body, headers={
+            "content-type": "application/json",
+            "x-signature": sig,
+            "x-timestamp": ts,
+        })
+        assert resp.status_code == 200
+        assert resp.json()["adapter"] == "memory"
+        configure({})

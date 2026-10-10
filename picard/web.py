@@ -473,7 +473,10 @@ async def fs_mkdir(body: dict):
 async def fs_rm(path: str):
     if _orch is None:
         raise HTTPException(503, "orchestrator not initialized")
-    result = await _orch.rm(path)
+    try:
+        result = await _orch.rm(path)
+    except OSError as e:
+        raise HTTPException(409, str(e))
     return {"deleted": result, "path": path}
 
 
@@ -481,7 +484,7 @@ async def fs_rm(path: str):
 async def fs_write(file: UploadFile = File(...), path: str = Form("/")):
     if _orch is None:
         raise HTTPException(503, "orchestrator not initialized")
-    passphrase = os.environ.get("PICARD_PASSPHRASE") or os.environ.get("PICARD_INDEX_PASSPHRASE")
+    passphrase = os.environ.get("PICARD_PASSPHRASE")
     if not passphrase:
         raise HTTPException(500, "PICARD_PASSPHRASE env var not set")
     data = await file.read(_MAX_UPLOAD_BYTES + 1)

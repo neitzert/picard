@@ -128,6 +128,11 @@ class TestFsRm:
         assert resp.status_code == 200
         assert resp.json()["deleted"] is True
 
+    def test_rm_nonempty_dir_returns_409(self, client, orch):
+        orch.rm.side_effect = OSError("directory not empty: /parent")
+        resp = client.delete("/api/fs/rm?path=/parent")
+        assert resp.status_code == 409
+
 
 class TestPeers:
     def test_list_peers_empty(self, client, index):

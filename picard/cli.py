@@ -11,6 +11,7 @@ import asyncio
 import json as json_mod
 import os
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 import typer
@@ -39,6 +40,21 @@ err_console = Console(stderr=True)
 
 _DEFAULT_STORE = Path.home() / ".picard" / "chunks"
 _DEFAULT_DB = Path.home() / ".picard" / "index.db"
+
+
+@contextmanager
+def _handle_errors():
+    """Catch common orchestrator exceptions and present clean CLI errors."""
+    try:
+        yield
+    except typer.Exit:
+        raise
+    except (FileNotFoundError, OSError, ValueError, LookupError, IndexError) as e:
+        err_console.print(f"[red]error:[/red] {e}")
+        raise typer.Exit(1)
+    except PermissionError as e:
+        err_console.print(f"[red]error:[/red] permission denied: {e}")
+        raise typer.Exit(1)
 
 
 def _get_passphrase() -> str:
@@ -154,31 +170,32 @@ def put(
     if not file.is_file():
         typer.echo(f"not a file: {file}", err=True)
         raise typer.Exit(1)
-    vpath = virtual_path or file.name
-    pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp, profile_name=profile)
-    file_size = file.stat().st_size
-    block_size = orch._block_size
+    with _handle_errors():
+        vpath = virtual_path or file.name
+        pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp, profile_name=profile)
+        file_size = file.stat().st_size
+        block_size = orch._block_size
 
-    async def _do_put():
-        if file_size > block_size:
-            async def _file_stream():
-                with open(file, "rb") as fh:
-                    while True:
-                        chunk = fh.read(block_size)
-                        if not chunk:
-                            break
-                        yield chunk
-            return await orch.put_stream(vpath, _file_stream(), pp, size_hint=file_size)
-        return await orch.put(vpath, file.read_bytes(), pp)
+        async def _do_put():
+            if file_size > block_size:
+                async def _file_stream():
+                    with open(file, "rb") as fh:
+                        while True:
+                            chunk = fh.read(block_size)
+                            if not chunk:
+                                break
+                            yield chunk
+                return await orch.put_stream(vpath, _file_stream(), pp, size_hint=file_size)
+            return await orch.put(vpath, file.read_bytes(), pp)
 
-    with _spinner("Encrypting and scattering...") as progress:
-        progress.add_task("Encrypting and scattering...", total=None)
-        manifest = asyncio.run(_do_put())
-    console.print(
-        f"stored {vpath}  ({manifest.total_blocks} blocks, "
-        f"{manifest.total_chunks} chunks, manifest={manifest.manifest_id})"
-    )
+        with _spinner("Encrypting and scattering...") as progress:
+            progress.add_task("Encrypting and scattering...", total=None)
+            manifest = asyncio.run(_do_put())
+        console.print(
+            f"stored {vpath}  ({manifest.total_blocks} blocks, "
+            f"{manifest.total_chunks} chunks, manifest={manifest.manifest_id})"
+        )
 
 
 @app.command()
@@ -194,16 +211,17 @@ def get(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Retrieve and decrypt a file."""
-    pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    with _spinner("Fetching and decrypting...") as progress:
-        progress.add_task("Fetching and decrypting...", total=None)
-        data = asyncio.run(orch.get(virtual_path, pp))
-    if output:
-        output.write_bytes(data)
-        console.print(f"written to {output}")
-    else:
-        sys.stdout.buffer.write(data)
+    with _handle_errors():
+        pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+        with _spinner("Fetching and decrypting...") as progress:
+            progress.add_task("Fetching and decrypting...", total=None)
+            data = asyncio.run(orch.get(virtual_path, pp))
+        if output:
+            output.write_bytes(data)
+            console.print(f"written to {output}")
+        else:
+            sys.stdout.buffer.write(data)
 
 
 @app.command(name="ls")
@@ -257,13 +275,14 @@ def rm(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Delete a file's chunks and index entry."""
-    orch = _make_orchestrator(store_dir, db_path)
-    removed = asyncio.run(orch.rm(virtual_path))
-    if removed:
-        typer.echo(f"removed {virtual_path}")
-    else:
-        typer.echo(f"not found: {virtual_path}", err=True)
-        raise typer.Exit(1)
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        removed = asyncio.run(orch.rm(virtual_path))
+        if removed:
+            typer.echo(f"removed {virtual_path}")
+        else:
+            typer.echo(f"not found: {virtual_path}", err=True)
+            raise typer.Exit(1)
 
 
 @app.command()
@@ -274,26 +293,27 @@ def info(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show detailed info about a stored file."""
-    orch = _make_orchestrator(store_dir, db_path)
-    result = asyncio.run(orch.info(virtual_path))
-    if as_json:
-        typer.echo(json_mod.dumps(result, indent=2))
-        return
-    console.print(f"[dim]Path:[/dim]           {result['path']}")
-    console.print(f"[dim]Manifest ID:[/dim]    {result['manifest_id']}")
-    console.print(f"[dim]Original size:[/dim]  {result['original_size']} bytes")
-    console.print(f"[dim]Block size:[/dim]     {result['block_size']} bytes")
-    console.print(f"[dim]Blocks:[/dim]         {result['total_blocks']}")
-    console.print(f"[dim]Chunks:[/dim]         {result['total_chunks']}")
-    console.print(f"[dim]Stored bytes:[/dim]   {result['total_chunk_bytes']}")
-    console.print(f"[dim]Created:[/dim]        {result['created_at']}")
-    if result.get("plaintext_hash"):
-        console.print(f"[dim]SHA-256:[/dim]        {result['plaintext_hash']}")
-    console.print(f"[dim]All stored:[/dim]     {result['all_stored']}")
-    if result["adapter_distribution"]:
-        console.print("[dim]Adapters:[/dim]")
-        for name, count in result["adapter_distribution"].items():
-            console.print(f"  {name}: {count} chunks")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        result = asyncio.run(orch.info(virtual_path))
+        if as_json:
+            typer.echo(json_mod.dumps(result, indent=2))
+            return
+        console.print(f"[dim]Path:[/dim]           {result['path']}")
+        console.print(f"[dim]Manifest ID:[/dim]    {result['manifest_id']}")
+        console.print(f"[dim]Original size:[/dim]  {result['original_size']} bytes")
+        console.print(f"[dim]Block size:[/dim]     {result['block_size']} bytes")
+        console.print(f"[dim]Blocks:[/dim]         {result['total_blocks']}")
+        console.print(f"[dim]Chunks:[/dim]         {result['total_chunks']}")
+        console.print(f"[dim]Stored bytes:[/dim]   {result['total_chunk_bytes']}")
+        console.print(f"[dim]Created:[/dim]        {result['created_at']}")
+        if result.get("plaintext_hash"):
+            console.print(f"[dim]SHA-256:[/dim]        {result['plaintext_hash']}")
+        console.print(f"[dim]All stored:[/dim]     {result['all_stored']}")
+        if result["adapter_distribution"]:
+            console.print("[dim]Adapters:[/dim]")
+            for name, count in result["adapter_distribution"].items():
+                console.print(f"  {name}: {count} chunks")
 
 
 @app.command()
@@ -306,26 +326,27 @@ def verify(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Verify integrity of all chunks for a stored file."""
-    pp = None
-    if keyfile:
-        pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    with _spinner("Verifying chunks...") as progress:
-        progress.add_task("Verifying chunks...", total=None)
-        report = asyncio.run(orch.verify(virtual_path))
-    typer.echo(f"Verify: {report['path']}")
-    typer.echo(f"  Blocks: {report['total_blocks']}, Chunks: {report['total_chunks']}")
-    typer.echo(f"  Verified: {report['verified_chunks']}")
-    if report["missing_chunks"]:
-        typer.echo(f"  MISSING:  {report['missing_chunks']}", err=True)
-    if report["corrupt_blocks"]:
-        typer.echo(f"  CORRUPT:  {report['corrupt_blocks']}", err=True)
-    for err in report["errors"]:
-        typer.echo(f"  ! {err}", err=True)
-    if report["ok"]:
-        console.print("  [bold green]OK[/bold green]")
-    else:
-        raise typer.Exit(1)
+    with _handle_errors():
+        pp = None
+        if keyfile:
+            pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+        with _spinner("Verifying chunks...") as progress:
+            progress.add_task("Verifying chunks...", total=None)
+            report = asyncio.run(orch.verify(virtual_path))
+        typer.echo(f"Verify: {report['path']}")
+        typer.echo(f"  Blocks: {report['total_blocks']}, Chunks: {report['total_chunks']}")
+        typer.echo(f"  Verified: {report['verified_chunks']}")
+        if report["missing_chunks"]:
+            typer.echo(f"  MISSING:  {report['missing_chunks']}", err=True)
+        if report["corrupt_blocks"]:
+            typer.echo(f"  CORRUPT:  {report['corrupt_blocks']}", err=True)
+        for err in report["errors"]:
+            typer.echo(f"  ! {err}", err=True)
+        if report["ok"]:
+            console.print("  [bold green]OK[/bold green]")
+        else:
+            raise typer.Exit(1)
 
 
 @app.command(name="export")
@@ -341,21 +362,22 @@ def export_cmd(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Export an encrypted manifest bundle for sharing."""
-    from picard.bundle import export_bundle
+    with _handle_errors():
+        from picard.bundle import export_bundle
 
-    pp = _get_passphrase()
-    mk = load_master_key(passphrase=pp, keyfile=keyfile)
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    manifest = orch._index.get_manifest_by_path(virtual_path)
-    if manifest is None:
-        typer.echo(f"not found: {virtual_path}", err=True)
-        raise typer.Exit(1)
-    bundle_str = export_bundle(manifest, mk, key_ring=orch._key_ring)
-    if output:
-        output.write_text(bundle_str, encoding="utf-8")
-        typer.echo(f"bundle written to {output}")
-    else:
-        typer.echo(bundle_str)
+        pp = _get_passphrase()
+        mk = load_master_key(passphrase=pp, keyfile=keyfile)
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+        manifest = orch._index.get_manifest_by_path(virtual_path)
+        if manifest is None:
+            typer.echo(f"not found: {virtual_path}", err=True)
+            raise typer.Exit(1)
+        bundle_str = export_bundle(manifest, mk, key_ring=orch._key_ring)
+        if output:
+            output.write_text(bundle_str, encoding="utf-8")
+            typer.echo(f"bundle written to {output}")
+        else:
+            typer.echo(bundle_str)
 
 
 @app.command(name="import")
@@ -368,21 +390,22 @@ def import_cmd(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Import a manifest bundle from another PICARD instance."""
-    from picard.bundle import import_bundle
+    with _handle_errors():
+        from picard.bundle import import_bundle
 
-    bundle_str = bundle_file.read_text(encoding="utf-8")
-    pp = _get_passphrase()
-    manifest, adapter_hints, key_versions = import_bundle(
-        bundle_str, passphrase=pp, keyfile=keyfile
-    )
-    orch = _make_orchestrator(store_dir, db_path)
-    orch._index.save_manifest(manifest)
-    typer.echo(f"imported {manifest.path} (manifest={manifest.manifest_id})")
-    typer.echo(f"  {manifest.total_blocks} blocks, {manifest.total_chunks} chunks")
-    if adapter_hints:
-        typer.echo("  adapters needed:")
-        for name, count in adapter_hints.items():
-            typer.echo(f"    {name}: {count} chunks")
+        bundle_str = bundle_file.read_text(encoding="utf-8")
+        pp = _get_passphrase()
+        manifest, adapter_hints, key_versions = import_bundle(
+            bundle_str, passphrase=pp, keyfile=keyfile
+        )
+        orch = _make_orchestrator(store_dir, db_path)
+        orch._index.save_manifest(manifest)
+        typer.echo(f"imported {manifest.path} (manifest={manifest.manifest_id})")
+        typer.echo(f"  {manifest.total_blocks} blocks, {manifest.total_chunks} chunks")
+        if adapter_hints:
+            typer.echo("  adapters needed:")
+            for name, count in adapter_hints.items():
+                typer.echo(f"    {name}: {count} chunks")
 
 
 @app.command()
@@ -393,9 +416,10 @@ def cp(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Copy a virtual file to a new path."""
-    orch = _make_orchestrator(store_dir, db_path)
-    asyncio.run(orch.cp(src, dst))
-    typer.echo(f"copied {src} -> {dst}")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        asyncio.run(orch.cp(src, dst))
+        typer.echo(f"copied {src} -> {dst}")
 
 
 @app.command()
@@ -406,9 +430,10 @@ def mv(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Rename a virtual file."""
-    orch = _make_orchestrator(store_dir, db_path)
-    asyncio.run(orch.mv(src, dst))
-    typer.echo(f"moved {src} -> {dst}")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        asyncio.run(orch.mv(src, dst))
+        typer.echo(f"moved {src} -> {dst}")
 
 
 @app.command()
@@ -418,23 +443,24 @@ def du(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show storage usage summary."""
-    orch = _make_orchestrator(store_dir, db_path)
-    result = asyncio.run(orch.du())
-    if as_json:
-        typer.echo(json_mod.dumps(result, indent=2))
-        return
-    typer.echo(f"Files:   {result['total_files']}")
-    typer.echo(f"Chunks:  {result['total_chunks']}")
-    typer.echo(f"Bytes:   {result['total_bytes']}")
-    if result["adapters"]:
-        typer.echo("Per adapter:")
-        for name, stats in result["adapters"].items():
-            line = f"  {name}: {stats['chunk_count']} chunks, {stats['bytes']} bytes"
-            cap = stats.get("capacity", {})
-            if cap.get("free_bytes") is not None:
-                free_mb = cap["free_bytes"] / (1024 * 1024)
-                line += f" (free: {free_mb:.0f} MiB)"
-            typer.echo(line)
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        result = asyncio.run(orch.du())
+        if as_json:
+            typer.echo(json_mod.dumps(result, indent=2))
+            return
+        typer.echo(f"Files:   {result['total_files']}")
+        typer.echo(f"Chunks:  {result['total_chunks']}")
+        typer.echo(f"Bytes:   {result['total_bytes']}")
+        if result["adapters"]:
+            typer.echo("Per adapter:")
+            for name, stats in result["adapters"].items():
+                line = f"  {name}: {stats['chunk_count']} chunks, {stats['bytes']} bytes"
+                cap = stats.get("capacity", {})
+                if cap.get("free_bytes") is not None:
+                    free_mb = cap["free_bytes"] / (1024 * 1024)
+                    line += f" (free: {free_mb:.0f} MiB)"
+                typer.echo(line)
 
 
 @app.command()
@@ -611,24 +637,25 @@ def scatter_report(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show the storage surface map for a stored file."""
-    orch = _make_orchestrator(store_dir, db_path)
-    result = asyncio.run(orch.info(virtual_path))
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        result = asyncio.run(orch.info(virtual_path))
 
-    typer.echo(f"\nScatter Report: {result['path']}")
-    typer.echo(f"{'─'*60}")
-    typer.echo(f"  Original size:  {result['original_size']} bytes")
-    typer.echo(f"  Blocks:         {result['total_blocks']}")
-    typer.echo(f"  Total chunks:   {result['total_chunks']}")
-    typer.echo(f"  Stored bytes:   {result['total_chunk_bytes']}")
-    typer.echo(f"  SHA-256:        {result['plaintext_hash']}")
+        typer.echo(f"\nScatter Report: {result['path']}")
+        typer.echo(f"{'─'*60}")
+        typer.echo(f"  Original size:  {result['original_size']} bytes")
+        typer.echo(f"  Blocks:         {result['total_blocks']}")
+        typer.echo(f"  Total chunks:   {result['total_chunks']}")
+        typer.echo(f"  Stored bytes:   {result['total_chunk_bytes']}")
+        typer.echo(f"  SHA-256:        {result['plaintext_hash']}")
 
-    dist = result["adapter_distribution"]
-    typer.echo(f"\n  Protocols touched ({len(dist)}):")
-    for name, count in sorted(dist.items()):
-        typer.echo(f"    {name:30s}  {count} chunks")
+        dist = result["adapter_distribution"]
+        typer.echo(f"\n  Protocols touched ({len(dist)}):")
+        for name, count in sorted(dist.items()):
+            typer.echo(f"    {name:30s}  {count} chunks")
 
-    typer.echo(f"\n  A defender must monitor all {len(dist)} protocols simultaneously.")
-    typer.echo(f"  Missing any single chunk renders the data unrecoverable.\n")
+        typer.echo(f"\n  A defender must monitor all {len(dist)} protocols simultaneously.")
+        typer.echo(f"  Missing any single chunk renders the data unrecoverable.\n")
 
 
 @app.command()
@@ -679,9 +706,10 @@ def mkdir(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Create a virtual directory."""
-    orch = _make_orchestrator(store_dir, db_path)
-    asyncio.run(orch.mkdir(virtual_path, parents=parents))
-    typer.echo(f"mkdir {virtual_path}")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        asyncio.run(orch.mkdir(virtual_path, parents=parents))
+        typer.echo(f"mkdir {virtual_path}")
 
 
 @app.command(name="stat")
@@ -735,12 +763,13 @@ def tree(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show directory tree."""
-    orch = _make_orchestrator(store_dir, db_path)
-    result = asyncio.run(orch.tree(virtual_path))
-    if as_json:
-        typer.echo(json_mod.dumps(result, indent=2))
-        return
-    _print_tree_rich(result, "")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        result = asyncio.run(orch.tree(virtual_path))
+        if as_json:
+            typer.echo(json_mod.dumps(result, indent=2))
+            return
+        _print_tree_rich(result, "")
 
 
 def _print_tree_rich(node: dict, prefix: str, is_last: bool = True) -> None:
@@ -773,13 +802,14 @@ def find(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Find paths matching a prefix."""
-    orch = _make_orchestrator(store_dir, db_path)
-    if pattern:
-        paths = orch._index.list_paths_with_prefix(pattern)
-    else:
-        paths = asyncio.run(orch.ls())
-    for p in paths:
-        typer.echo(p)
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        if pattern:
+            paths = orch._index.list_paths_with_prefix(pattern)
+        else:
+            paths = asyncio.run(orch.ls())
+        for p in paths:
+            typer.echo(p)
 
 
 @app.command()
@@ -789,18 +819,19 @@ def touch(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Create an empty file or update timestamps."""
-    from datetime import datetime, timezone
+    with _handle_errors():
+        from datetime import datetime, timezone
 
-    orch = _make_orchestrator(store_dir, db_path)
-    m = orch._index.get_manifest_by_path(virtual_path)
-    now = datetime.now(timezone.utc).isoformat()
-    if m:
-        orch._index.update_manifest_metadata(m.manifest_id, mtime=now, atime=now)
-        typer.echo(f"touched {virtual_path}")
-    else:
-        pp = _get_passphrase()
-        asyncio.run(orch.put(virtual_path, b"", pp))
-        typer.echo(f"created {virtual_path}")
+        orch = _make_orchestrator(store_dir, db_path)
+        m = orch._index.get_manifest_by_path(virtual_path)
+        now = datetime.now(timezone.utc).isoformat()
+        if m:
+            orch._index.update_manifest_metadata(m.manifest_id, mtime=now, atime=now)
+            typer.echo(f"touched {virtual_path}")
+        else:
+            pp = _get_passphrase()
+            asyncio.run(orch.put(virtual_path, b"", pp))
+            typer.echo(f"created {virtual_path}")
 
 
 @app.command()
@@ -811,9 +842,10 @@ def ln(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Create a symbolic link."""
-    orch = _make_orchestrator(store_dir, db_path)
-    asyncio.run(orch.symlink(link, target))
-    typer.echo(f"{link} -> {target}")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        asyncio.run(orch.symlink(link, target))
+        typer.echo(f"{link} -> {target}")
 
 
 @app.command()
@@ -825,10 +857,11 @@ def head(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Read the first N bytes of a file."""
-    pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    data = asyncio.run(orch.read_range(virtual_path, 0, bytes_count, pp))
-    sys.stdout.buffer.write(data)
+    with _handle_errors():
+        pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+        data = asyncio.run(orch.read_range(virtual_path, 0, bytes_count, pp))
+        sys.stdout.buffer.write(data)
 
 
 @app.command()
@@ -840,17 +873,18 @@ def tail(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Read the last N bytes of a file."""
-    pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+    with _handle_errors():
+        pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
 
-    async def _do_tail():
-        result = await orch.info(virtual_path)
-        size = result["original_size"]
-        offset = max(0, size - bytes_count)
-        return await orch.read_range(virtual_path, offset, bytes_count, pp)
+        async def _do_tail():
+            result = await orch.info(virtual_path)
+            size = result["original_size"]
+            offset = max(0, size - bytes_count)
+            return await orch.read_range(virtual_path, offset, bytes_count, pp)
 
-    data = asyncio.run(_do_tail())
-    sys.stdout.buffer.write(data)
+        data = asyncio.run(_do_tail())
+        sys.stdout.buffer.write(data)
 
 
 @app.command(name="fsck")
@@ -862,56 +896,57 @@ def fsck_cmd(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Check filesystem integrity."""
-    from picard.fsck import fsck as _fsck
+    with _handle_errors():
+        from picard.fsck import fsck as _fsck
 
-    pp = None
-    if keyfile:
-        pp = _get_passphrase()
-    orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
-    with _spinner("Checking filesystem integrity...") as progress:
-        progress.add_task("Checking filesystem integrity...", total=None)
-        report = asyncio.run(_fsck(
-            orch._index, orch._adapters,
-            verify_digests=not no_digests,
-            key_ring=orch._key_ring,
-        ))
-    if as_json:
-        data = {
-            "total_manifests": report.total_manifests,
-            "total_blocks": report.total_blocks,
-            "total_chunks": report.total_chunks,
-            "verified_chunks": report.verified_chunks,
-            "missing_chunks": report.missing_chunks,
-            "corrupt_blocks": report.corrupt_blocks,
-            "orphan_chunks": report.orphan_chunks,
-            "directory_errors": report.directory_errors,
-            "symlink_errors": report.symlink_errors,
-            "version_gaps": report.version_gaps,
-            "journal_incomplete": report.journal_incomplete,
-            "errors": report.errors,
-            "ok": report.ok,
-        }
-        typer.echo(json_mod.dumps(data, indent=2))
-        return
-    console.print(f"fsck: {report.total_manifests} manifests, "
-                   f"{report.total_blocks} blocks, {report.total_chunks} chunks")
-    console.print(f"  Verified:    {report.verified_chunks}")
-    if report.missing_chunks:
-        console.print(f"  [red]Missing:     {report.missing_chunks}[/red]")
-    if report.corrupt_blocks:
-        console.print(f"  [red]Corrupt:     {report.corrupt_blocks}[/red]")
-    if report.directory_errors:
-        console.print(f"  [red]Dir errors:  {report.directory_errors}[/red]")
-    if report.symlink_errors:
-        console.print(f"  [red]Link errors: {report.symlink_errors}[/red]")
-    if report.journal_incomplete:
-        console.print(f"  [yellow]Journal:     {report.journal_incomplete} incomplete[/yellow]")
-    for err in report.errors:
-        console.print(f"  [red]![/red] {err}")
-    if report.ok:
-        console.print("  [bold green]OK[/bold green] — no errors found")
-    else:
-        raise typer.Exit(1)
+        pp = None
+        if keyfile:
+            pp = _get_passphrase()
+        orch = _make_orchestrator(store_dir, db_path, keyfile=keyfile, passphrase=pp)
+        with _spinner("Checking filesystem integrity...") as progress:
+            progress.add_task("Checking filesystem integrity...", total=None)
+            report = asyncio.run(_fsck(
+                orch._index, orch._adapters,
+                verify_digests=not no_digests,
+                key_ring=orch._key_ring,
+            ))
+        if as_json:
+            data = {
+                "total_manifests": report.total_manifests,
+                "total_blocks": report.total_blocks,
+                "total_chunks": report.total_chunks,
+                "verified_chunks": report.verified_chunks,
+                "missing_chunks": report.missing_chunks,
+                "corrupt_blocks": report.corrupt_blocks,
+                "orphan_chunks": report.orphan_chunks,
+                "directory_errors": report.directory_errors,
+                "symlink_errors": report.symlink_errors,
+                "version_gaps": report.version_gaps,
+                "journal_incomplete": report.journal_incomplete,
+                "errors": report.errors,
+                "ok": report.ok,
+            }
+            typer.echo(json_mod.dumps(data, indent=2))
+            return
+        console.print(f"fsck: {report.total_manifests} manifests, "
+                       f"{report.total_blocks} blocks, {report.total_chunks} chunks")
+        console.print(f"  Verified:    {report.verified_chunks}")
+        if report.missing_chunks:
+            console.print(f"  [red]Missing:     {report.missing_chunks}[/red]")
+        if report.corrupt_blocks:
+            console.print(f"  [red]Corrupt:     {report.corrupt_blocks}[/red]")
+        if report.directory_errors:
+            console.print(f"  [red]Dir errors:  {report.directory_errors}[/red]")
+        if report.symlink_errors:
+            console.print(f"  [red]Link errors: {report.symlink_errors}[/red]")
+        if report.journal_incomplete:
+            console.print(f"  [yellow]Journal:     {report.journal_incomplete} incomplete[/yellow]")
+        for err in report.errors:
+            console.print(f"  [red]![/red] {err}")
+        if report.ok:
+            console.print("  [bold green]OK[/bold green] — no errors found")
+        else:
+            raise typer.Exit(1)
 
 
 @app.command()
@@ -922,17 +957,18 @@ def log(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Show version history for a path."""
-    orch = _make_orchestrator(store_dir, db_path)
-    versions = asyncio.run(orch.list_versions(virtual_path))
-    if as_json:
-        typer.echo(json_mod.dumps(versions, indent=2))
-        return
-    if not versions:
-        typer.echo(f"no versions for {virtual_path}")
-        return
-    for v in versions:
-        typer.echo(f"  v{v['version']}  {v['created_at']}  "
-                   f"{v['original_size']} bytes  {v['manifest_id'][:12]}...")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        versions = asyncio.run(orch.list_versions(virtual_path))
+        if as_json:
+            typer.echo(json_mod.dumps(versions, indent=2))
+            return
+        if not versions:
+            typer.echo(f"no versions for {virtual_path}")
+            return
+        for v in versions:
+            typer.echo(f"  v{v['version']}  {v['created_at']}  "
+                       f"{v['original_size']} bytes  {v['manifest_id'][:12]}...")
 
 
 @app.command(name="recover")
@@ -941,10 +977,11 @@ def recover_cmd(
     db_path: Path = typer.Option(_DEFAULT_DB, "--db", envvar="PICARD_DB"),
 ) -> None:
     """Recover from crashed operations using the journal."""
-    orch = _make_orchestrator(store_dir, db_path)
-    result = asyncio.run(orch.recover())
-    typer.echo(f"Recovered {result['recovered']} incomplete operations")
-    typer.echo(f"Cleaned {result['cleaned_chunks']} orphan chunks")
+    with _handle_errors():
+        orch = _make_orchestrator(store_dir, db_path)
+        result = asyncio.run(orch.recover())
+        typer.echo(f"Recovered {result['recovered']} incomplete operations")
+        typer.echo(f"Cleaned {result['cleaned_chunks']} orphan chunks")
 
 
 @app.command(name="mount")

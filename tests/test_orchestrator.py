@@ -1,12 +1,17 @@
 """End-to-end tests: orchestrator over the memory adapter."""
 
+import asyncio
 import hashlib
+import os
 
 import pytest
 
 from picard.adapters.memory import MemoryAdapter
+from picard.chunker import chunkify
+from picard.crypto import derive_key, _NONCE_LEN, _SALT_LEN
 from picard.index import Index
 from picard.keys import KeyRing, load_master_key
+from picard.manifest import BlockRecord, ChunkRecord, ChunkStatus, Manifest, block_digest
 from picard.orchestrator import Orchestrator
 
 
@@ -240,3 +245,104 @@ class TestParentPathFixes:
     async def test_rm_allows_empty_directory(self, orch):
         await orch.mkdir("/empty", parents=True)
         assert await orch.rm("/empty")
+
+
+@pytest.mark.asyncio
+class TestLegacyCryptoFormat:
+    async def test_legacy_encrypted_data_decrypts_via_get(self, orch):
+        """orch.get() decrypts data encrypted in legacy format (no v2 header)."""
+        plaintext = b"legacy secret data"
+        passphrase = "pw"
+
+        # Build a legacy-format blob: salt[16] + nonce[12] + ciphertext+tag
+        # Use a salt whose first byte is NOT 0x02 to avoid ambiguity.
+        salt = b"\x01" + os.urandom(_SALT_LEN - 1)
+        dk, cipher = derive_key(passphrase, salt=salt)
+        nonce = os.urandom(_NONCE_LEN)
+        ct_with_tag = cipher.encrypt(nonce, plaintext, associated_data=None)
+        legacy_blob = salt + nonce + ct_with_tag  # no v2 version/alg header
+
+        # Chunk the legacy ciphertext and write to the adapter directly.
+        adapter = orch._adapters[0]
+        manifest_id = "legacy-test-manifest"
+        chunks = chunkify(
+            legacy_blob, manifest_id, 0, adapter.profile().max_chunk_bytes,
+        )
+        digest = block_digest(legacy_blob)
+        block = BlockRecord(
+            block_index=0, digest=digest, size_bytes=len(legacy_blob),
+        )
+        for chunk in chunks:
+            encoded = chunk.encode()
+            ref = await adapter.write_chunk(encoded)
+            block.chunks.append(ChunkRecord(
+                chunk_index=chunk.chunk_index,
+                adapter_name=ref.adapter_name,
+                location=ref.location,
+                status=ChunkStatus.STORED,
+                size_bytes=len(encoded),
+            ))
+
+        manifest = Manifest(
+            manifest_id=manifest_id,
+            path="/legacy.txt",
+            original_size=len(plaintext),
+            block_size=128,
+            total_blocks=1,
+            plaintext_hash=hashlib.sha256(plaintext).hexdigest(),
+            parent_path="/",
+        )
+        manifest.blocks.append(block)
+        orch._index.save_manifest(manifest)
+
+        result = await orch.get("/legacy.txt", passphrase)
+        assert result == plaintext
+
+
+@pytest.mark.asyncio
+class TestConcurrentPutGet:
+    async def test_parallel_put_and_get(self, orch):
+        """Parallel puts on different paths + gets complete without deadlock."""
+        # Seed a file so we can read it concurrently with writes.
+        seed_data = b"seed data for concurrent read"
+        await orch.put("/seed.txt", seed_data, "pw")
+
+        async def put_file(path: str, data: bytes):
+            await orch.put(path, data, "pw")
+
+        async def get_file(path: str) -> bytes:
+            return await orch.get(path, "pw")
+
+        results = await asyncio.gather(
+            put_file("/conc_a.txt", b"alpha"),
+            put_file("/conc_b.txt", b"bravo"),
+            put_file("/conc_c.txt", b"charlie"),
+            get_file("/seed.txt"),
+        )
+
+        # The get should have returned the seed data.
+        assert results[3] == seed_data
+
+        # All puts should be retrievable.
+        assert await orch.get("/conc_a.txt", "pw") == b"alpha"
+        assert await orch.get("/conc_b.txt", "pw") == b"bravo"
+        assert await orch.get("/conc_c.txt", "pw") == b"charlie"
+
+
+@pytest.mark.asyncio
+class TestCorruptChunkData:
+    async def test_get_raises_on_corrupted_chunk(self, orch):
+        """orch.get() raises when adapter chunk data is corrupted after write."""
+        data = b"important payload"
+        await orch.put("/intact.txt", data, "pw")
+
+        # Sanity: data is readable before corruption.
+        assert await orch.get("/intact.txt", "pw") == data
+
+        # Corrupt every value stored on the adapter.
+        adapter = orch._adapters[0]
+        for loc in list(adapter.store):
+            adapter.store[loc] = adapter.store[loc][:-4] + "XXXX"
+
+        with pytest.raises(Exception):
+            await orch.get("/intact.txt", "pw")

@@ -8,7 +8,6 @@ Requires: pip install picard[sms]  (aiohttp)
 
 from __future__ import annotations
 
-import base64
 import uuid
 from typing import Sequence
 
@@ -48,8 +47,6 @@ class SmsAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        import aiohttp
-
         try:
             chunk = Chunk.decode(encoded_chunk)
             key = f"{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
@@ -75,8 +72,6 @@ class SmsAdapter(Adapter):
         return StoredChunkRef(adapter_name="sms", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        import aiohttp
-
         msg_sid = self._written.get(ref.location, ref.location.split("://", 1)[-1])
         url = f"{self._api}/2010-04-01/Accounts/{self._sid}/Messages/{msg_sid}.json"
         auth = aiohttp.BasicAuth(self._sid, self._token)
@@ -89,8 +84,6 @@ class SmsAdapter(Adapter):
         return result["body"]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        import aiohttp
-
         msg_sid = self._written.pop(ref.location, ref.location.split("://", 1)[-1])
         url = f"{self._api}/2010-04-01/Accounts/{self._sid}/Messages/{msg_sid}.json"
         auth = aiohttp.BasicAuth(self._sid, self._token)
@@ -110,8 +103,6 @@ class SmsAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        import aiohttp
-
         try:
             url = f"{self._api}/2010-04-01/Accounts/{self._sid}.json"
             auth = aiohttp.BasicAuth(self._sid, self._token)

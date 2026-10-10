@@ -18,7 +18,7 @@ Each adapter speaks one protocol or storage backend.
 | Remote | 1 | remote (proxy to peer's transport API) |
 | ... | 160+ | Every other protocol gap: syslog, kafka, zeromq, rsync, git-notes, dns-over-https, tor hidden services, and more |
 
-Total: **259 adapter implementations** (262 files including base.py, __init__.py, remote.py).
+Total: **260 adapter implementations** (263 files including base.py, __init__.py, remote.py).
 
 ## Adapter Interface
 
@@ -166,5 +166,5 @@ data = await orch.get("/test.txt", "passphrase")
 assert data == b"hello"
 ```
 
-All 3700+ tests use this pattern, exercising the full pipeline without
+All 4050+ tests use this pattern, exercising the full pipeline without
 external service dependencies.

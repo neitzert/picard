@@ -48,6 +48,10 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 ._*
+nul
+
+# Design assets
+.design/
 
 # PICARD runtime
 .picard/

@@ -10,6 +10,29 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Christopher Neitzert", email = "chris@neitzert.com" }]
+keywords = ["encryption", "scatter", "storage", "adapters", "privacy", "security", "chunks", "aes-256-gcm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security :: Cryptography",
+    "Topic :: System :: Filesystems",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/cneitzert/picard"
+Repository = "https://github.com/cneitzert/picard"
+Documentation = "https://github.com/cneitzert/picard/tree/main/docs"
+Changelog = "https://github.com/cneitzert/picard/blob/main/CHANGELOG.md"
+Issues = "https://github.com/cneitzert/picard/issues"
+
 dependencies = [
     "cryptography>=42.0",
     "argon2-cffi>=23.1",

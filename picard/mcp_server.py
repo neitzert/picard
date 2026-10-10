@@ -58,11 +58,21 @@ def _get_orchestrator() -> tuple[Orchestrator, Index]:
     config_path = Path.home() / ".picard" / "picard.toml"
     if config_path.exists():
         try:
-            from picard.config import load_config
+            from picard.config import load_config, resolve_params
+            from picard.registry import instantiate
             cfg = load_config(config_path)
-            if cfg.get("adapters"):
-                from picard.registry import build_adapters
-                adapters = build_adapters(cfg["adapters"])
+            if cfg.adapters:
+                loaded = []
+                for entry in cfg.adapters:
+                    if not entry.enabled:
+                        continue
+                    try:
+                        params = resolve_params(entry.params)
+                        loaded.append(instantiate(entry.type, **params))
+                    except Exception:
+                        pass
+                if loaded:
+                    adapters = loaded
         except Exception:
             pass
 
