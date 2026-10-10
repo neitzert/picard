@@ -63,4 +63,5 @@ Initial feature-complete release.
 - Recursive CTE tree queries
 - Bulk list queries (eliminate N+1)
 - Thread-safe index writes, journal atomicity
-- 4084 tests
+- GitHub Actions CI (3 OSes x 3 Python versions)
+- 4159 tests

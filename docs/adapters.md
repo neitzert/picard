@@ -166,5 +166,5 @@ data = await orch.get("/test.txt", "passphrase")
 assert data == b"hello"
 ```
 
-All 4050+ tests use this pattern, exercising the full pipeline without
+All 4150+ tests use this pattern, exercising the full pipeline without
 external service dependencies.
