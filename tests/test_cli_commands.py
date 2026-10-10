@@ -62,6 +62,19 @@ class TestDemoWithFile:
         assert "hello.txt" in result.output
 
 
+class TestVersionFlag:
+    def test_version(self):
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+        assert "picard" in result.output
+        assert "0.1.0" in result.output
+
+    def test_short_flag(self):
+        result = runner.invoke(app, ["-V"])
+        assert result.exit_code == 0
+        assert "0.1.0" in result.output
+
+
 class TestInitCommand:
     def test_creates_config(self, tmp_path, monkeypatch):
         cfg_path = tmp_path / "config.toml"

@@ -27,13 +27,31 @@ from picard.keys import KeyRing, load_master_key
 from picard.orchestrator import Orchestrator
 from picard.raid import RaidLevel, RaidPool
 from picard.registry import get_adapter_class, instantiate, list_adapter_types
+from picard import __version__
 from picard.scatter import build_from_profile, list_profiles, resolve_profile
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"picard {__version__}")
+        raise typer.Exit()
+
 
 app = typer.Typer(
     name="picard",
     help="Scatter encrypted data across protocol gaps.",
     add_completion=False,
 )
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        False, "--version", "-V", callback=_version_callback,
+        is_eager=True, help="Show version and exit.",
+    ),
+) -> None:
+    pass
 
 console = Console()
 err_console = Console(stderr=True)

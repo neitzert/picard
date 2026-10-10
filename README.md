@@ -138,8 +138,8 @@ min_adapters = 4
 - `picard scatter-report` — show storage surface map
 - `picard adapters` / `profiles` — list available adapters and scatter profiles
 - `picard init` — create default config.toml
-- `picard encrypt-index` / `decrypt-index` — encrypt or decrypt the index database
 - `picard tor-check` — verify Tor connectivity
+- `picard tor-serve` / `tor-peer` / `tor-mount` — Tor hidden service operations
 
 Most commands support `--json` for machine-readable output.
 

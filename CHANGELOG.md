@@ -38,6 +38,11 @@ Initial feature-complete release.
 - HTTP transport with HMAC-SHA256 auth and replay protection
 - Peer discovery
 
+### Error Handling
+- CLI: Clean error messages for all 20+ commands (no raw tracebacks)
+- MCP: Structured error responses for all tool failures
+- Web: Proper HTTP status codes (409 for non-empty directory delete)
+
 ### Security
 - Post-quantum symmetric-only data path (128-bit security vs Grover)
 - CSRF protection, XSS prevention, security headers
@@ -58,4 +63,4 @@ Initial feature-complete release.
 - Recursive CTE tree queries
 - Bulk list queries (eliminate N+1)
 - Thread-safe index writes, journal atomicity
-- 4050 tests
+- 4066 tests
