@@ -66,6 +66,7 @@ class Orchestrator:
         self._adapter_timeout = adapter_timeout
 
     async def close(self) -> None:
+        """Close all adapters and release resources."""
         await asyncio.gather(
             *(a.close() for a in self._adapters), return_exceptions=True,
         )
