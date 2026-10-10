@@ -1,7 +1,7 @@
 """Meilisearch adapter — stores chunks as search documents.
 
-Hides data in a lightweight search engine. Meilisearch is increasingly
-popular for site search — chunks blend into the search index.
+Stores chunks as documents in a Meilisearch instance. Meilisearch is
+a lightweight search engine popular for site search.
 
 Requires: pip install picard[meilisearch]  (aiohttp)
 """

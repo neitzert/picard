@@ -1,7 +1,7 @@
 """Cloudflare R2 adapter — S3-compatible object store with zero egress fees.
 
-Chunks live in R2 buckets.  Because R2 speaks S3, it blends in with
-legitimate cloud storage traffic.  Zero egress fees make retrieval cheap.
+Chunks live in R2 buckets.  R2 speaks S3, so the same adapter code
+works with any S3-compatible store.  Zero egress fees make retrieval cheap.
 
 Requires: pip install picard[r2]  (aiohttp)
 """

@@ -1,8 +1,7 @@
 """BACnet adapter — stores chunks as property values on building automation devices.
 
 Each chunk becomes a CharacterString value on a characterstringValue
-object instance.  Think about this next time you walk into a "smart"
-building.
+object instance.
 
 Requires: pip install picard[bacnet]  (BAC0 or bacpypes3)
 """

@@ -1,7 +1,6 @@
 """Weights & Biases adapter — stores chunks as W&B artifacts.
 
 Chunks are uploaded as files within W&B artifact versions.
-Blends in perfectly with ML experiment tracking workflows.
 
 Requires: pip install picard[wandb]  (aiohttp)
 """

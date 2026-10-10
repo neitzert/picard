@@ -25,7 +25,7 @@ LC_SEGMENT_64 = 0x19
 
 
 class MachoSegmentAdapter(Adapter):
-    """Hide chunks in custom Mach-O binary segments."""
+    """Store chunks in custom Mach-O binary segments."""
 
     def __init__(self, output_dir: str | Path, *, max_chunk_bytes: int = 1_048_576) -> None:
         self._dir = Path(output_dir)

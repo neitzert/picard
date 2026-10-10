@@ -22,7 +22,7 @@ _SECTION_NAME = b".picard\x00"
 
 
 class ElfSectionAdapter(Adapter):
-    """Hide chunks in custom ELF binary sections."""
+    """Store chunks in custom ELF binary sections."""
 
     def __init__(self, output_dir: str | Path, *, max_chunk_bytes: int = 1_048_576) -> None:
         self._dir = Path(output_dir)

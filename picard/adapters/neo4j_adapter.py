@@ -1,7 +1,6 @@
 """Neo4j adapter — stores chunks as graph nodes.
 
-Hides data in a graph database. Each chunk becomes a :Chunk node
-with key, data, and manifest_id properties.
+Each chunk becomes a :Chunk node with key, data, and manifest_id properties.
 
 Requires: pip install picard[neo4j]  (neo4j)
 """

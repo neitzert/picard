@@ -1,10 +1,13 @@
 """OSPF adapter — store chunks in OSPF Opaque LSAs (RFC 5250).
 
-Injects Opaque LSAs with chunk data into the OSPF LSDB via a router
+Stores chunk data in Opaque LSAs in the OSPF LSDB via a router
 management API (FRRouting REST, BIRD, or Quagga).
 
-Note: Opaque LSAs flood across the entire OSPF area.
-Every router in the area stores a copy of the chunk in its LSDB.
+WARNING: Only use with OSPF routers you own and operate.  Injecting
+LSAs into shared infrastructure is a network abuse violation.
+
+Note: Opaque LSAs flood across the entire OSPF area — every router
+in the area stores a copy of the chunk in its LSDB.
 
 Requires: pip install picard[ospf]  (aiohttp)
 """

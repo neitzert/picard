@@ -18,7 +18,7 @@ from picard.chunker import Chunk
 
 
 class XlsxHiddenAdapter(Adapter):
-    """Hide chunks in XLSX VeryHidden worksheets."""
+    """Store chunks in XLSX VeryHidden worksheets."""
 
     def __init__(self, output_dir: str | Path, *, max_chunk_bytes: int = 65_536) -> None:
         self._dir = Path(output_dir)

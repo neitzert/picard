@@ -1,7 +1,6 @@
 """MongoDB adapter — stores chunks as documents in a MongoDB collection.
 
-Hides data in the most popular NoSQL database. Each chunk becomes a
-document with the encoded data as a string field.
+Each chunk becomes a document with the encoded data as a string field.
 
 Requires: pip install picard[mongodb]  (motor)
 """

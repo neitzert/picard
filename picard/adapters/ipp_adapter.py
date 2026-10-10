@@ -1,6 +1,6 @@
 """IPP adapter — stores chunks as Internet Printing Protocol print job attributes.
 
-Hides chunk data in job-name, document-name, or job-originating-user-name
+Stores chunk data in job-name, document-name, or job-originating-user-name
 attributes of print jobs submitted via IPP (RFC 8011).  The data lives in
 the print queue until the job is purged.
 

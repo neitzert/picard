@@ -1,8 +1,8 @@
 """NPM Config adapter — stores chunks in .npmrc custom fields.
 
-Hides data in npm configuration files as custom key-value pairs.
-Since .npmrc supports arbitrary keys, entries like ``picard:chunk-abc=...``
-go unnoticed by most tooling.
+Stores chunk data in npm configuration files as custom key-value pairs.
+.npmrc supports arbitrary keys, so entries like ``picard:chunk-abc=...``
+are valid and parseable.
 
 No external dependencies beyond Python stdlib.
 """

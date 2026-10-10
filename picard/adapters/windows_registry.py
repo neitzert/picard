@@ -1,8 +1,6 @@
 """Windows Registry adapter — stores chunks as registry values.
 
-Hides data in the most fundamental Windows storage mechanism.
-Registry is rarely monitored for data content, only for known
-malware keys.  ``ls``, ``dir``, Explorer never show this data.
+Each chunk becomes a REG_SZ value under a configurable key path.
 
 Requires: Windows OS (winreg stdlib module).
 """

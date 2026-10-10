@@ -1,11 +1,10 @@
 """Crontab adapter — stores chunks in crontab comment fields.
 
-Each chunk becomes a crontab entry with the data hidden in a comment:
+Each chunk becomes a crontab entry with the data in a comment:
   # PICARD:<chunk_id>:<encoded_data>
   * * * * * /bin/true
 
 The job itself is a harmless no-op; the payload rides in the comment.
-Blends in with annotated crontab files.
 
 Requires: crontab command-line tool
 """

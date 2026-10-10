@@ -1,6 +1,6 @@
 """Flickr adapter — stores chunks in photo descriptions.
 
-Uploads a 1x1 pixel PNG placeholder and hides chunk data in the
+Uploads a 1x1 pixel PNG placeholder and stores chunk data in the
 photo's description field.  Reading extracts the description.
 
 Requires: pip install picard[flickr]   (uses aiohttp)

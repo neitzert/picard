@@ -1,6 +1,6 @@
 """Cassandra adapter — stores chunks in Cassandra / ScyllaDB tables.
 
-Hides data in distributed wide-column stores often used for
+Stores chunks in distributed wide-column stores used for
 time-series, IoT, and high-throughput workloads.
 
 Requires: pip install picard[cassandra]  (cassandra-driver)

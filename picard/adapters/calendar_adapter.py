@@ -1,7 +1,6 @@
 """Google Calendar adapter — stores chunks as calendar event descriptions.
 
 Creates calendar events with chunk data in the description field.
-Events look like normal appointments with opaque-looking notes.
 
 Requires: pip install picard[gcal]  (google-api-python-client, google-auth)
 """

@@ -22,7 +22,7 @@ _PE_SIG = b"PE\x00\x00"
 
 
 class PeResourceAdapter(Adapter):
-    """Hide chunks in Windows PE binary custom resources."""
+    """Store chunks in Windows PE binary custom resources."""
 
     def __init__(self, output_dir: str | Path, *, max_chunk_bytes: int = 1_048_576) -> None:
         self._dir = Path(output_dir)

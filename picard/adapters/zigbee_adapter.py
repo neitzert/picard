@@ -1,7 +1,6 @@
 """Zigbee adapter — stores chunks in manufacturer-specific cluster attributes.
 
-Writes data to a custom ZCL cluster on Zigbee devices.  That smart
-lightbulb in your conference room?  It could be holding secrets.
+Writes data to a custom ZCL cluster on Zigbee devices.
 
 Requires: pip install picard[zigbee]  (zigpy + radio driver)
 """

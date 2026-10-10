@@ -1,7 +1,7 @@
 """SPI flash adapter — stores chunks in SPI flash memory.
 
-Hides data in SPI flash chips (W25Q128, MX25L, etc.) found on nearly
-every PCB.  Data survives power cycles and is invisible to the OS.
+Stores chunks in SPI flash chips (W25Q128, MX25L, etc.) common on
+embedded boards.  Data survives power cycles.
 
 Requires: pip install spidev
 """

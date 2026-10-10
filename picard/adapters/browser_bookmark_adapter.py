@@ -1,8 +1,7 @@
 """Browser bookmark adapter -- stores chunks as bookmark entries.
 
-Hides data in browser bookmark URLs.  Each bookmark's URL fragment
-contains the encoded chunk, making it look like a normal bookmark to
-casual observers.  Uses a Chrome-style JSON bookmarks file.
+Stores chunk data in browser bookmark URL fragments.  Uses a
+Chrome-style JSON bookmarks file.
 
 Requires: nothing beyond stdlib (JSON file I/O)
 """

@@ -1,8 +1,7 @@
 """I2C EEPROM adapter — stores chunks in I2C EEPROM devices.
 
-Hides data in hardware memory chips on the I2C bus. Common EEPROMs
-(24C256, AT24C512) are present on virtually every embedded board
-and are rarely monitored for unexpected data.
+Stores chunks in hardware memory chips on the I2C bus. Common EEPROMs
+(24C256, AT24C512) are present on virtually every embedded board.
 
 Requires: pip install smbus2
 """

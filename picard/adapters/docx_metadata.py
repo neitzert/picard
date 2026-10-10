@@ -18,7 +18,7 @@ from picard.chunker import Chunk
 
 
 class DocxMetadataAdapter(Adapter):
-    """Hide chunks in DOCX document custom properties."""
+    """Store chunks in DOCX document custom properties."""
 
     def __init__(self, output_dir: str | Path, *, max_chunk_bytes: int = 65_536) -> None:
         self._dir = Path(output_dir)

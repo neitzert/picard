@@ -1,8 +1,11 @@
 """BGP adapter — store chunks in BGP extended community attributes.
 
-Injects routes with chunk data encoded as extended communities via
-a router API (ExaBGP HTTP, GoBGP gRPC, or FRRouting).  Reading queries
-the RIB for routes with matching community tags.
+Stores chunk data encoded as extended communities via a router management
+API (ExaBGP HTTP, GoBGP gRPC, or FRRouting).  Reading queries the RIB
+for routes with matching community tags.
+
+WARNING: Only use with BGP routers you own and operate.  Injecting routes
+into shared or public BGP infrastructure is a network abuse violation.
 
 Requires: pip install picard[bgp]  (aiohttp)
 """

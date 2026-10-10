@@ -1,6 +1,6 @@
 """SoundCloud adapter — stores chunks in track descriptions.
 
-Uploads a silent audio stub and hides chunk data in the track
+Uploads a silent audio stub and stores chunk data in the track
 description field.
 
 Requires: pip install picard[soundcloud]   (uses aiohttp)
