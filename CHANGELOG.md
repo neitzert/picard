@@ -63,4 +63,4 @@ Initial feature-complete release.
 - Recursive CTE tree queries
 - Bulk list queries (eliminate N+1)
 - Thread-safe index writes, journal atomicity
-- 4066 tests
+- 4084 tests

@@ -86,6 +86,11 @@ class RedisAdapter(Adapter):
             refs.append(StoredChunkRef(adapter_name="redis", location=key_str))
         return refs
 
+    async def close(self) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
     async def health_check(self) -> bool:
         try:
             client = await self._ensure_client()

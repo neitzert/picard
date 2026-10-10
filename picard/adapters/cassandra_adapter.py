@@ -39,6 +39,7 @@ class CassandraAdapter(Adapter):
         self._password = password
         self._max = max_chunk_bytes
         self._session = None
+        self._cluster = None
 
     def _get_session(self):
         from cassandra.cluster import Cluster
@@ -48,11 +49,17 @@ class CassandraAdapter(Adapter):
             auth = None
             if self._username and self._password:
                 auth = PlainTextAuthProvider(self._username, self._password)
-            cluster = Cluster(
+            self._cluster = Cluster(
                 self._contact_points, port=self._port, auth_provider=auth
             )
-            self._session = cluster.connect(self._keyspace)
+            self._session = self._cluster.connect(self._keyspace)
         return self._session
+
+    async def close(self) -> None:
+        if self._cluster is not None:
+            self._cluster.shutdown()
+            self._cluster = None
+            self._session = None
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(

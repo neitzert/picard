@@ -109,6 +109,11 @@ class PostgresqlAdapter(Adapter):
             for row in rows
         ]
 
+    async def close(self) -> None:
+        if self._pool is not None:
+            await self._pool.close()
+            self._pool = None
+
     async def health_check(self) -> bool:
         try:
             pool = await self._ensure_pool()
