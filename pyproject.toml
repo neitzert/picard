@@ -93,3 +93,7 @@ packages = ["picard"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 timeout = 30
+markers = [
+    "integration: marks tests as integration tests that hit real services",
+    "browser: marks tests that require a Playwright browser",
+]
