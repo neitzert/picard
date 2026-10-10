@@ -161,7 +161,7 @@ pip install -e ".[dev]"
 python -m pytest --tb=short -q
 ```
 
-Python 3.11+ required. Core dependencies: `cryptography`, `argon2-cffi`, `typer`, `rich`.
+Python 3.11+ required. Core dependencies: `cryptography`, `argon2-cffi`, `typer`, `rich`, `aiohttp`, `httpx`.
 
 ## License
 
