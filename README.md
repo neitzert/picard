@@ -4,7 +4,7 @@
 
 *Our digital infrastructure is full of holes like those drainpipes. DNS, MQTT, ICMP, social media — built to transmit data and vanish, not to hold it. Yet they're wide open, with few guardrails and little scrutiny. Decades-old, they still route, respond, and hum along. What if anything left open long enough becomes habitat?*
 
-**PICARD is the experiment.** It encrypts your data, slices it into chunks, and scatters those chunks across whatever protocols are available — DNS TXT records, social media posts, MQTT retained messages, S3 buckets, Bluetooth beacons, or all of the above at once. Pull it back and it reassembles. No single protocol holds enough to reconstruct anything. No central server. No monthly storage fees.
+**PICARD is the experiment.** It encrypts your data, slices it into chunks, and scatters those chunks across whatever protocols are available — DNS TXT records, social media posts, MQTT retained messages, S3 buckets, Bluetooth beacons, or all of the above at once. Pull it back and it reassembles. With multi-adapter scatter, no single protocol holds enough to reconstruct anything. No central server. No monthly storage fees.
 
 It mounts as a regular filesystem. Files show up where they're supposed to. Underneath, everything lives in back channels, forgotten protocols, and digital crevices.
 
@@ -59,7 +59,10 @@ Each adapter implements `write_chunk()` and `read_chunk()`. They don't know what
 ## Quickstart
 
 ```bash
-pip install picard-store
+pip install picard
+
+# set your passphrase (or picard will prompt)
+export PICARD_PASSPHRASE="your-passphrase"
 
 # create a config
 picard init
@@ -79,7 +82,7 @@ picard webdav                 # or: WebDAV for any OS, no kernel driver needed
 From source:
 
 ```bash
-git clone https://github.com/neitzert/picard-dev
+git clone https://github.com/neitzert/picard
 cd picard-dev
 pip install -e ".[dev]"
 python -m pytest --tb=short -q

@@ -268,7 +268,7 @@ The Notice block is required for any adapter that connects to a third-party serv
 
 ### Testing
 
-Every adapter must have a mocked unit test covering `put()`, `get()`, and `rm()` through the full orchestrator pipeline. The standard pattern:
+Every adapter must have a mocked unit test covering `write_chunk()`, `read_chunk()`, and `delete_chunk()` directly, or exercising the full orchestrator pipeline with `MemoryAdapter`. The standard pattern:
 
 ```python
 import pytest
@@ -335,18 +335,25 @@ To use it from config:
 ```toml
 [[adapters]]
 name = "my-pastebin"
-type = "pastebin"           # maps to picard/adapters/pastebin.py → PastebinAdapter
+type = "pastebin"           # derived from the filename — see below
 enabled = true
 params = { api_key = "your-api-key", expire = "1W" }
 ```
 
-The `type` field maps to the adapter file name (without `.py`) and the class name is expected to be the CamelCase version of the file name followed by `Adapter`. For example:
+The `type` field is derived from the filename by the registry (`picard/registry.py`):
 
-| File | Class |
-|------|-------|
-| `pastebin.py` | `PastebinAdapter` |
-| `my_protocol.py` | `MyProtocolAdapter` |
-| `dns.py` | `DnsAdapter` |
+1. Strip `.py`
+2. Strip a trailing `_adapter` suffix if present
+3. Replace all remaining underscores with hyphens
+
+| File | `type =` |
+|------|----------|
+| `pastebin.py` | `pastebin` |
+| `my_protocol.py` | `my-protocol` |
+| `netflow_adapter.py` | `netflow` |
+| `backblaze_b2.py` | `backblaze-b2` |
+
+The registry discovers the adapter class by finding the first `Adapter` subclass in the module — the class name does not need to follow any particular convention, though `<CamelCase>Adapter` is the project style.
 
 ---
 
@@ -373,7 +380,7 @@ finally:
     await page.close()
 ```
 
-Adapters with browser support: bluesky, reddit, discord, twitter, youtube, tiktok, instagram, pinterest, linkedin, medium. See any of these for a full dual-mode pattern.
+Adapters with browser support: bluesky, reddit, discord, twitter, youtube, tiktok, pinterest, linkedin, medium. See any of these for a full dual-mode pattern.
 
 Requires: `pip install picard[browser]` (installs `playwright` and runs `playwright install chromium`).
 
