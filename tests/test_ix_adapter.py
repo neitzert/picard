@@ -149,5 +149,5 @@ class TestIxAdapter:
             await a.write_chunk(enc)
 
         call_kwargs = session.post.call_args
-        assert call_kwargs[0][0] == "http://ix.io"
+        assert call_kwargs[0][0] == "https://ix.io"
         assert call_kwargs[1]["data"] == {"f:1": enc}

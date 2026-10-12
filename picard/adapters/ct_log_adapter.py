@@ -20,6 +20,8 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 
 
+# PEN 99999 is unregistered — replace with a registered PEN before production X.509 use
+# Register free at: https://www.iana.org/assignments/enterprise-numbers/
 _PICARD_OID = "1.3.6.1.4.1.99999.1.1"
 
 

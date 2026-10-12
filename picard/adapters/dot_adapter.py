@@ -30,6 +30,7 @@ class DotAdapter(Adapter):
         tsig_keyname: str | None = None,
         tsig_key: str | None = None,
         max_chunk_bytes: int = 200,
+        ca_file: str | None = None,
     ) -> None:
         self._zone = zone.rstrip(".")
         self._resolver = resolver
@@ -38,6 +39,7 @@ class DotAdapter(Adapter):
         self._tsig_keyname = tsig_keyname
         self._tsig_key = tsig_key
         self._max = max_chunk_bytes
+        self._ca_file = ca_file
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -52,9 +54,10 @@ class DotAdapter(Adapter):
         return f"c{chunk_index}.b{block_index}.{manifest_id}.{self._zone}"
 
     def _tls_context(self) -> ssl.SSLContext:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        if self._ca_file:
+            ctx = ssl.create_default_context(cafile=self._ca_file)
+        else:
+            ctx = ssl.create_default_context()
         return ctx
 
     def _send_over_tls(self, wire: bytes) -> bytes:

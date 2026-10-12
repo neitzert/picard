@@ -24,7 +24,7 @@ class TestProfile:
         assert adapter.profile().max_chunk_bytes == 4096
 
     def test_rate_limit(self, adapter):
-        assert adapter.profile().rate_limit_per_min == 4
+        assert adapter.profile().rate_limit_per_min == 1
 
 
 @pytest.mark.asyncio

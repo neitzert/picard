@@ -70,8 +70,8 @@ class CrontabAdapter(Adapter):
         chunk_id = uuid.uuid4().hex[:12]
         user_label = self._user or "current"
 
-        # Build the crontab entry
-        entry = f"# PICARD:{chunk_id}:{encoded_chunk}\n* * * * * /bin/true"
+        # Build the crontab entry — data rides in the comment, no executable job
+        entry = f"# PICARD:{chunk_id}:{encoded_chunk}"
 
         # Try to append to existing crontab
         try:
@@ -122,15 +122,17 @@ class CrontabAdapter(Adapter):
             output = await self._run_crontab("-l")
             lines = output.splitlines()
             filtered: list[str] = []
-            skip_next = False
-            for line in lines:
-                if skip_next:
-                    skip_next = False
-                    continue
+            i = 0
+            while i < len(lines):
+                line = lines[i]
                 if line.startswith("# ") and marker in line:
-                    skip_next = True  # skip the associated cron job line too
+                    i += 1
+                    # skip legacy /bin/true job line if present
+                    if i < len(lines) and lines[i].strip() == "* * * * * /bin/true":
+                        i += 1
                     continue
                 filtered.append(line)
+                i += 1
             new_crontab = "\n".join(filtered) + "\n"
             await self._run_crontab("-", stdin=new_crontab)
         except Exception:

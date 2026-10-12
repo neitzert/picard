@@ -33,11 +33,14 @@ class HackerNewsAdapter(Adapter):
         parent_item_id: int,
         *,
         max_chunk_bytes: int = 4096,
+        max_posts: int = 5,
     ) -> None:
         self._username = username
         self._password = password
         self._parent_id = parent_item_id
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._cookie: str | None = None
         self._session = None
 
@@ -59,7 +62,7 @@ class HackerNewsAdapter(Adapter):
             max_chunk_bytes=self._max,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=4,
+            rate_limit_per_min=1,
         )
 
     async def _login(self, session) -> None:
@@ -76,6 +79,10 @@ class HackerNewsAdapter(Adapter):
                 self._cookie = cookies["user"].value
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"HackerNews adapter reached max_posts={self._max_posts} per session"
+            )
         text = f"{_MARKER}{encoded_chunk}"
 
         session = await self._get_session()
@@ -100,6 +107,7 @@ class HackerNewsAdapter(Adapter):
             kids = parent_data.get("kids", [])
             comment_id = kids[-1] if kids else 0
 
+        self._post_count += 1
         location = f"hn://{self._parent_id}/{comment_id}"
         return StoredChunkRef(adapter_name="hackernews", location=location)
 

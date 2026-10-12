@@ -1,6 +1,6 @@
 # PICARD: Protocol-Introspecting Chunk Adapter for Resilient Data
 
-*Dedicated to the gatekeepers, haters, and doubters.*
+*For the self-taught, the unconventional, and anyone who was ever told to stay in their lane — keep building, keep exploring.*
 
 *It was a cool Berlin morning. From my patio I stared at a plain stucco wall capped by red brick. A blur of wings caught my eye, a small bird veering into a drain hole near the roofline and vanishing. Another head appeared from a different hole, chirping. Five drain holes, five nests. The gutters were meant to move water, not host families, yet the birds had found shelter, cover, and easy access. I had never noticed because I had never bothered to look.*
 
