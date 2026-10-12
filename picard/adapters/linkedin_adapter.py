@@ -3,6 +3,15 @@
 Creates unlisted/author-only UGC posts with chunk data in the
 share commentary text field.
 
+Notice: This adapter is a proof-of-concept demonstrating that any
+sufficiently structured communication channel can serve as a block
+storage substrate.  It must only be used with LinkedIn accounts and
+infrastructure you own and control.  Use against accounts or
+infrastructure belonging to others, or in a manner that violates
+LinkedIn's Terms of Service, is outside the scope of this project
+and the responsibility of the user.  No endorsement by or
+affiliation with LinkedIn or Microsoft is implied.
+
 Requires: pip install picard[linkedin]   (uses aiohttp)
 """
 

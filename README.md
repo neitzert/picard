@@ -30,6 +30,12 @@ TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct 
 - **Browser automation** — Playwright headless/headed mode for adapters that use web interfaces
 - **VPN device binding** — route adapter traffic through specific network interfaces
 
+## Research and Experimental Use
+
+PICARD is a computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the Apache 2.0 license.
+
+Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use. Unauthorized access to computer systems is illegal in most jurisdictions and is not a supported use case.
+
 ## Quickstart
 
 ```bash
