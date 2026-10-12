@@ -97,7 +97,7 @@ class StoredChunkRef:
                         # a URL, an ID, a key, a file path, a composite string
 ```
 
-`location` is a free-form string — pack in whatever the read path needs. For example: `"reddit://t3_abc123"`, `"s3://my-bucket/chunks/a1b2c3"`, `"dns://chunks.example.com/pchk-0001"`.
+`location` is a free-form string. Pack in whatever the read path needs. For example: `"reddit://t3_abc123"`, `"s3://my-bucket/chunks/a1b2c3"`, `"dns://chunks.example.com/pchk-0001"`.
 
 ---
 
@@ -230,9 +230,9 @@ The following rules apply to every adapter. When in doubt, look at any existing 
 - [ ] Extend `Adapter` from `picard.adapters.base`
 - [ ] Implement `profile()`, `write_chunk()`, `read_chunk()`, `delete_chunk()`, `list_chunks()`
 - [ ] `profile().name` is lowercase, hyphen-separated, unique across all adapters
-- [ ] `profile().max_chunk_bytes` is conservative — what the backend actually accepts
+- [ ] `profile().max_chunk_bytes` is conservative (what the backend actually accepts)
 - [ ] `write_chunk` returns a `StoredChunkRef` with `adapter_name` matching `profile().name`
-- [ ] `read_chunk` returns the **exact string** passed to `write_chunk` — no transformation
+- [ ] `read_chunk` returns the **exact string** passed to `write_chunk`, with no transformation
 - [ ] `delete_chunk` returns `True` if the chunk existed, `False` if not found; never raises on 404
 - [ ] `list_chunks` filters by `manifest_id` appearing in the location or stored data
 
@@ -240,7 +240,7 @@ The following rules apply to every adapter. When in doubt, look at any existing 
 
 - [ ] Implement `close()` and release all HTTP sessions, DB connections, file handles
 - [ ] Use `async with session.get(...)` or equivalent; never leave connections open on error
-- [ ] Implement `health_check()` — a simple connectivity probe, swallow all exceptions, return bool
+- [ ] Implement `health_check()`: a simple connectivity probe, swallow all exceptions, return bool
 - [ ] Set `persistent=False` if chunks do not survive a process restart
 - [ ] Set `ttl_seconds` if the backend expires content automatically
 
@@ -353,7 +353,7 @@ The `type` field is derived from the filename by the registry (`picard/registry.
 | `netflow_adapter.py` | `netflow` |
 | `backblaze_b2.py` | `backblaze-b2` |
 
-The registry discovers the adapter class by finding the first `Adapter` subclass in the module — the class name does not need to follow any particular convention, though `<CamelCase>Adapter` is the project style.
+The registry discovers the adapter class by finding the first `Adapter` subclass in the module. The class name does not need to follow any particular convention, though `<CamelCase>Adapter` is the project style.
 
 ---
 
@@ -361,8 +361,8 @@ The registry discovers the adapter class by finding the first `Adapter` subclass
 
 Some social platform adapters support dual-mode operation:
 
-- **API mode** — direct HTTP calls, faster, requires credentials
-- **Browser mode** — headless Playwright browser, more resilient to API changes
+- **API mode**: direct HTTP calls, faster, requires credentials
+- **Browser mode**: headless Playwright browser, more resilient to API changes
 
 Browser-mode adapters use a shared `BrowserPool` singleton:
 
@@ -392,16 +392,16 @@ If you are an AI agent writing a new PICARD adapter:
 
 1. **Read an existing adapter first.** Pick one in the same category as what you're building. For HTTP APIs: `spotify_adapter.py`. For network protocols: `dns.py`. For browser-mode: `reddit.py`.
 
-2. **`read_chunk` must return the exact encoded_chunk string** — no decoding, no stripping, no transformation. The orchestrator owns the encoding.
+2. **`read_chunk` must return the exact encoded_chunk string.** No decoding, no stripping, no transformation. The orchestrator owns the encoding.
 
-3. **Never raise in `delete_chunk` on 404** — return `False`.
+3. **Never raise in `delete_chunk` on 404.** Return `False`.
 
-4. **Never swallow all exceptions broadly** — `except Exception: return False` is only acceptable in `health_check()` and `delete_chunk()`. Everywhere else, let errors propagate so the orchestrator can retry or fall back.
+4. **Never swallow all exceptions broadly.** `except Exception: return False` is only acceptable in `health_check()` and `delete_chunk()`. Everywhere else, let errors propagate so the orchestrator can retry or fall back.
 
 5. **Always implement `close()`** if you open any session, connection, or file handle. Use `async with` context managers where possible.
 
 6. **The Notice block in the docstring is not optional** for any third-party platform. Write it.
 
-7. **Write the test first** — even a minimal mock test. It forces you to think about what `location` should contain and what the read path needs.
+7. **Write the test first.** Even a minimal mock test forces you to think about what `location` should contain and what the read path needs.
 
 8. **`list_chunks` is used for disaster recovery**, not for normal reads. It's OK for it to return `[]` if the backend has no listing API, but document why.
