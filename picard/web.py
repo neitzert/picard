@@ -335,13 +335,13 @@ async def init_config_endpoint():
 async def raid_levels():
     """Available RAID levels and their requirements."""
     return [
-        {"level": "raid0", "name": "RAID 0 — Striping", "min_adapters": 2,
+        {"level": "raid0", "name": "RAID 0 (Striping)", "min_adapters": 2,
          "description": "Round-robin striping. Maximum throughput, no redundancy."},
-        {"level": "raid1", "name": "RAID 1 — Mirroring", "min_adapters": 2,
+        {"level": "raid1", "name": "RAID 1 (Mirroring)", "min_adapters": 2,
          "description": "Write to all adapters. Full redundancy, N× storage."},
-        {"level": "raid5", "name": "RAID 5 — Parity", "min_adapters": 3,
+        {"level": "raid5", "name": "RAID 5 (Parity)", "min_adapters": 3,
          "description": "Striping with single parity. Survives one adapter failure."},
-        {"level": "raid10", "name": "RAID 10 — Striped Mirrors", "min_adapters": 4,
+        {"level": "raid10", "name": "RAID 10 (Striped Mirrors)", "min_adapters": 4,
          "description": "Mirror groups, striped across groups. Requires even count."},
     ]
 

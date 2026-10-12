@@ -5,7 +5,7 @@ wraps them in a RaidPool at the specified level, and returns the pool
 ready for use by the orchestrator.
 
 Built-in profiles:
-  - quiet:     low-profile adapters, RAID 1 mirroring
+  - quiet:     steganographic and unconventional-protocol adapters, RAID 1 mirroring
   - resilient: persistent/cloud adapters, RAID 5 parity
   - speed:     local/fast adapters, RAID 0 striping
   - paranoid:  all persistent adapters, RAID 10 striped mirrors
@@ -26,7 +26,7 @@ BUILTIN_PROFILES: dict[str, ScatterProfile] = {
         mirror_count=2,
         adapter_tags=["steganographic", "low-profile"],
         min_adapters=2,
-        description="Low-visibility scatter across unconventional protocols",
+        description="Steganographic and unconventional protocol adapters with RAID 1 mirroring",
     ),
     "resilient": ScatterProfile(
         name="resilient",

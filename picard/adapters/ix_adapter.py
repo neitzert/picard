@@ -17,7 +17,7 @@ class IxAdapter(Adapter):
     def __init__(
         self,
         *,
-        url: str = "http://ix.io",
+        url: str = "https://ix.io",
         max_chunk_bytes: int = 524_288,
     ) -> None:
         self._url = url.rstrip("/")
