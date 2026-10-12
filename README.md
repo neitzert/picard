@@ -171,6 +171,19 @@ python -m pytest --tb=short -q
 
 Python 3.11+ required. Core dependencies: `cryptography`, `argon2-cffi`, `typer`, `rich`, `aiohttp`, `httpx`.
 
+## Test Coverage and Contributing
+
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested. Many of the 260 protocol adapters have unit tests with mocked transports; however, a significant portion of the adapter suite — particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets) — is not fully tested and has not been exercised against live infrastructure.
+
+**Pull requests are warmly welcomed**, especially for:
+
+- Integration tests for adapter browser paths (see `tests/integration/`)
+- Tests or fixes for untested or partially-tested adapters
+- Real-world validation of exotic protocol adapters
+- Documentation improvements and usage examples
+
+If you find a bug or have a question, please open an issue. If you are adding a new adapter, include at least a mocked unit test covering `put()`, `get()`, and `rm()`.
+
 ## License
 
 MIT
