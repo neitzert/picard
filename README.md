@@ -1,92 +1,120 @@
 # PICARD — Protocol-Introspecting Chunk Adapter for Resilient Data
 
-> A push for protocol security and away from platforms for the integrity of compute.
+*It was a cool Berlin morning. From my patio I stared at a plain stucco wall capped by red brick. A blur of wings caught my eye — a small bird veered into a drain hole near the roofline and vanished. Another head appeared from a different hole, chirping. Five drain holes, five nests. The gutters were meant to move water, not host families, yet the birds had found shelter, cover, and easy access. I had never noticed because I had never bothered to look.*
 
-PICARD encrypts your data with AES-256-GCM, splits it into blocks, chunks each block,
-and scatters the chunks across 260 protocol adapters — from social media APIs to DNS
-TXT records to Bluetooth beacons. No single adapter holds enough to reconstruct anything.
+*Our digital infrastructure is full of holes like those drainpipes. DNS, MQTT, ICMP, social media — built to transmit data and vanish, not to hold it. Yet they're wide open, with few guardrails and little scrutiny. Decades-old, they still route, respond, and hum along. What if anything left open long enough becomes habitat?*
 
-## Features
+**PICARD is the experiment.** It encrypts your data, slices it into chunks, and scatters those chunks across whatever protocols are available — DNS TXT records, social media posts, MQTT retained messages, S3 buckets, Bluetooth beacons, or all of the above at once. Pull it back and it reassembles. No single protocol holds enough to reconstruct anything. No central server. No monthly storage fees.
 
-- **260 protocol adapters** across 15+ categories (social, network, storage, P2P, exotic)
-- **AES-256-GCM encryption** with Argon2id key derivation (per-block salt + nonce)
-- **RAID redundancy** — levels 0/1/5/10 across adapter pools
-- **Scatter profiles** — quiet, resilient, speed, paranoid (config-driven)
-- **Full filesystem** — directories, symlinks, versioning, partial reads
-- **FUSE mount** — mount as a real filesystem (Linux/macOS/Windows)
-- **WebDAV server** — mount as a network drive for native OS drag-and-drop
-- **Block cache** — LRU with TTL for fast repeated reads
-- **Journaling** — crash recovery via write-ahead log
-- **fsck** — integrity checking, orphan detection, repair
-- **Streaming I/O** — handle files larger than RAM
-- **Encrypted index** — AES-256-GCM encrypted SQLite at rest
-- **Network transport** — peer-to-peer via HTTP with HMAC auth
-- **Key hierarchy** — HKDF sub-keys per adapter with version rotation
-- **Sealed envelopes** — no plaintext PCHK visible on the wire
-- **CLI** — 35+ commands with progress bars, --json output, colored display
-- **Web dashboard** — dark/light theme, drag-and-drop upload, storage health, per-adapter privacy routing
-- **MCP server** — agent-accessible storage tools for any MCP-compatible client
-- **Tor integration** — per-adapter or global SOCKS5 routing, hidden services, .onion peers
-- **Browser automation** — Playwright headless/headed mode for adapters that use web interfaces
-- **VPN device binding** — route adapter traffic through specific network interfaces
+It mounts as a regular filesystem. Files show up where they're supposed to. Underneath, everything lives in back channels, forgotten protocols, and digital crevices.
 
-## Research and Experimental Use
+Not elegant. Adaptive.
 
-PICARD is a computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the Apache 2.0 license.
+---
 
-Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use. Unauthorized access to computer systems is illegal in most jurisdictions and is not a supported use case.
+> **This is a computer science research project and proof of concept.** It is not a product, a platform, or a production storage system. It is a working hypothesis: that data, like wildlife, will colonize whichever crevice protocols leave open. Read the [ethics and legal notice](#research-and-experimental-use) before you proceed.
 
-Think before you act. By using PICARD you accept full responsibility for your actions and their consequences. You agree to indemnify, defend, and hold harmless the authors, contributors, and maintainers of PICARD from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to your use or misuse of this software.
+---
+
+## How It Works
+
+```
+plaintext
+  → AES-256-GCM encrypt (Argon2id key, per-block salt + nonce)
+  → PCHK chunk (protocol-sized pieces)
+  → scatter across adapters (DNS, Redis, Reddit, S3, MQTT …)
+  → sealed envelope per adapter (HKDF sub-key, correlation tag)
+
+retrieve
+  ← fan out to all adapters
+  ← collect, verify, assemble
+  ← decrypt
+```
+
+Each block is independently encrypted with its own random salt and nonce. Chunks are scattered round-robin or via RAID profiles. No adapter sees plaintext; no adapter sees enough ciphertext to reconstruct anything.
+
+The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk locations. Lose the passphrase, lose the data.
+
+## Adapters
+
+260 adapters across 15+ categories. A partial list:
+
+| Category | Examples |
+|----------|---------|
+| Social / Messaging | Bluesky, Reddit, Discord, Telegram, Mastodon, Twitter/X, Matrix |
+| Network Protocols | DNS TXT, MQTT, gRPC, WebSocket, CoAP, ICMP, TFTP, NTP |
+| Storage / KV | S3, Redis, PostgreSQL, DynamoDB, CouchDB, Cassandra |
+| Mail / Calendar | SMTP/IMAP, CalDAV, CardDAV, WebDAV |
+| P2P / Exotic | IPFS, BitTorrent DHT, Ethereum event logs, Nostr, Tor hidden services |
+| Steganography | Image LSB, audio WAV LSB, Unicode zero-width, PDF metadata |
+| Format / Encoding | XLSX hidden cells, EXIF fields, ZIP comments, DOCX custom XML |
+| Broadcast / Discovery | mDNS, SSDP, BLE advertisements, NFC NDEF, WiFi beacon |
+| Hardware / RF | CAN bus*, LoRa*, SDR*, serial ports* |
+| ...and more | 180+ additional adapters across every protocol gap we could find |
+
+*Hardware adapters require physical access to the relevant bus or radio. See safety notices in each adapter's docstring.
+
+Each adapter implements `write_chunk()` and `read_chunk()`. They don't know what they're carrying. They don't manage encryption or track state. They just offer shelter.
 
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"
+pip install picard-store
 
+# create a config
+picard init
+
+# edit picard.toml to add your adapters, then:
 picard put myfile.txt --as /docs/myfile.txt
 picard get /docs/myfile.txt -o recovered.txt
 picard ls
 picard tree /
-picard mount /mnt/picard    # requires libfuse/WinFSP/macFUSE
+
+# mount as a filesystem
+picard mount /mnt/picard      # Linux/macOS — requires libfuse/macFUSE
+picard mount P:               # Windows — requires WinFSP
+picard webdav                 # or: WebDAV for any OS, no kernel driver needed
 ```
 
-## Architecture
+From source:
 
+```bash
+git clone https://github.com/neitzert/picard-dev
+cd picard-dev
+pip install -e ".[dev]"
+python -m pytest --tb=short -q
 ```
-plaintext --> [AES-256-GCM per block] --> [PCHK chunking] --> [scatter across adapters]
-                    |                                                  |
-              Argon2id KDF                                   RAID pool / envelope seal
-              (per-block salt+nonce)                         (HKDF sub-keys per adapter)
+
+## Filesystem Mount
+
+`picard mount` exposes the virtual filesystem via FUSE. Regular shell tools work:
+`cp`, `ls`, `mv`, `rm`, `mkdir`, `cat`, `chmod`, `ln -s`, `df` — all work as expected.
+
+**Platform requirements:**
+- Linux: `sudo apt install libfuse-dev` (or distro equivalent)
+- macOS: `brew install --cask macfuse`
+- Windows: [WinFSP](https://winfsp.dev/) — or use `picard webdav` with Explorer's Map Network Drive
+
+**Known limitations:** no hard links, no file locking (`flock`/`fcntl`). Writes buffer the whole file in RAM and flush on close. Don't run SQLite WAL mode or Git object stores directly inside a mount.
+
+`picard webdav` is the zero-driver alternative: start it, point Explorer/Finder/Nautilus at `http://localhost:8471`, and drag files in.
+
+## MCP Server
+
+PICARD exposes storage tools as an MCP server, making it accessible to Claude and other MCP-compatible agents:
+
+```json
+{
+  "mcpServers": {
+    "picard-store": {
+      "command": "picard-mcp",
+      "env": { "PICARD_PASSPHRASE": "your-passphrase" }
+    }
+  }
+}
 ```
 
-Each block is independently decryptable with its own random salt (16 bytes) and nonce (12 bytes).
-Chunks are scattered round-robin across adapters. RAID pools provide redundancy.
-The sealed envelope format wraps chunks with per-adapter sub-keys and correlation tags,
-producing output indistinguishable from random data.
-
-## Cryptographic Posture
-
-PICARD's data path is entirely symmetric: Argon2id key derivation, HKDF-SHA256
-sub-keys, AES-256-GCM authenticated encryption, HMAC-SHA256 for transport auth
-and correlation tags. No public-key cryptography sits in the storage path.
-
-AES-256 provides 128-bit security against Grover's algorithm on a fault-tolerant
-quantum computer, matching the security target of NIST post-quantum standards.
-The ciphertext format carries a version and algorithm byte so the cipher can be
-replaced without re-encrypting stored data.
-
-## Adapter Categories
-
-| Category | Count | Examples |
-|----------|-------|---------|
-| Social / Messaging | 12 | Bluesky, Reddit, Discord, Telegram, Matrix, Slack |
-| Network Protocols | 20 | DNS, MQTT, gRPC, WebSocket, CoAP, TFTP, UDP |
-| Storage / KV | 11 | S3, Redis, PostgreSQL, DynamoDB, CouchDB |
-| Mail / Calendar | 4 | SMTP/IMAP, CalDAV, CardDAV, WebDAV |
-| P2P / Exotic | 10 | IPFS, BitTorrent DHT, Ethereum, QR codes, Steganography |
-| Format / Encoding | 7+ | XLSX hidden cells, EXIF metadata, PDF, ZIP comments |
-| Broadcast / Discovery | 10+ | mDNS, SSDP, BLE, NFC, WiFi beacons |
-| ... | ... | 180+ more across every protocol gap we could find |
+See [docs/mcp.md](docs/mcp.md) for available tools and setup.
 
 ## Configuration
 
@@ -96,94 +124,128 @@ replaced without re-encrypting stored data.
 block_size = 65536
 
 [[adapters]]
-name = "s3-chunks"
+name = "dns-primary"
+type = "dns"
+enabled = true
+params = { nameserver = "8.8.8.8", domain = "chunks.example.com" }
+
+[[adapters]]
+name = "s3-backup"
 type = "s3"
 enabled = true
 tor_proxy = true              # route through Tor SOCKS5
-browser_mode = "headless"     # api | headless | headed
 params = { bucket = "picard-chunks", prefix = "data/" }
 
 [[adapters]]
 name = "reddit-stash"
 type = "reddit"
 enabled = true
-browser_mode = "headed"       # visible browser for login
+browser_mode = "headed"       # api | headless | headed
 params = { subreddit = "u_myuser" }
 
 [[raid]]
 level = "raid5"
-adapters = ["s3-chunks", "redis-cache", "filesystem"]
+adapters = ["dns-primary", "s3-backup", "filesystem"]
 
 [scatter.paranoid]
 raid_level = "raid10"
 min_adapters = 4
 ```
 
-## CLI Commands
+Scatter profiles: `quiet`, `resilient`, `speed`, `paranoid`.
 
-### Core
-- `picard put` / `get` / `ls` / `rm` — basic file operations
-- `picard cp` / `mv` — copy and rename
-- `picard info` / `stat` — metadata inspection
-- `picard verify` — chunk integrity check
-- `picard export` / `import` — manifest bundles
+## CLI Reference
 
-### Filesystem
-- `picard mkdir` / `rmdir` — directory management (via `rm`)
-- `picard tree` / `find` — directory browsing
-- `picard ln` — symbolic links
-- `picard head` / `tail` — partial reads
-- `picard touch` — create or update timestamps
-- `picard log` — version history
-- `picard fsck` — filesystem consistency check
-- `picard mount` — FUSE mount
-
-### Infrastructure
-- `picard web` — launch web dashboard (dark/light theme, drag-and-drop, health monitoring)
-- `picard webdav` — mount as a WebDAV network drive
-- `picard recover` — journal crash recovery
-- `picard demo` — scatter across all adapters
-- `picard scatter-report` — show storage surface map
-- `picard adapters` / `profiles` — list available adapters and scatter profiles
-- `picard init` — create default config.toml
-- `picard tor-check` — verify Tor connectivity
-- `picard tor-serve` / `tor-peer` / `tor-mount` — Tor hidden service operations
-
-Most commands support `--json` for machine-readable output.
-
-## Documentation
-
-- [Architecture](docs/architecture.md) — data flow, key hierarchy, RAID, scatter
-- [Adapters](docs/adapters.md) — adapter list, writing custom adapters
-- [CLI Reference](docs/cli.md) — all commands with examples
-- [MCP Server](docs/mcp.md) — agent storage interface, setup, tools
-- [Network](docs/network.md) — transport layer, peer discovery, remote adapters
-- [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
-- [Tor](docs/tor.md) — anonymity, hidden services, .onion peers
-- [WebDAV](docs/webdav.md) — network drive mounting, native OS drag-and-drop
-
-## Development
-
-```bash
-pip install -e ".[dev]"
-python -m pytest --tb=short -q
+### Core operations
+```
+picard put <file> --as <path>    store a file
+picard get <path> -o <file>      retrieve a file
+picard ls [path]                 list files
+picard rm <path>                 delete
+picard cp / mv                   copy / rename
+picard tree /                    directory tree
+picard verify <path>             chunk integrity check
 ```
 
-Python 3.11+ required. Core dependencies: `cryptography`, `argon2-cffi`, `typer`, `rich`, `aiohttp`, `httpx`.
+### Filesystem
+```
+picard mkdir / ln / head / tail / touch / log / stat / find
+picard fsck                      consistency check and repair
+picard mount <mountpoint>        FUSE mount
+picard webdav                    WebDAV server (port 8471)
+```
+
+### Infrastructure
+```
+picard web                       web dashboard (dark/light, drag-and-drop)
+picard scatter-report            storage surface map
+picard adapters / profiles       list adapters and scatter profiles
+picard recover                   journal crash recovery
+picard tor-check / tor-serve / tor-peer / tor-mount
+picard init                      create default picard.toml
+```
+
+Most commands accept `--json` for machine-readable output.
+
+## Cryptographic Posture
+
+All symmetric: Argon2id key derivation, HKDF-SHA256 sub-keys, AES-256-GCM authenticated encryption, HMAC-SHA256 for transport auth and correlation tags. No public-key cryptography in the storage path.
+
+AES-256 provides 128-bit security against Grover's algorithm on a fault-tolerant quantum computer, matching the security target of NIST post-quantum standards. The ciphertext format carries a version byte so the cipher suite can be swapped without re-encrypting stored data.
+
+## Honest Downsides
+
+PICARD is not magic, perhaps it is poetic. It is certainly not efficient, will not be fast, and offers zero guarantees.
+
+- Reads are slow. Writes may partially fail.
+- If too many chunks go missing, your data is gone. No global index, no versioning by default.
+- Works best for small, critical datasets (a few MB to low GB). Larger files increase the risk of chunk loss and make already-slow retrieval worse.
+- As protocols evolve or get patched, adapters may need updates — much like birds adapting to new environments.
+- CISOs and sysadmins will not love that PICARD inhabits protocol assumptions that weren't designed with this kind of activity in mind.
+
+If you need guarantees, if uptime matters more than resilience, or if you expect everything to behave without some hacking — this probably isn't for you.
+
+## Research and Experimental Use
+
+PICARD is a computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the MIT license.
+
+Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. **PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use.** Unauthorized access to computer systems is illegal in most jurisdictions and is not a supported use case.
+
+Each adapter's source includes a platform-specific notice. Read it before you use the adapter.
+
+Think before you act. By using PICARD you accept full responsibility for your actions and their consequences. You agree to indemnify, defend, and hold harmless the authors, contributors, and maintainers of PICARD from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to your use or misuse of this software.
+
+### A note on ethics
+
+*Ethics in this context is the mortar between the bricks, not an optional coat of paint. If we decide the gutter is fair game simply because no one bolted a lock over the drain hole, we become the pigeons that foul every ledge and wonder why the neighbors hate us. Exploration is fine, even necessary, but it comes with the obligation to think through collateral damage, disclose what we find, and leave breadcrumbs for defenders to patch the holes if they choose. If PICARD is a flashlight into forgotten corners, then running it responsibly means logging the cracks we illuminate, resisting the urge to turn every gap into personal leverage, and being ready to shut it down when the experiment tips from curiosity to exploitation.*
 
 ## Test Coverage and Contributing
 
-The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested. Many of the 260 protocol adapters have unit tests with mocked transports; however, a significant portion of the adapter suite — particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets) — is not fully tested and has not been exercised against live infrastructure.
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4159 tests). Many protocol adapters have unit tests with mocked transports; however, a significant portion — particularly browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets) — has not been exercised against live infrastructure.
 
 **Pull requests are warmly welcomed**, especially for:
 
 - Integration tests for adapter browser paths (see `tests/integration/`)
 - Tests or fixes for untested or partially-tested adapters
 - Real-world validation of exotic protocol adapters
+- New adapters (include a mocked unit test covering `put()`, `get()`, and `rm()`)
 - Documentation improvements and usage examples
 
-If you find a bug or have a question, please open an issue. If you are adding a new adapter, include at least a mocked unit test covering `put()`, `get()`, and `rm()`.
+Open an issue for bugs or questions.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — data flow, key hierarchy, RAID, scatter profiles
+- [Adapters](docs/adapters.md) — full adapter list, writing custom adapters
+- [CLI Reference](docs/cli.md) — all commands with examples
+- [MCP Server](docs/mcp.md) — agent storage interface, setup, available tools
+- [FUSE Mount](docs/fuse.md) — mounting, performance, platform notes
+- [WebDAV](docs/webdav.md) — network drive mounting, native OS drag-and-drop
+- [Tor](docs/tor.md) — anonymity, hidden services, .onion peers
+- [Network](docs/network.md) — transport layer, peer discovery, remote adapters
 
 ## License
 
-MIT
+MIT — © 2024–2026 Christopher Neitzert
+
+*In the wild, anything left open long enough becomes habitat.*
