@@ -16,9 +16,17 @@ import posixpath
 import sys
 from pathlib import Path
 
-from mcp.server import Server
-from mcp.server.stdio import stdio_server
-from mcp.types import TextContent, Tool
+try:
+    from mcp.server import Server
+    from mcp.server.stdio import stdio_server
+    from mcp.types import TextContent, Tool
+except ImportError:
+    print(
+        "error: 'mcp' package not found.\n"
+        "Install it with:  pip install 'picard[mcp]'",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 from picard.adapters.filesystem import FilesystemAdapter
 from picard.index import Index
@@ -69,12 +77,12 @@ def _get_orchestrator() -> tuple[Orchestrator, Index]:
                     try:
                         params = resolve_params(entry.params)
                         loaded.append(instantiate(entry.type, **params))
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        print(f"warning: skipping adapter '{entry.type}': {exc}", file=sys.stderr)
                 if loaded:
                     adapters = loaded
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"warning: could not load {config_path}: {exc} — using filesystem adapter", file=sys.stderr)
 
     journal = Journal(idx.connection, write_lock=idx.write_lock)
     _orch = Orchestrator(adapters, idx, journal=journal)
