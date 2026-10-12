@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Protocol-Introspecting Chunk Adapter for Resilient Data — encrypt, chunk, and scatter data across protocol gaps."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "Christopher Neitzert", email = "chris@neitzert.com" }]
 keywords = ["encryption", "scatter", "storage", "adapters", "privacy", "security", "chunks", "aes-256-gcm"]
 classifiers = [

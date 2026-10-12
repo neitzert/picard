@@ -123,6 +123,7 @@ class RaidPool(Adapter):
             self._parity_refs: list[StoredChunkRef] = []
             self._stripe_lock = threading.Lock()
             self._stripe_registry: dict[int, dict] = {}
+            self._parity_writing: bool = False
 
     def profile(self) -> AdapterProfile:
         min_bytes = min(a.profile().max_chunk_bytes for a in self._adapters)
@@ -217,6 +218,10 @@ class RaidPool(Adapter):
             return
         with self._stripe_lock:
             has_chunks = bool(self._stripe.chunks)
+            if has_chunks and not self._parity_writing:
+                self._parity_writing = True
+            else:
+                has_chunks = False
         if not has_chunks:
             return
         await self._write_parity()
@@ -281,6 +286,12 @@ class RaidPool(Adapter):
 
         parity_ref: StoredChunkRef | None = None
         if stripe_full:
+            with self._stripe_lock:
+                if self._parity_writing:
+                    stripe_full = False
+                else:
+                    self._parity_writing = True
+        if stripe_full:
             parity_ref = await self._write_parity()
 
         # Include the parity ref in the RaidRef so recovery survives restarts.
@@ -323,6 +334,7 @@ class RaidPool(Adapter):
                 parity_adapter_idx=(parity_adapter_idx + 1) % len(self._adapters),
             )
             self._stripe_id += 1
+            self._parity_writing = False
 
         return parity_ref
 

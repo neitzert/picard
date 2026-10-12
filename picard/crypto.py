@@ -18,6 +18,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from argon2.low_level import Type, hash_secret_raw
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 
@@ -218,8 +219,8 @@ def decrypt(blob: bytes, passphrase: str) -> bytes:
             raise ValueError(f"unsupported algorithm: 0x{blob[1]:02x}")
         try:
             return _decrypt_v2(blob, passphrase)
-        except Exception:
+        except InvalidTag:
             # 1/65536 chance a legacy blob's salt starts with 0x02 0x01;
-            # GCM auth fails, fall back to legacy parse.
+            # GCM auth fails on v2 parse, fall back to legacy format.
             return _decrypt_legacy(blob, passphrase)
     return _decrypt_legacy(blob, passphrase)
