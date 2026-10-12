@@ -279,16 +279,24 @@ class RaidPool(Adapter):
 
             stripe_full = len(stripe.chunks) >= self._stripe_size
 
+        parity_ref: StoredChunkRef | None = None
         if stripe_full:
-            await self._write_parity()
+            parity_ref = await self._write_parity()
 
-        raid_ref = RaidRef(refs=(ref,), stripe_id=current_stripe_id)
+        # Include the parity ref in the RaidRef so recovery survives restarts.
+        # Only the last chunk per stripe has parity_refs populated; earlier
+        # chunks rely on _stripe_registry (in-process only).
+        raid_ref = RaidRef(
+            refs=(ref,),
+            stripe_id=current_stripe_id,
+            parity_refs=(parity_ref,) if parity_ref else (),
+        )
         return StoredChunkRef(
             adapter_name=self.profile().name,
             location=raid_ref.pack(),
         )
 
-    async def _write_parity(self) -> None:
+    async def _write_parity(self) -> StoredChunkRef:
         with self._stripe_lock:
             stripe = self._stripe
             current_stripe_id = self._stripe_id
@@ -315,6 +323,8 @@ class RaidPool(Adapter):
                 parity_adapter_idx=(parity_adapter_idx + 1) % len(self._adapters),
             )
             self._stripe_id += 1
+
+        return parity_ref
 
     async def _read_raid5(self, raid_ref: RaidRef) -> str:
         try:

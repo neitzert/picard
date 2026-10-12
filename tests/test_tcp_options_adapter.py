@@ -1,4 +1,4 @@
-"""Tests for the TCP options covert channel adapter — mocked, no network."""
+"""Tests for the TCP options adapter — mocked, no network."""
 
 from __future__ import annotations
 

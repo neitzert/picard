@@ -1,4 +1,4 @@
-"""Steganography adapter — hides chunks in image pixel LSBs.
+"""Steganography adapter — stores chunks in image pixel LSBs.
 
 Each chunk is embedded into the least significant bits of a carrier
 image's pixel data and saved as a PNG file.  Retrieval extracts the
@@ -22,7 +22,7 @@ from picard.chunker import Chunk
 
 
 class SteganographyAdapter(Adapter):
-    """Hide chunks inside image pixel LSBs."""
+    """Store chunks inside image pixel LSBs."""
 
     def __init__(
         self,

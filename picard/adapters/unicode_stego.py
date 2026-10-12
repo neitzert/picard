@@ -1,8 +1,8 @@
-"""Unicode steganography adapter — hides data in zero-width characters.
+"""Unicode steganography adapter — stores data in zero-width characters.
 
 Encodes chunk bytes as sequences of zero-width Unicode characters
-interleaved with normal cover text.  The resulting text looks
-completely normal to human readers — the data is invisible.
+interleaved with normal cover text.  Zero-width characters are not
+rendered visually in most text display contexts.
 
 Zero-width chars used:
   U+200B (zero-width space)     = 00

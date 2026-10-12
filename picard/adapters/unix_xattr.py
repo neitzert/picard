@@ -1,8 +1,8 @@
 """Unix extended attributes adapter — stores chunks in xattr.
 
-Data stored in extended attributes is invisible to ``ls``, ``find``,
-and ``du``.  Only ``getfattr`` / ``xattr`` can reveal it.  Works on
-any filesystem that supports xattr (ext4, xfs, btrfs, tmpfs, NFS…).
+Data stored in extended attributes is not shown by ``ls``, ``find``,
+or ``du`` by default; use ``getfattr``/``xattr`` to enumerate it.
+Works on any filesystem that supports xattr (ext4, xfs, btrfs, tmpfs, NFS…).
 """
 
 from __future__ import annotations

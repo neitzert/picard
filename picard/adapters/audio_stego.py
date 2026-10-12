@@ -1,8 +1,7 @@
-"""Audio steganography adapter — hides chunks in WAV sample LSBs.
+"""Audio steganography adapter — stores chunks in WAV sample LSBs.
 
 Each chunk is encoded into the least-significant bits of 16-bit PCM
-audio samples.  The resulting WAV file sounds like faint static —
-indistinguishable from noise floor in a real recording.
+audio samples.  The modification is in the noise floor of the audio.
 
 Uses only the Python stdlib (wave, struct).
 """
