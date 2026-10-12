@@ -89,7 +89,7 @@ class NpmRegistryAdapter(Adapter):
         tarball = b""  # minimal empty tarball placeholder
 
         body = {
-            "name": pkg_name,
+            "_id": pkg_name,
             "description": encoded_chunk,
             "version": version,
             "versions": {

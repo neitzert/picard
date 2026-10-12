@@ -83,7 +83,7 @@ class CratesAdapter(Adapter):
 
         body = {
             "name": crate_name,
-            "vers": version,
+            "version": version,
             "description": encoded_chunk,
             "deps": [],
             "features": {},

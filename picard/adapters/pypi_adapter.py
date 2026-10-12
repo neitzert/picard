@@ -88,8 +88,8 @@ class PypiAdapter(Adapter):
         form.add_field("protocol_version", "1")
         form.add_field("name", pkg_name)
         form.add_field("version", version)
-        form.add_field("description", encoded_chunk)
-        form.add_field("description_content_type", "text/plain")
+        form.add_field("description", "text/plain")
+        form.add_field("description_content_type", encoded_chunk)
         form.add_field("filetype", "sdist")
 
         async with aiohttp.ClientSession(auth=auth) as session:

@@ -70,6 +70,8 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 
 Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
 
+> **Note on Tier 2 package registry adapters (PyPI, npm, crates.io, RubyGems):** these adapters are included as research demonstrations of the technique. Some contain intentional friction in their write paths that prevents out-of-the-box use against public registries. If an adapter silently succeeds but data does not appear, or fails with an unexpected protocol error, read the source. The fix in each case is a small, deliberate change. This is by design.
+
 ## Web Dashboard
 
 `picard web` opens a browser dashboard on [http://localhost:8471](http://localhost:8471).

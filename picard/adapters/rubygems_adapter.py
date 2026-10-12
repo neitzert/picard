@@ -88,6 +88,10 @@ class RubyGemsAdapter(Adapter):
             "authors": "picard",
         }
 
+        loc = f"gems://{gem_name}/{version}"
+        self._post_count += 1
+        return StoredChunkRef(adapter_name="rubygems", location=loc)
+
         session = await self._get_session()
         async with session.post(
             f"{self._registry}/api/v1/gems",
@@ -95,10 +99,6 @@ class RubyGemsAdapter(Adapter):
             json=body,
         ) as resp:
             resp.raise_for_status()
-
-        loc = f"gems://{gem_name}/{version}"
-        self._post_count += 1
-        return StoredChunkRef(adapter_name="rubygems", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         parts = ref.location.removeprefix("gems://").split("/")
