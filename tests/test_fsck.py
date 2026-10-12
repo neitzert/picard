@@ -120,6 +120,36 @@ class TestFsckJournal:
 
 
 @pytest.mark.asyncio
+class TestVersionGaps:
+    async def test_no_gap_on_normal_overwrites(self, setup):
+        orch, index, adapter = setup
+        await orch.put("/versioned.txt", b"v1", "pw")
+        await orch.put("/versioned.txt", b"v2", "pw")
+        await orch.put("/versioned.txt", b"v3", "pw")
+        report = await fsck(index, [adapter], verify_digests=False)
+        assert report.version_gaps == 0
+
+    async def test_gap_detected_when_manifest_removed(self, setup):
+        orch, index, adapter = setup
+        await orch.put("/gap.txt", b"v1", "pw")
+        await orch.put("/gap.txt", b"v2", "pw")
+        await orch.put("/gap.txt", b"v3", "pw")
+        # Delete version 2 directly from the index to simulate a gap
+        index._conn.execute(
+            "DELETE FROM manifests WHERE path=? AND version=2", ("/gap.txt",)
+        )
+        index._conn.commit()
+        report = await fsck(index, [adapter], verify_digests=False)
+        assert report.version_gaps == 1
+        gap_errors = [e for e in report.errors if e["type"] == "version_gap"]
+        assert len(gap_errors) == 1
+        assert gap_errors[0]["path"] == "/gap.txt"
+        assert gap_errors[0]["after_version"] == 1
+        assert gap_errors[0]["before_version"] == 3
+        assert gap_errors[0]["missing_count"] == 1
+
+
+@pytest.mark.asyncio
 class TestRepair:
     async def test_repair_incomplete_journal(self, setup):
         _, index, adapter = setup

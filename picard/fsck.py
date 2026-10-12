@@ -157,6 +157,23 @@ async def fsck(
                         "target": m.symlink_target,
                     })
 
+    # check for version gaps per path (e.g. versions 1, 3 with no 2)
+    for p in paths:
+        version_rows = index.list_versions(p)
+        nums = [r["version"] for r in version_rows]
+        if len(nums) > 1:
+            for i in range(len(nums) - 1):
+                gap = nums[i + 1] - nums[i]
+                if gap > 1:
+                    report.version_gaps += gap - 1
+                    report.errors.append({
+                        "type": "version_gap",
+                        "path": p,
+                        "after_version": nums[i],
+                        "before_version": nums[i + 1],
+                        "missing_count": gap - 1,
+                    })
+
     if check_journal:
         try:
             journal = Journal(index.connection, write_lock=index.write_lock)
