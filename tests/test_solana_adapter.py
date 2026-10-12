@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -49,16 +49,18 @@ class TestSolanaAdapter:
 
     async def test_write_chunk(self):
         a = _make_adapter()
-        a._rpc = AsyncMock(return_value={"result": "txsig123"})
+        a._rpc = AsyncMock(side_effect=[
+            {"result": {"value": {"blockhash": "11111111111111111111111111111111"}}},
+            {"result": "txsig123"},
+        ])
         enc = _sample_encoded()
 
-        ref = await a.write_chunk(enc)
+        with patch("picard.adapters.solana_adapter._load_seed", return_value=b"\x00" * 32):
+            ref = await a.write_chunk(enc)
 
         assert ref.adapter_name == "solana"
-        assert ref.location.startswith("sol://")
-        a._rpc.assert_awaited_once()
-        call_args = a._rpc.call_args
-        assert call_args[0][0] == "sendTransaction"
+        assert ref.location == "sol://txsig123"
+        assert a._rpc.call_args_list[1][0][0] == "sendTransaction"
 
     async def test_read_chunk(self):
         a = _make_adapter()
