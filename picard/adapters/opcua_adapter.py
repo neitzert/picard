@@ -3,7 +3,7 @@
 Each chunk becomes a String-typed Variable under a picard folder in the
 server's address space.  The node identifier encodes manifest/block/chunk.
 
-Requires: pip install picard[opcua]  (asyncua)
+Requires: pip install picard-store[opcua]  (asyncua)
 """
 
 from __future__ import annotations

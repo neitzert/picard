@@ -2,7 +2,7 @@
 
 Uses boto3 with a custom endpoint to talk to DigitalOcean's S3-compatible API.
 
-Requires: pip install picard[do-spaces]   (boto3)
+Requires: pip install picard-store[do-spaces]   (boto3)
 """
 
 from __future__ import annotations

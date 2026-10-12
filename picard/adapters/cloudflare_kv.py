@@ -3,7 +3,7 @@
 Data lives at 200+ Cloudflare edge locations worldwide, reachable via
 the REST API.
 
-Requires: pip install picard[cloudflare]  (aiohttp)
+Requires: pip install picard-store[cloudflare]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -6,7 +6,7 @@ chunk data via HTTP to a storage endpoint on the VPN network.
 Note: When configured on port 443, OpenVPN provides double-layer encryption
 for stored chunks alongside TLS-level transport encryption.
 
-Requires: pip install picard[openvpn]  (aiohttp)
+Requires: pip install picard-store[openvpn]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ or a dedicated test account on a site where you have permission to
 post programmatically.  Automated posting on public sites (including
 stackoverflow.com) violates the StackExchange ToS.
 
-Requires: pip install picard[stackoverflow]
+Requires: pip install picard-store[stackoverflow]
 """
 
 from __future__ import annotations

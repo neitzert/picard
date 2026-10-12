@@ -30,14 +30,14 @@ except ImportError:
 def require_tor():
     if not HAS_STEM:
         raise RuntimeError(
-            "Tor support requires 'stem'. Install with: pip install picard[tor]"
+            "Tor support requires 'stem'. Install with: pip install picard-store[tor]"
         )
 
 
 def require_socks():
     if not HAS_SOCKS:
         raise RuntimeError(
-            "Tor SOCKS proxy requires 'httpx-socks'. Install with: pip install picard[tor]"
+            "Tor SOCKS proxy requires 'httpx-socks'. Install with: pip install picard-store[tor]"
         )
 
 

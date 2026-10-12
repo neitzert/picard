@@ -7,7 +7,7 @@ adapter with a private or self-hosted OSM instance, or ensure your usage
 complies with the OSM API usage policy and terms of use.  Flooding the
 public OSM API with data notes is a terms violation and harms the community.
 
-Requires: pip install picard[osm]  (aiohttp)
+Requires: pip install picard-store[osm]  (aiohttp)
 """
 
 from __future__ import annotations

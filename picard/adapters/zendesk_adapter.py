@@ -3,7 +3,7 @@
 Data is embedded inside Zendesk support ticket comments,
 appearing as routine customer service traffic.
 
-Requires: pip install picard[zendesk]  (uses aiohttp)
+Requires: pip install picard-store[zendesk]  (uses aiohttp)
 """
 
 from __future__ import annotations

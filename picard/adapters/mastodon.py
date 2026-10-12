@@ -9,7 +9,7 @@ instances you own and control.  Use in a manner that violates the
 Terms of Service of the instance you connect to is outside the scope
 of this project and the responsibility of the user.
 
-Requires: pip install picard[mastodon]
+Requires: pip install picard-store[mastodon]
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ Do not submit to public CT logs — they are shared, append-only internet
 infrastructure operated by CAs and browser vendors, and submitting
 garbage pre-certificates to them is abuse of critical PKI infrastructure.
 
-Requires: pip install picard[ct]  (aiohttp, cryptography)
+Requires: pip install picard-store[ct]  (aiohttp, cryptography)
 """
 
 from __future__ import annotations

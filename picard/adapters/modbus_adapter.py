@@ -5,7 +5,7 @@ configurable base address.  The first two registers store the data
 length (big-endian uint32), followed by the raw chunk bytes padded
 to register boundaries.
 
-Requires: pip install picard[modbus]  (pymodbus)
+Requires: pip install picard-store[modbus]  (pymodbus)
 """
 
 from __future__ import annotations

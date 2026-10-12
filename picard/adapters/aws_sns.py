@@ -4,7 +4,7 @@ Publishes chunks as messages to an SNS topic. The chunk data
 rides in the message body and can be fanned out to SQS queues,
 Lambda functions, HTTP endpoints — the data disperses automatically.
 
-Requires: pip install picard[aws]  (aiohttp)
+Requires: pip install picard-store[aws]  (aiohttp)
 """
 
 from __future__ import annotations

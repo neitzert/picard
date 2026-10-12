@@ -3,7 +3,7 @@
 Each chunk becomes a Confluence page in the configured space, with
 the encoded chunk data in the page body (storage format).
 
-Requires: pip install picard[confluence]  (aiohttp)
+Requires: pip install picard-store[confluence]  (aiohttp)
 """
 
 from __future__ import annotations

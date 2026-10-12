@@ -3,7 +3,7 @@
 Each chunk becomes a single-file gist.  The filename encodes the chunk
 identity so gists can be discovered for recovery.
 
-Requires: pip install picard[github]
+Requires: pip install picard-store[github]
 """
 
 from __future__ import annotations

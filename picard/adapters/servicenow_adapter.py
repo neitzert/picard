@@ -2,7 +2,7 @@
 
 Data is stored inside ServiceNow incident descriptions.
 
-Requires: pip install picard[servicenow]  (uses aiohttp)
+Requires: pip install picard-store[servicenow]  (uses aiohttp)
 """
 
 from __future__ import annotations

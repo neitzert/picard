@@ -4,7 +4,7 @@ Each chunk is sent as calldata in a self-referencing transaction on
 Polygon PoS.  Reads are free via eth_getTransactionByHash.  Writes
 cost fractions of a cent in MATIC gas.
 
-Requires: pip install picard[polygon]   (aiohttp)
+Requires: pip install picard-store[polygon]   (aiohttp)
 """
 
 from __future__ import annotations

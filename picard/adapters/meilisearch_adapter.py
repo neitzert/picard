@@ -3,7 +3,7 @@
 Stores chunks as documents in a Meilisearch instance. Meilisearch is
 a lightweight search engine popular for site search.
 
-Requires: pip install picard[meilisearch]  (aiohttp)
+Requires: pip install picard-store[meilisearch]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ Terms of Service is outside the scope of this project and the
 responsibility of the user.  No endorsement by or affiliation with
 Hugging Face, Inc. is implied.
 
-Requires: pip install picard[huggingface]  (aiohttp)
+Requires: pip install picard-store[huggingface]  (aiohttp)
 """
 
 from __future__ import annotations

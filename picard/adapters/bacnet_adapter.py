@@ -3,7 +3,7 @@
 Each chunk becomes a CharacterString value on a characterstringValue
 object instance.
 
-Requires: pip install picard[bacnet]  (BAC0 or bacpypes3)
+Requires: pip install picard-store[bacnet]  (BAC0 or bacpypes3)
 """
 
 from __future__ import annotations

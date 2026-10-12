@@ -3,7 +3,7 @@
 Each chunk becomes a row: [chunk_key, encoded_data, timestamp].
 Reads scan column A for the chunk key and return column B.
 
-Requires: pip install picard[gsheets]  (google-api-python-client google-auth)
+Requires: pip install picard-store[gsheets]  (google-api-python-client google-auth)
 """
 
 from __future__ import annotations

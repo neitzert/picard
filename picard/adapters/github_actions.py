@@ -2,7 +2,7 @@
 
 Stores data as CI/CD build artifacts with 90-day default retention.
 
-Requires: pip install picard[github-actions]  (aiohttp)
+Requires: pip install picard-store[github-actions]  (aiohttp)
 """
 
 from __future__ import annotations

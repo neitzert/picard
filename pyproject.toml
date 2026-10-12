@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "picard"
+name = "picard-store"
 version = "0.2.0"
 description = "Protocol-Introspecting Chunk Adapter for Resilient Data: encrypt, chunk, and scatter data across protocol gaps."
 readme = "README.md"

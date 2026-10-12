@@ -3,7 +3,7 @@
 Each chunk becomes a key-value pair in Redis.  Supports optional TTL
 for automatic expiry.
 
-Requires: pip install picard[redis]
+Requires: pip install picard-store[redis]
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ and control.  Use in a manner that violates Flickr's Terms of Service
 is outside the scope of this project and the responsibility of the
 user.  No endorsement by or affiliation with SmugMug, Inc. is implied.
 
-Requires: pip install picard[flickr]   (uses aiohttp)
+Requires: pip install picard-store[flickr]   (uses aiohttp)
 """
 
 from __future__ import annotations

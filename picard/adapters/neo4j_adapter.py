@@ -2,7 +2,7 @@
 
 Each chunk becomes a :Chunk node with key, data, and manifest_id properties.
 
-Requires: pip install picard[neo4j]  (neo4j)
+Requires: pip install picard-store[neo4j]  (neo4j)
 """
 
 from __future__ import annotations

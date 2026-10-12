@@ -3,7 +3,7 @@
 Pay once, store forever.  Each chunk becomes an Arweave transaction
 with the data field containing the encoded chunk.
 
-Requires: pip install picard[arweave]  (aiohttp, cryptography)
+Requires: pip install picard-store[arweave]  (aiohttp, cryptography)
 """
 
 from __future__ import annotations

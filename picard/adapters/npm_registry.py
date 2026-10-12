@@ -7,7 +7,7 @@ WARNING: Use only with registries you control (private registry or your
 own npm account). Publishing garbage packages to public npm violates
 npm's ToS.
 
-Requires: pip install picard[npm]  (aiohttp)
+Requires: pip install picard-store[npm]  (aiohttp)
 """
 
 from __future__ import annotations

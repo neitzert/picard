@@ -3,7 +3,7 @@
 Embeds chunk data as a custom AttributeStatement value inside a
 signed SAML assertion, then POSTs it to a service provider.
 
-Requires: pip install picard[saml]  (lxml)
+Requires: pip install picard-store[saml]  (lxml)
 """
 
 from __future__ import annotations

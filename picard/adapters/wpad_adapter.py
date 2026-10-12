@@ -7,7 +7,7 @@ Note: WPAD is fetched automatically by browsers and OS network stacks.
 A PAC file with embedded chunk data in comments is distributed to
 every machine on the network automatically.
 
-Requires: pip install picard[wpad]  (aiohttp)
+Requires: pip install picard-store[wpad]  (aiohttp)
 """
 
 from __future__ import annotations

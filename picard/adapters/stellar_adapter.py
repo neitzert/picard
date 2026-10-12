@@ -7,7 +7,7 @@ allows up to 6 400 bytes per chunk write.
 Writes require a funded account.  Reads are free via Horizon.
 Once included in a ledger the data is permanent (delete_chunk → False).
 
-Requires: pip install picard[stellar]   (aiohttp, stellar-sdk)
+Requires: pip install picard-store[stellar]   (aiohttp, stellar-sdk)
 """
 
 from __future__ import annotations

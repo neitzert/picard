@@ -4,7 +4,7 @@ Vercel KV is a managed Redis-compatible KV backed by Upstash, accessible
 via a simple REST API.  Commonly used by Next.js apps — chunk traffic
 blends with normal app data.
 
-Requires: pip install picard[vercel]  (aiohttp)
+Requires: pip install picard-store[vercel]  (aiohttp)
 """
 
 from __future__ import annotations

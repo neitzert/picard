@@ -4,7 +4,7 @@ Annotations are a standard Grafana feature for marking events on
 dashboards.  Chunk data is stored in the annotation text field, tagged
 for retrieval.
 
-Requires: pip install picard[grafana]  (aiohttp)
+Requires: pip install picard-store[grafana]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ A cooperating HTTP server accepts chunks via X-PCHK-Data headers
 on POST requests and returns them via the same header on GET.
 Uses custom HTTP headers as a storage channel.
 
-Requires: pip install picard[http-headers]  (httpx)
+Requires: pip install picard-store[http-headers]  (httpx)
 """
 
 from __future__ import annotations

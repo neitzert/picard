@@ -3,7 +3,7 @@
 Chunks live in R2 buckets.  R2 speaks S3, so the same adapter code
 works with any S3-compatible store.  Zero egress fees make retrieval cheap.
 
-Requires: pip install picard[r2]  (aiohttp)
+Requires: pip install picard-store[r2]  (aiohttp)
 """
 
 from __future__ import annotations

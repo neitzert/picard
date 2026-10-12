@@ -10,7 +10,7 @@ read_chunk   — derives KT1 address via TzKT indexer, reads storage via node RP
 delete_chunk → False (immutable on-chain)
 list_chunks  → [] (no on-chain enumeration)
 
-Requires: pip install picard[tezos]   (aiohttp, cryptography)
+Requires: pip install picard-store[tezos]   (aiohttp, cryptography)
 """
 
 from __future__ import annotations

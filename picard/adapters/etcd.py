@@ -3,7 +3,7 @@
 Each chunk becomes an etcd key under a structured prefix. Uses the gRPC-gateway
 JSON/HTTP API so no gRPC dependency is needed — just httpx.
 
-Requires: pip install picard[etcd]  (uses httpx)
+Requires: pip install picard-store[etcd]  (uses httpx)
 """
 
 from __future__ import annotations

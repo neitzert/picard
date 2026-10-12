@@ -3,7 +3,7 @@
 Each chunk becomes a KV entry keyed by manifest/block/chunk index.
 JetStream provides persistence and replay.
 
-Requires: pip install picard[nats]  (nats-py)
+Requires: pip install picard-store[nats]  (nats-py)
 """
 
 from __future__ import annotations

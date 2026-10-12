@@ -4,7 +4,7 @@ Each chunk is stored via a key-value storage contract on an EVM chain.
 Writes require gas (signed transactions); reads are free (eth_call).
 The contract is assumed to be already deployed.
 
-Requires: pip install picard[ethereum]   (httpx)
+Requires: pip install picard-store[ethereum]   (httpx)
 """
 
 from __future__ import annotations

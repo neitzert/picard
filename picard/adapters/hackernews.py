@@ -9,7 +9,7 @@ Bulk or automated posting violates HN's rules and is not a supported
 use case.  No endorsement by or affiliation with Y Combinator is
 implied.
 
-Requires: pip install picard[hn]
+Requires: pip install picard-store[hn]
 """
 
 from __future__ import annotations

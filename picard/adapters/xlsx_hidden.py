@@ -3,7 +3,7 @@
 Each chunk becomes an .xlsx with data in a VeryHidden worksheet:
     xlsx://{output_dir}/{chunk_id}.xlsx
 
-Requires: pip install picard[xlsx]  (openpyxl)
+Requires: pip install picard-store[xlsx]  (openpyxl)
 """
 
 from __future__ import annotations

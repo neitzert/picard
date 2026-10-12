@@ -4,7 +4,7 @@ Each chunk is embedded in a Memo instruction within a legacy transaction.
 Data is permanent and on-chain once confirmed. Reads are free via
 getTransaction; writes cost SOL for gas.
 
-Requires: pip install picard[solana]   (aiohttp, cryptography)
+Requires: pip install picard-store[solana]   (aiohttp, cryptography)
 """
 
 from __future__ import annotations

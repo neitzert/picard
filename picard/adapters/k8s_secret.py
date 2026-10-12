@@ -3,7 +3,7 @@
 Each chunk becomes a Secret object in the target namespace with the
 chunk data base64-encoded in the data field.
 
-Requires: pip install picard[k8s]  (kubernetes-asyncio)
+Requires: pip install picard-store[k8s]  (kubernetes-asyncio)
 """
 
 from __future__ import annotations

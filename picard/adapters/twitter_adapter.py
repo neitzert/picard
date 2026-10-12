@@ -5,7 +5,7 @@ Each chunk becomes a tweet or direct message:
 
 Two modes:
   - API mode (default): Twitter API v2 — requires bearer_token
-  - Browser mode: Playwright — pip install picard[browser]
+  - Browser mode: Playwright — pip install picard-store[browser]
 
 Notice: This adapter must only be used with Twitter/X accounts and
 infrastructure you own and control.  Use in a manner that violates

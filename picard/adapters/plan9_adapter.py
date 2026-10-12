@@ -3,7 +3,7 @@
 Used by WSL2, QEMU virtio-9p, and Plan 9 systems:
     9p://{host}/{aname}/{manifest_id}/{block}_{chunk}
 
-Requires: pip install picard[9p]
+Requires: pip install picard-store[9p]
 """
 
 from __future__ import annotations

@@ -62,7 +62,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 ## Quickstart
 
 ```bash
-pip install picard
+pip install picard-store
 
 export PICARD_PASSPHRASE="your-passphrase"   # or picard will prompt
 

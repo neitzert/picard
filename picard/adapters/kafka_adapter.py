@@ -4,7 +4,7 @@ Each chunk becomes a Kafka message with the chunk key as the message
 key and the encoded data as the value.  The location records the
 topic, partition, and offset for precise retrieval.
 
-Requires: pip install picard[kafka]  (aiokafka)
+Requires: pip install picard-store[kafka]  (aiokafka)
 """
 
 from __future__ import annotations

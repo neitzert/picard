@@ -4,7 +4,7 @@ Each chunk becomes an object in a B2 bucket. Uses B2's native API
 (authorize_account, get_upload_url, upload_file) for writes and
 download_file_by_name for reads.
 
-Requires: pip install picard[b2]   (aiohttp)
+Requires: pip install picard-store[b2]   (aiohttp)
 """
 
 from __future__ import annotations

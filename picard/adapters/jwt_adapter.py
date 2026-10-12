@@ -4,7 +4,7 @@ Embeds chunk data as custom claims in signed JWTs, then stores them
 in an HTTP endpoint (or local cache). Chunk data travels as
 standard bearer tokens.
 
-Requires: pip install picard[jwt]  (PyJWT)
+Requires: pip install picard-store[jwt]  (PyJWT)
 """
 
 from __future__ import annotations

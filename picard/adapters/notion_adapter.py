@@ -3,7 +3,7 @@
 Each chunk becomes a page in a Notion database with the encoded data
 in a rich_text property and a chunk key in the title.
 
-Requires: pip install picard[notion]  (aiohttp)
+Requires: pip install picard-store[notion]  (aiohttp)
 """
 
 from __future__ import annotations

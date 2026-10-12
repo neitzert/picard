@@ -7,7 +7,7 @@ phone numbers you own and control.  Use in a manner that violates Meta's
 Terms of Service is outside the scope of this project and the responsibility
 of the user.  No endorsement by or affiliation with Meta is implied.
 
-Requires: pip install picard[whatsapp]  (uses aiohttp)
+Requires: pip install picard-store[whatsapp]  (uses aiohttp)
 """
 
 from __future__ import annotations

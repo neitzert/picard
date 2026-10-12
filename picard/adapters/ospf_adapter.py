@@ -9,7 +9,7 @@ LSAs into shared infrastructure is a network abuse violation.
 Note: Opaque LSAs flood across the entire OSPF area — every router
 in the area stores a copy of the chunk in its LSDB.
 
-Requires: pip install picard[ospf]  (aiohttp)
+Requires: pip install picard-store[ospf]  (aiohttp)
 """
 
 from __future__ import annotations

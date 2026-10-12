@@ -2,7 +2,7 @@
 
 Each chunk becomes an item with composite key (pk=manifest, sk=block/chunk).
 
-Requires: pip install picard[dynamodb]  (boto3)
+Requires: pip install picard-store[dynamodb]  (boto3)
 """
 
 from __future__ import annotations

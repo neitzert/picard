@@ -41,7 +41,7 @@ class TorAdapter(Adapter):
             except ImportError:
                 raise RuntimeError(
                     "Tor adapter requires 'httpx-socks'. "
-                    "Install with: pip install picard[tor]"
+                    "Install with: pip install picard-store[tor]"
                 )
             self._client = httpx.AsyncClient(
                 transport=transport,

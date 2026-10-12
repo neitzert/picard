@@ -3,7 +3,7 @@
 QUIC traffic looks like generic UDP, and the DNS content is encrypted,
 giving this adapter strong transport-layer privacy.
 
-Requires: pip install picard[dns,quic]  (aioquic, dnspython)
+Requires: pip install picard-store[dns,quic]  (aioquic, dnspython)
 """
 
 from __future__ import annotations

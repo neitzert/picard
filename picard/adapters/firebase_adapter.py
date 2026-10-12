@@ -3,7 +3,7 @@
 Each chunk becomes a node at /{base_path}/{chunk_key}.json in the
 Firebase RTDB, accessed via the REST API.
 
-Requires: pip install picard[firebase]  (aiohttp)
+Requires: pip install picard-store[firebase]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes a retained message on topic:
     picard/{manifest_id}/{block_index}/{chunk_index}
 
-Requires: pip install picard[mqtt]
+Requires: pip install picard-store[mqtt]
 """
 
 from __future__ import annotations

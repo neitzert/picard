@@ -7,7 +7,7 @@ for routes with matching community tags.
 WARNING: Only use with BGP routers you own and operate.  Injecting routes
 into shared or public BGP infrastructure is a network abuse violation.
 
-Requires: pip install picard[bgp]  (aiohttp)
+Requires: pip install picard-store[bgp]  (aiohttp)
 """
 
 from __future__ import annotations

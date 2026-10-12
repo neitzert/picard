@@ -3,7 +3,7 @@
 Each chunk is added as a file, optionally pinned, and tracked via
 IPFS MFS (Mutable File System) for efficient listing by manifest.
 
-Requires: pip install picard[ipfs]   (just httpx)
+Requires: pip install picard-store[ipfs]   (just httpx)
 """
 
 from __future__ import annotations

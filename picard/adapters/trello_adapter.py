@@ -3,7 +3,7 @@
 Each chunk becomes a Trello card in the configured list, with the
 encoded chunk data in the card description field.
 
-Requires: pip install picard[trello]  (aiohttp)
+Requires: pip install picard-store[trello]  (aiohttp)
 """
 
 from __future__ import annotations

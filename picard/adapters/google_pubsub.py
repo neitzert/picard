@@ -4,7 +4,7 @@ Publishes chunks to a GCP Pub/Sub topic. Like SNS, it's fire-and-forget —
 subscribers receive the data when it arrives. Messages can be retained
 for up to 31 days with message retention enabled.
 
-Requires: pip install picard[gcp]  (aiohttp)
+Requires: pip install picard-store[gcp]  (aiohttp)
 """
 
 from __future__ import annotations

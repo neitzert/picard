@@ -3,7 +3,7 @@
 Each chunk becomes a .docx with data hidden in custom XML properties:
     docx://{output_dir}/{chunk_id}.docx
 
-Custom properties are a standard OOXML feature. Requires: pip install picard[docx]
+Custom properties are a standard OOXML feature. Requires: pip install picard-store[docx]
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes a record in an Airtable base/table with the
 encoded data in a "Data" long-text field and a chunk key in "Key".
 
-Requires: pip install picard[airtable]  (aiohttp)
+Requires: pip install picard-store[airtable]  (aiohttp)
 """
 
 from __future__ import annotations

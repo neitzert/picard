@@ -4,7 +4,7 @@ Each chunk becomes a Jira issue in the configured project, with
 the encoded chunk data in the description field. Issue summaries
 contain a picard marker for listing.
 
-Requires: pip install picard[jira]  (aiohttp)
+Requires: pip install picard-store[jira]  (aiohttp)
 """
 
 from __future__ import annotations

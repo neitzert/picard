@@ -9,7 +9,7 @@ the following protocol:
     DEL <key>         -> OK | NOTFOUND
     LIST <prefix>     -> <key1>\n<key2>\n...
 
-Requires: pip install picard[zeromq]  (pyzmq)
+Requires: pip install picard-store[zeromq]  (pyzmq)
 """
 
 from __future__ import annotations

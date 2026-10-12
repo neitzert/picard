@@ -5,7 +5,7 @@ gratuitous ARP packet and cached locally for read-back.  This is
 a steganographic channel: extremely small capacity, completely
 ephemeral.
 
-Requires: pip install picard[arp]  (scapy)
+Requires: pip install picard-store[arp]  (scapy)
 """
 
 from __future__ import annotations

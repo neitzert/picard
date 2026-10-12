@@ -6,7 +6,7 @@ encoded chunk data.  Reads via the JSON API.
 WARNING: Use only with a private index or your own PyPI account.
 Publishing stub packages to public PyPI violates PyPI's ToS.
 
-Requires: pip install picard[pypi]  (aiohttp)
+Requires: pip install picard-store[pypi]  (aiohttp)
 """
 
 from __future__ import annotations

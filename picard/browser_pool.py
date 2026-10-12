@@ -3,7 +3,7 @@
 Provides persistent browser sessions for adapters that need browser
 automation (social platforms with no/limited API access).
 
-Requires: pip install picard[browser]
+Requires: pip install picard-store[browser]
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Queries and updates travel inside a TLS tunnel, so the ISP can see
 that DNS-over-TLS is happening but cannot inspect the query content.
 
-Requires: pip install picard[dns]
+Requires: pip install picard-store[dns]
 """
 
 from __future__ import annotations

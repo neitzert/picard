@@ -7,7 +7,7 @@ WARNING: Automated review submission may violate Google's ToS and
 consumer-protection law regardless of ownership. Use only with Google
 Business Profile test environments or private place IDs.
 
-Requires: pip install picard[google-maps]  (aiohttp)
+Requires: pip install picard-store[google-maps]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes an m.room.message event in the configured room.
 The event_id is the chunk reference. Deletion uses Matrix redaction.
 
-Requires: pip install picard[matrix]  (uses httpx)
+Requires: pip install picard-store[matrix]  (uses httpx)
 """
 
 from __future__ import annotations

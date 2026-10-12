@@ -4,7 +4,7 @@ Each chunk is placed as a metadata value under label 8888 in a Cardano
 transaction.  Uses the Blockfrost API for both submission and retrieval.
 Once confirmed, data is permanent on-chain.
 
-Requires: pip install picard[cardano]   (aiohttp, pycardano)
+Requires: pip install picard-store[cardano]   (aiohttp, pycardano)
 """
 
 from __future__ import annotations

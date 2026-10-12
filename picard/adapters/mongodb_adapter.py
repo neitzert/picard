@@ -2,7 +2,7 @@
 
 Each chunk becomes a document with the encoded data as a string field.
 
-Requires: pip install picard[mongodb]  (motor)
+Requires: pip install picard-store[mongodb]  (motor)
 """
 
 from __future__ import annotations
