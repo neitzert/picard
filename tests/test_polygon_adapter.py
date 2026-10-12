@@ -47,6 +47,7 @@ class TestPolygonAdapter:
         assert a._chain_id == 80001
 
     async def test_write_chunk(self):
+        pytest.importorskip("eth_account")
         a = _make_adapter()
         a._rpc = AsyncMock(return_value={"result": "0xtxhash"})
         enc = _sample_encoded()
@@ -60,6 +61,7 @@ class TestPolygonAdapter:
         assert args[0][0] == "eth_sendRawTransaction"
 
     async def test_write_chunk_calldata_hex(self):
+        pytest.importorskip("eth_account")
         a = _make_adapter()
         a._rpc = AsyncMock(return_value={"result": "0xtxhash"})
         enc = _sample_encoded()

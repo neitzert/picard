@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+import base64
+import hashlib
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -41,66 +43,42 @@ class TestStellarAdapter:
     async def test_profile_limits(self):
         a = _make_adapter()
         p = a.profile()
-        assert p.max_chunk_bytes == 64
+        assert p.max_chunk_bytes == 6144
         assert p.persistent is True
         assert p.ordered is False
         assert p.rate_limit_per_min == 30
 
     async def test_write_chunk(self):
+        pytest.importorskip("stellar_sdk")
         a = _make_adapter()
-        a._post = AsyncMock(return_value={"hash": "txhash123"})
         enc = _sample_encoded()
-
-        ref = await a.write_chunk(enc)
-
+        with patch("asyncio.to_thread", new=AsyncMock(return_value="txhash123")):
+            ref = await a.write_chunk(enc)
         assert ref.adapter_name == "stellar"
-        assert ref.location.startswith("xlm://")
-        a._post.assert_awaited_once()
-        call_args = a._post.call_args
-        assert call_args[0][0] == "/transactions"
-
-    async def test_read_chunk_with_memo(self):
-        a = _make_adapter()
-        enc = _sample_encoded()
-        a._get = AsyncMock(return_value={"memo": enc})
-
-        ref = StoredChunkRef(adapter_name="stellar", location="xlm://txhash123")
-        result = await a.read_chunk(ref)
-        assert result == enc
+        assert ref.location == "xlm://txhash123"
 
     async def test_read_chunk_with_manage_data(self):
         a = _make_adapter()
         enc = _sample_encoded()
-
-        async def _mock_get(path):
-            if "/effects" in path:
-                return {
-                    "_embedded": {
-                        "records": [
-                            {"type": "manage_data", "value": enc},
-                        ]
-                    }
-                }
-            return {"memo": None}
-
-        a._get = _mock_get
-
-        ref = StoredChunkRef(adapter_name="stellar", location="xlm://txhash456")
+        chunk_id = hashlib.sha256(enc.encode()).hexdigest()[:16]
+        a._get = AsyncMock(return_value={
+            "_embedded": {
+                "records": [{
+                    "type": "manage_data",
+                    "name": f"pcd-{chunk_id}-0000",
+                    "value": base64.b64encode(enc.encode()).decode(),
+                }]
+            }
+        })
+        ref = StoredChunkRef(adapter_name="stellar", location="xlm://txhash123")
         result = await a.read_chunk(ref)
         assert result == enc
 
     async def test_read_chunk_not_found(self):
         a = _make_adapter()
-
-        async def _mock_get(path):
-            if "/effects" in path:
-                return {"_embedded": {"records": []}}
-            return {}
-
-        a._get = _mock_get
-
+        a._get = AsyncMock(return_value={"_embedded": {"records": []}})
         ref = StoredChunkRef(adapter_name="stellar", location="xlm://missing")
-        with pytest.raises(ValueError, match="no chunk data"):
+        with pytest.raises(ValueError, match="no picard data in tx"):
             await a.read_chunk(ref)
 
     async def test_delete_chunk_always_false(self):

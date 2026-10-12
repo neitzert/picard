@@ -72,6 +72,7 @@ class TestCardanoAdapter:
         assert p.rate_limit_per_min == 10
 
     async def test_write_chunk(self):
+        pytest.importorskip("pycardano")
         a = _make_adapter()
         enc = _sample_encoded()
 

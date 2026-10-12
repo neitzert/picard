@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -48,56 +48,41 @@ class TestTezosAdapter:
 
     async def test_write_chunk(self):
         a = _make_adapter()
-        a._post = AsyncMock(return_value={"hash": "ophash123"})
         enc = _sample_encoded()
-
-        ref = await a.write_chunk(enc)
-
+        with patch("picard.adapters.tezos_adapter._tezos_seed", return_value=b"\x00" * 32), \
+             patch("picard.adapters.tezos_adapter._tz1_from_seed", return_value="tz1test"):
+            a._rpc_get = AsyncMock(side_effect=["1234", "deadbeef" * 8])
+            a._rpc_post = AsyncMock(side_effect=["00" * 64, "ophash123"])
+            ref = await a.write_chunk(enc)
         assert ref.adapter_name == "tezos"
-        assert ref.location.startswith("xtz://")
-        a._post.assert_awaited_once()
-        call_args = a._post.call_args
-        assert call_args[0][0] == "/injection/operation"
+        assert ref.location == "xtz://ophash123"
 
-    async def test_read_chunk_dict_result(self):
+    async def test_read_chunk(self):
         a = _make_adapter()
         enc = _sample_encoded()
-        a._get = AsyncMock(return_value={
-            "metadata": {"picard_chunk": enc},
-        })
+        a._tzkt_get = AsyncMock(return_value=[
+            {"originatedContract": {"address": "KT1test"}}
+        ])
+        a._rpc_get = AsyncMock(return_value={"string": enc})
 
         ref = StoredChunkRef(adapter_name="tezos", location="xtz://ophash123")
         result = await a.read_chunk(ref)
         assert result == enc
 
-    async def test_read_chunk_list_result(self):
+    async def test_read_chunk_not_found(self):
         a = _make_adapter()
-        enc = _sample_encoded()
-        a._get = AsyncMock(return_value=[
-            {"metadata": {"other_key": "irrelevant"}},
-            {"metadata": {"picard_chunk": enc}},
-        ])
-
-        ref = StoredChunkRef(adapter_name="tezos", location="xtz://ophash456")
-        result = await a.read_chunk(ref)
-        assert result == enc
-
-    async def test_read_chunk_not_found_dict(self):
-        a = _make_adapter()
-        a._get = AsyncMock(return_value={"metadata": {}})
+        a._tzkt_get = AsyncMock(return_value=[])
 
         ref = StoredChunkRef(adapter_name="tezos", location="xtz://missing")
-        with pytest.raises(ValueError, match="no chunk data"):
+        with pytest.raises(ValueError, match="not found in TzKT"):
             await a.read_chunk(ref)
 
-    async def test_read_chunk_not_found_list(self):
+    async def test_read_chunk_no_contract(self):
         a = _make_adapter()
-        a._get = AsyncMock(return_value=[
-            {"metadata": {"other": "data"}},
-        ])
+        a._tzkt_get = AsyncMock(return_value=[{"originatedContract": {}}])
 
-        ref = StoredChunkRef(adapter_name="tezos", location="xtz://missing2")
-        with pytest.raises(ValueError, match="no chunk data"):
+        ref = StoredChunkRef(adapter_name="tezos", location="xtz://ophash456")
+        with pytest.raises(ValueError, match="no originated contract"):
             await a.read_chunk(ref)
 
     async def test_delete_chunk_always_false(self):
@@ -112,17 +97,17 @@ class TestTezosAdapter:
 
     async def test_health_check_ok(self):
         a = _make_adapter()
-        a._get = AsyncMock(return_value={"level": 12345})
+        a._rpc_get = AsyncMock(return_value={"level": 12345})
         assert await a.health_check() is True
 
     async def test_health_check_fail(self):
         a = _make_adapter()
-        a._get = AsyncMock(return_value={"error": "not synced"})
+        a._rpc_get = AsyncMock(return_value={"error": "not synced"})
         assert await a.health_check() is False
 
     async def test_health_check_exception(self):
         a = _make_adapter()
-        a._get = AsyncMock(side_effect=Exception("connection refused"))
+        a._rpc_get = AsyncMock(side_effect=Exception("connection refused"))
         assert await a.health_check() is False
 
     async def test_capacity(self):

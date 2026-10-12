@@ -47,16 +47,16 @@ class TestNearAdapter:
 
     async def test_write_chunk(self):
         a = _make_adapter()
-        a._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
+        a._build_and_submit = AsyncMock(return_value={"result": {"status": "ok"}})
         enc = _sample_encoded()
 
         ref = await a.write_chunk(enc)
 
         assert ref.adapter_name == "near"
         assert ref.location.startswith("near://")
-        a._rpc.assert_awaited_once()
-        call_args = a._rpc.call_args
-        assert call_args[0][0] == "broadcast_tx_commit"
+        a._build_and_submit.assert_awaited_once()
+        call_args = a._build_and_submit.call_args
+        assert call_args[0][0] == "store_chunk"
 
     async def test_read_chunk(self):
         a = _make_adapter()
@@ -81,13 +81,13 @@ class TestNearAdapter:
 
     async def test_delete_chunk(self):
         a = _make_adapter()
-        a._rpc = AsyncMock(return_value={"result": {"status": "ok"}})
+        a._build_and_submit = AsyncMock(return_value={"result": {"status": "ok"}})
 
         ref = StoredChunkRef(adapter_name="near", location="near://abc123")
         assert await a.delete_chunk(ref) is True
-        a._rpc.assert_awaited_once()
-        call_args = a._rpc.call_args
-        assert call_args[0][0] == "broadcast_tx_commit"
+        a._build_and_submit.assert_awaited_once()
+        call_args = a._build_and_submit.call_args
+        assert call_args[0][0] == "delete_chunk"
 
     async def test_delete_chunk_failure(self):
         a = _make_adapter()

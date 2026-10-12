@@ -41,7 +41,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 
 ## Adapters
 
-260 adapters organized into three tiers by authorization requirement. See [docs/adapters.md](docs/adapters.md) for the full list.
+259 adapters organized into three tiers by authorization requirement. See [docs/adapters.md](docs/adapters.md) for the full list.
 
 **Tier 1: Your own infrastructure.** No third-party authorization required. These are the primary use case.
 
@@ -252,7 +252,7 @@ Think before you act. By using PICARD you accept full responsibility for your ac
 
 ## Test Coverage and Contributing
 
-The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4159 tests). Many protocol adapters have unit tests with mocked transports; however, a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4236 tests). Many protocol adapters have unit tests with mocked transports; however, a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
 
 **Pull requests are warmly welcomed**, especially for:
 
