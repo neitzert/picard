@@ -144,7 +144,7 @@ block_size = 65536
 name = "dns-primary"
 type = "dns"
 enabled = true
-params = { nameserver = "8.8.8.8", domain = "chunks.example.com" }
+params = { nameserver = "10.10.10.10", domain = "chunks.example.com" }
 
 [[adapters]]
 name = "s3-backup"
@@ -218,15 +218,17 @@ PICARD is not magic, perhaps it is poetic. It is certainly not efficient, will n
 - If too many chunks go missing, your data is gone. No global index, no versioning by default.
 - Works best for small, critical datasets (a few MB to low GB). Larger files increase the risk of chunk loss and make already-slow retrieval worse.
 - As protocols evolve or get patched, adapters may need updates, much like birds adapting to new environments.
-- CISOs and sysadmins will not love that PICARD inhabits protocol assumptions that weren't designed with this kind of activity in mind.
+- CISOs and sysadmins will not love that PICARD inhabits protocol assumptions that weren't designed with secondary use of metadata fields in mind.
 
-If you need guarantees, if uptime matters more than resilience, or if you expect everything to behave without some hacking, this probably isn't for you.
+If you need guarantees, if uptime matters more than resilience, or if you expect everything to behave without some tinkering, this probably isn't for you.
 
-## Research and Experimental Use
+## Research, Experimental Use, and Dual-Use Notice
 
-PICARD is a computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the MIT license.
+PICARD is an **experimental** computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the MIT license. Like most security and systems research, it has dual-use capabilities: the same techniques that enable resilient personal storage can, in principle, be misused. Publishing this work does not endorse or encourage misuse; it serves the community's interest in understanding these surfaces so they can be studied, defended against, and properly accounted for.
 
 Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. **PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use.** Unauthorized access to computer systems is illegal in most jurisdictions and is not a supported use case.
+
+**Acceptable use violation.** Any use of PICARD to violate applicable law — including but not limited to computer fraud and abuse statutes, electronic communications privacy law, or the Terms of Service of any platform — immediately and irrevocably voids any claim to acceptable use under this project. If you use PICARD to break the law or violate platform Terms of Service, you are entirely on your own. The authors provide no support, defense, or indemnification for unlawful or unauthorized use. This is not a disclaimer of liability — it is a boundary.
 
 Each adapter's source includes a platform-specific notice. Read it before you use the adapter.
 
