@@ -12,6 +12,8 @@ It mounts as a regular filesystem. Files show up where they're supposed to. Unde
 
 Not elegant. Adaptive.
 
+Source: [Medium Essay: A Wall, Some Birds, and The Internet Protocols We Aren’t Looking At. Christopher Neitzert, May 16, 2025](https://ckn46.medium.com/a-wall-some-birds-and-the-internet-protocols-we-arent-looking-at-0500922f3806?sharedUserId=ckn46)
+
 ---
 
 > **This is a computer science research project and proof of concept.** It is not a product, a platform, or a production storage system. It is a working hypothesis: that data, like wildlife, will colonize whichever crevice protocols leave open. Read the [ethics and legal notice](#research-and-experimental-use) before you proceed.
