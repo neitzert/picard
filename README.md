@@ -32,7 +32,7 @@ retrieve
 
 Each block is independently encrypted with its own random salt and nonce. Chunks scatter round-robin or via RAID profiles. No adapter sees plaintext; no adapter sees enough ciphertext to reconstruct anything.
 
-The local index — an AES-256-GCM encrypted SQLite database — maps paths to chunk locations. Lose the passphrase, lose the data.
+The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk locations. Lose the passphrase, lose the data.
 
 <details>
 <summary>The origin: a wall and some birds</summary>
@@ -41,7 +41,7 @@ The local index — an AES-256-GCM encrypted SQLite database — maps paths to c
 
 *Our digital infrastructure carries more than it was designed to store. DNS TXT records accept arbitrary text within spec. MQTT retained messages persist data on the broker. ICMP echo packets carry a payload field. Social media APIs accept freeform structured text. Each of these protocols defines fields intended for metadata, discovery, or diagnostics. Those fields can carry bytes just as well as their designers' intended use cases.*
 
-[Medium: A Wall, Some Birds, and The Internet Protocols We Aren't Looking At — Christopher Neitzert, May 2025](https://ckn46.medium.com/a-wall-some-birds-and-the-internet-protocols-we-arent-looking-at-0500922f3806?sharedUserId=ckn46)
+[Medium: A Wall, Some Birds, and The Internet Protocols We Aren't Looking At, Christopher Neitzert, May 2025](https://ckn46.medium.com/a-wall-some-birds-and-the-internet-protocols-we-arent-looking-at-0500922f3806?sharedUserId=ckn46)
 
 </details>
 
@@ -206,7 +206,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 259 adapters in three tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
-### Tier 1 — Your own infrastructure
+### Tier 1: Your own infrastructure
 
 No third-party authorization required. These are the primary use case.
 
@@ -218,7 +218,7 @@ No third-party authorization required. These are the primary use case.
 | P2P / decentralized | IPFS, BitTorrent DHT, Nostr, Ethereum (own wallet), Tor hidden services |
 | Steganography | Image LSB, audio WAV LSB, EXIF, XLSX hidden cells, ZIP comments |
 
-### Tier 2 — Third-party platforms
+### Tier 2: Third-party platforms
 
 Require a valid account and API authorization on the relevant platform. Each adapter's source includes a platform-specific Terms of Service notice.
 
@@ -231,7 +231,7 @@ Require a valid account and API authorization on the relevant platform. Each ada
 
 > **Note on package registry adapters (PyPI, npm, crates.io, RubyGems):** these are research demonstrations. Some contain intentional friction in their write paths that prevents out-of-the-box use against public registries. If an adapter silently succeeds but data does not appear, or fails with an unexpected protocol error, read the source. The fix in each case is a small, deliberate change. This is by design.
 
-### Tier 3 — RF spectrum and regulated hardware
+### Tier 3: RF spectrum and regulated hardware
 
 Authorization requirements vary by jurisdiction, frequency, and device type. Read the regulatory notice in each adapter's source before use.
 
@@ -259,7 +259,7 @@ PICARD is not magic, perhaps poetic. It is certainly not efficient, will not be 
 
 - **Reads are slow.** Writes may partially fail.
 - **Chunk loss means data loss.** No global index, no recovery path if too many chunks go missing.
-- **Best for small, critical datasets** — a few MB to low GB. Larger files compound both retrieval slowness and chunk-loss risk.
+- **Best for small, critical datasets** (a few MB to low GB). Larger files compound both retrieval slowness and chunk-loss risk.
 - **Adapters age.** As protocols evolve or get patched, adapters may need updates.
 - **Invisible to standard monitoring.** Chunks are opaque to conventional storage tools unless you know where to look.
 
@@ -278,7 +278,7 @@ Users are solely responsible for ensuring their use complies with applicable law
 
 Like most security and systems research, PICARD has dual-use capabilities: the same techniques that enable resilient personal storage can, in principle, be misused. Publishing this work does not endorse or encourage misuse; it serves the community's interest in understanding these surfaces so they can be studied, defended against, and properly accounted for.
 
-**Acceptable use.** Any use of PICARD to violate applicable law — including but not limited to computer fraud and abuse statutes, electronic communications privacy law, or the Terms of Service of any platform — immediately and irrevocably voids any claim to acceptable use under this project. If you use PICARD to break the law or violate platform Terms of Service, you are entirely on your own. The authors provide no support, defense, or indemnification for unlawful or unauthorized use. This is not a disclaimer of liability; it is a boundary.
+**Acceptable use.** Any use of PICARD to violate applicable law (including but not limited to computer fraud and abuse statutes, electronic communications privacy law, or the Terms of Service of any platform) immediately and irrevocably voids any claim to acceptable use under this project. If you use PICARD to break the law or violate platform Terms of Service, you are entirely on your own. The authors provide no support, defense, or indemnification for unlawful or unauthorized use. This is not a disclaimer of liability; it is a boundary.
 
 Each adapter's source includes a platform-specific notice. Read it before you use the adapter.
 
