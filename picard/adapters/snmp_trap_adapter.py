@@ -1,7 +1,10 @@
 """SNMP Trap adapter — chunks hidden in SNMP trap variable bindings.
 
-Sends chunk data as variable bindings in SNMPv2c traps. Network monitoring infrastructure routes these traps to collectors
-in standard enterprise deployments.
+Sends chunk data as variable bindings in SNMPv2c traps.
+
+WARNING: Only use with SNMP trap receivers on infrastructure you own and
+operate.  Injecting traps into shared or enterprise monitoring infrastructure
+is a network abuse violation.
 
 Requires: UDP socket access.
 """
@@ -21,6 +24,8 @@ from picard.chunker import Chunk
 class SnmpTrapAdapter(Adapter):
     """Store chunks as variable bindings in SNMP traps."""
 
+    # PEN 99999 is unregistered — replace with a registered PEN before production use
+    # Register free at: https://www.iana.org/assignments/enterprise-numbers/
     PICARD_OID = "1.3.6.1.4.1.99999.1"
 
     def __init__(
@@ -134,8 +139,13 @@ class SnmpTrapAdapter(Adapter):
 
         try:
             await asyncio.to_thread(_send)
-        except Exception:
-            pass
+        except Exception as exc:
+            import warnings
+            warnings.warn(
+                f"snmp-trap UDP send failed: {exc}; chunk cached in-process only",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         self._cache[chunk_key] = encoded_chunk
         return StoredChunkRef(adapter_name="snmp-trap", location=chunk_key)

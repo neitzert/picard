@@ -1,9 +1,14 @@
-"""0x0.st adapter — stores chunks as uploaded files. No account needed.
+"""0x0.st adapter — stores chunks as uploaded files.
 
 Each chunk becomes a hosted file:
     0x0://{file_url}
 
-Zero signup — just upload.
+Notice: 0x0.st is a public community-operated file host.  Only use this
+adapter with a self-hosted 0x0 instance or with explicit permission from
+the instance operator.  Uploading bulk data to the public instance violates
+its abuse policy.
+
+Requires: aiohttp
 """
 
 from __future__ import annotations
@@ -22,10 +27,13 @@ class NullPointerAdapter(Adapter):
         *,
         url: str = "https://0x0.st",
         max_chunk_bytes: int = 536_870_912,
+        max_posts: int = 10,
     ) -> None:
         self._url = url.rstrip("/")
         self._max = max_chunk_bytes
         self._session = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
 
     async def close(self) -> None:
@@ -48,6 +56,10 @@ class NullPointerAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"0x0 adapter reached max_posts={self._max_posts} per session"
+            )
         form = aiohttp.FormData()
         form.add_field(
             "file",
@@ -61,6 +73,7 @@ class NullPointerAdapter(Adapter):
             resp.raise_for_status()
             file_url = (await resp.text()).strip()
 
+        self._post_count += 1
         return StoredChunkRef(adapter_name="0x0", location=f"0x0://{file_url}")
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

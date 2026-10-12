@@ -1,7 +1,11 @@
 """OpenStreetMap Notes adapter — stores chunks as map notes.
 
-Anyone can create OSM notes without an account. Each chunk becomes
-a note at a deterministic lat/lon derived from the chunk key.
+Each chunk becomes a note at a deterministic lat/lon derived from the chunk key.
+
+WARNING: OpenStreetMap is shared community infrastructure.  Only use this
+adapter with a private or self-hosted OSM instance, or ensure your usage
+complies with the OSM API usage policy and terms of use.  Flooding the
+public OSM API with data notes is a terms violation and harms the community.
 
 Requires: pip install picard[osm]  (aiohttp)
 """
@@ -29,6 +33,7 @@ class OsmAdapter(Adapter):
         username: str | None = None,
         password: str | None = None,
         max_chunk_bytes: int = 4096,
+        max_posts: int = 10,
     ) -> None:
         self._api_url = api_url.rstrip("/")
         self._username = username
@@ -36,6 +41,8 @@ class OsmAdapter(Adapter):
         self._max = max_chunk_bytes
         self._cache: dict[str, str] = {}
         self._session = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
 
     async def close(self) -> None:
@@ -71,6 +78,10 @@ class OsmAdapter(Adapter):
         return None
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"osm-notes adapter reached max_posts={self._max_posts} per session"
+            )
         try:
             chunk = Chunk.decode(encoded_chunk)
             key = f"{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
@@ -92,6 +103,7 @@ class OsmAdapter(Adapter):
         note_id = str(data["properties"]["id"])
         loc = f"osm://notes/{note_id}"
         self._cache[loc] = encoded_chunk
+        self._post_count += 1
         return StoredChunkRef(adapter_name="osm-notes", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

@@ -56,6 +56,8 @@ class TwitterAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._session = None
+        self._max_posts = 20
+        self._post_count = 0
 
 
     async def close(self) -> None:
@@ -265,9 +267,16 @@ class TwitterAdapter(Adapter):
     # ── Dispatch ────────────────────────────────────────────────
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"twitter adapter reached max_posts={self._max_posts} per session"
+            )
         if self._use_browser:
-            return await self._browser_write(encoded_chunk)
-        return await self._api_write(encoded_chunk)
+            ref = await self._browser_write(encoded_chunk)
+        else:
+            ref = await self._api_write(encoded_chunk)
+        self._post_count += 1
+        return ref
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if self._use_browser:

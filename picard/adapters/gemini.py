@@ -28,11 +28,13 @@ class GeminiAdapter(Adapter):
         port: int = 1965,
         *,
         client_cert: str | None = None,
+        ca_file: str | None = None,
         max_chunk_bytes: int = 50_000,
     ) -> None:
         self._host = host
         self._port = port
         self._client_cert = client_cert
+        self._ca_file = ca_file
         self._max = max_chunk_bytes
 
     def profile(self) -> AdapterProfile:
@@ -45,9 +47,14 @@ class GeminiAdapter(Adapter):
         )
 
     def _make_ssl_context(self) -> ssl.SSLContext:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        # Gemini uses TOFU (Trust On First Use); pass ca_file to pin a cert/CA instead
+        if self._ca_file:
+            ctx = ssl.create_default_context(cafile=self._ca_file)
+        else:
+            ctx = ssl.create_default_context()
+            # TOFU mode: most Gemini servers present self-signed certs by design
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
         if self._client_cert:
             ctx.load_cert_chain(self._client_cert)
         return ctx

@@ -62,8 +62,13 @@ class SysctlAdapter(Adapter):
 
         try:
             await self._run_sysctl("-w", f"{key}={encoded_chunk}")
-        except Exception:
-            pass  # store in cache regardless for read-back
+        except Exception as exc:
+            import warnings
+            warnings.warn(
+                f"sysctl write failed for {key}: {exc}; chunk cached in-process only",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         location = f"sysctl://{key}"
         self._cache[location] = encoded_chunk

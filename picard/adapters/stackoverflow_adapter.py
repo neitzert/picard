@@ -32,6 +32,7 @@ class StackOverflowAdapter(Adapter):
         api_key: str | None = None,
         site: str = "stackoverflow",
         max_chunk_bytes: int = 30_000,
+        max_posts: int = 5,
     ) -> None:
         self._token = access_token
         self._question_id = question_id
@@ -39,6 +40,8 @@ class StackOverflowAdapter(Adapter):
         self._site = site
         self._max = max_chunk_bytes
         self._session = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
 
     async def close(self) -> None:
@@ -68,6 +71,10 @@ class StackOverflowAdapter(Adapter):
         return p
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"stackoverflow adapter reached max_posts={self._max_posts} per session"
+            )
         body = f"{_MARKER}\n{encoded_chunk}"
         params = self._params()
         data = {"body": body}
@@ -83,6 +90,7 @@ class StackOverflowAdapter(Adapter):
 
         answer_id = result["items"][0]["answer_id"]
         location = f"so://{self._site}/{answer_id}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="stackoverflow", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

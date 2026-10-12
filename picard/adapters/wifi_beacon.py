@@ -33,7 +33,7 @@ except ImportError:
     Dot11 = Dot11Beacon = Dot11Elt = RadioTap = sendp = sniff = None
 
 
-_PICARD_OUI = b"\x00\x50\x43"  # "PC" (picard) vendor OUI
+_PICARD_OUI = b"\x02\x50\x43"  # locally administered OUI (bit 1 of first octet set)
 
 
 class WifiBeaconAdapter(Adapter):

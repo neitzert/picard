@@ -1,7 +1,12 @@
 """Fandom/Wikia adapter — stores chunks on Fandom wikis.
 
-Thousands of active Fandom wikis run MediaWiki. Chunks are stored
-as user subpage content via the MediaWiki API.
+Chunks are stored as user subpage content via the MediaWiki API.
+
+Notice: This adapter must only be used with Fandom wiki accounts and
+wikis you own or have explicit written authorization to modify.  Use
+in a manner that violates Fandom's Terms of Service is outside the
+scope of this project and the responsibility of the user.  No
+endorsement by or affiliation with Fandom, Inc. is implied.
 
 Requires: pip install picard[wiki]  (aiohttp)
 """

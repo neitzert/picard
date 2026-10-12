@@ -1,6 +1,11 @@
 """WhatsApp Business API adapter — stores chunks as WhatsApp messages.
 
-Uses the Meta Cloud API. 2+ billion users worldwide.
+Uses the Meta Cloud API.
+
+Notice: This adapter must only be used with WhatsApp Business accounts and
+phone numbers you own and control.  Use in a manner that violates Meta's
+Terms of Service is outside the scope of this project and the responsibility
+of the user.  No endorsement by or affiliation with Meta is implied.
 
 Requires: pip install picard[whatsapp]  (uses aiohttp)
 """

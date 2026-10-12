@@ -83,8 +83,13 @@ class CrontabAdapter(Adapter):
 
         try:
             await self._run_crontab("-", stdin=new_crontab)
-        except Exception:
-            pass  # store in cache regardless
+        except Exception as exc:
+            import warnings
+            warnings.warn(
+                f"crontab install failed: {exc}; chunk cached in-process only (not persistent)",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
         location = f"crontab://{user_label}/{chunk_id}"
         self._cache[location] = encoded_chunk

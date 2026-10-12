@@ -31,11 +31,14 @@ class BlueskyAdapter(Adapter):
         app_password: str,
         *,
         max_chunk_bytes: int = 280,
+        max_posts: int = 20,
     ) -> None:
         self._handle = handle
         self._app_password = app_password
         self._max = max_chunk_bytes
         self._client: object | None = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
     async def _ensure_client(self):
         if self._client is not None:
@@ -57,8 +60,13 @@ class BlueskyAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"bluesky adapter reached max_posts={self._max_posts} per session"
+            )
         client = await self._ensure_client()
         resp = await client.send_post(text=encoded_chunk)
+        self._post_count += 1
         return StoredChunkRef(adapter_name="bluesky", location=resp.uri)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

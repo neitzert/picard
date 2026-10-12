@@ -31,6 +31,7 @@ class YouTubeCommentsAdapter(Adapter):
         oauth_token: str,
         api_key: str | None = None,
         max_chunk_bytes: int = 8000,
+        max_posts: int = 20,
     ) -> None:
         self._video_id = video_id
         self._oauth_token = oauth_token
@@ -38,6 +39,8 @@ class YouTubeCommentsAdapter(Adapter):
         self._max = max_chunk_bytes
         self._base = "https://www.googleapis.com/youtube/v3"
         self._session = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
 
     async def close(self) -> None:
@@ -67,6 +70,10 @@ class YouTubeCommentsAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"youtube-comments adapter reached max_posts={self._max_posts} per session"
+            )
         body = {
             "snippet": {
                 "videoId": self._video_id,
@@ -88,6 +95,7 @@ class YouTubeCommentsAdapter(Adapter):
             comment_id = data["id"]
 
         location = f"yt://{self._video_id}/{comment_id}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="youtube-comments", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

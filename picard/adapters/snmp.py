@@ -42,7 +42,8 @@ class SnmpAdapter(Adapter):
         port: int = 161,
         *,
         community: str = "private",
-        base_oid: str = "1.3.6.1.4.1.99999.1",
+        base_oid: str = "1.3.6.1.4.1.99999.1",  # PEN 99999 unregistered — replace before production use
+
         max_chunk_bytes: int = 4000,
         timeout: float = 5.0,
     ) -> None:
