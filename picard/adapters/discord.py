@@ -4,6 +4,12 @@ Chunks are posted through a Discord webhook URL.  Reading, deleting,
 and listing use the Discord bot API with a bot token that has access
 to the target channel.
 
+Notice: This adapter must only be used with Discord servers, webhooks,
+and channels you own and control.  Use in a manner that violates
+Discord's Terms of Service is outside the scope of this project and
+the responsibility of the user.  No endorsement by or affiliation
+with Discord Inc. is implied.
+
 Requires: pip install picard[cloudflare]   (uses httpx)
 """
 

@@ -3,6 +3,12 @@
 Each chunk becomes a comment on a YouTube video:
     yt://{video_id}/{comment_id}
 
+Notice: This adapter must only be used with YouTube accounts and
+videos you own and control.  Use in a manner that violates YouTube's
+Terms of Service is outside the scope of this project and the
+responsibility of the user.  No endorsement by or affiliation with
+Google LLC or YouTube is implied.
+
 Requires: pip install picard[youtube]
 """
 

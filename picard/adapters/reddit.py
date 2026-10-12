@@ -7,6 +7,12 @@ recovery.
 Two modes:
   - API mode (default): uses PRAW — pip install picard[reddit]
   - Browser mode: uses Playwright — pip install picard[browser]
+
+Notice: This adapter must only be used with Reddit accounts and
+subreddits you own and control.  Use in a manner that violates
+Reddit's Terms of Service or API terms is outside the scope of this
+project and the responsibility of the user.  No endorsement by or
+affiliation with Reddit, Inc. is implied.
 """
 
 from __future__ import annotations

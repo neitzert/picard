@@ -3,6 +3,11 @@
 Uploads a 1x1 pixel PNG placeholder and stores chunk data in the
 photo's description field.  Reading extracts the description.
 
+Notice: This adapter must only be used with Flickr accounts you own
+and control.  Use in a manner that violates Flickr's Terms of Service
+is outside the scope of this project and the responsibility of the
+user.  No endorsement by or affiliation with SmugMug, Inc. is implied.
+
 Requires: pip install picard[flickr]   (uses aiohttp)
 """
 

@@ -4,6 +4,12 @@ Uses the Medium API to create draft posts.  Medium's API is
 write-heavy (no read-back for drafts), so a local cache supplements
 the write confirmation for retrieval.
 
+Notice: This adapter must only be used with Medium accounts you own
+and control.  Use in a manner that violates Medium's Terms of Service
+is outside the scope of this project and the responsibility of the
+user.  No endorsement by or affiliation with A Medium Corporation
+is implied.
+
 Requires: pip install picard[medium]   (uses aiohttp)
 """
 

@@ -4,6 +4,12 @@ Updates the channel description field via the Helix API.  Each chunk
 overwrites the description, so only one chunk per broadcaster.
 Use chat messages for multi-chunk storage (ephemeral).
 
+Notice: This adapter must only be used with Twitch channels you own
+and control.  Use in a manner that violates Twitch's Terms of Service
+is outside the scope of this project and the responsibility of the
+user.  No endorsement by or affiliation with Twitch Interactive, Inc.
+or Amazon is implied.
+
 Requires: pip install picard[twitch]   (uses aiohttp)
 """
 

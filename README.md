@@ -36,6 +36,8 @@ PICARD is a computer science research project exploring protocol-agnostic storag
 
 Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use. Unauthorized access to computer systems is illegal in most jurisdictions and is not a supported use case.
 
+Think before you act. By using PICARD you accept full responsibility for your actions and their consequences. You agree to indemnify, defend, and hold harmless the authors, contributors, and maintainers of PICARD from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to your use or misuse of this software.
+
 ## Quickstart
 
 ```bash

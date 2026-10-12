@@ -4,6 +4,12 @@ Each chunk becomes a message sent by a Telegram bot. The message_id
 is the chunk reference. Reading uses forwardMessage to retrieve the
 text (Bot API has no direct getMessage), then deletes the forward.
 
+Notice: This adapter must only be used with Telegram bots, chats,
+and channels you own and control.  Use in a manner that violates
+Telegram's Terms of Service is outside the scope of this project and
+the responsibility of the user.  No endorsement by or affiliation
+with Telegram FZ LLC is implied.
+
 Requires: pip install picard[telegram]  (uses httpx)
 """
 

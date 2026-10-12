@@ -2,6 +2,12 @@
 
 Chunks are uploaded as files to a Hugging Face dataset repository.
 
+Notice: This adapter must only be used with Hugging Face repositories
+you own and control.  Use in a manner that violates Hugging Face's
+Terms of Service is outside the scope of this project and the
+responsibility of the user.  No endorsement by or affiliation with
+Hugging Face, Inc. is implied.
+
 Requires: pip install picard[huggingface]  (aiohttp)
 """
 

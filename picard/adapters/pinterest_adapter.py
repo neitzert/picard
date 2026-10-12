@@ -3,6 +3,12 @@
 Creates pins with chunk data in the description field, pointed at
 a placeholder image URL.
 
+Notice: This adapter must only be used with Pinterest accounts you
+own and control.  Use in a manner that violates Pinterest's Terms of
+Service is outside the scope of this project and the responsibility
+of the user.  No endorsement by or affiliation with Pinterest, Inc.
+is implied.
+
 Requires: pip install picard[pinterest]   (uses aiohttp)
 """
 

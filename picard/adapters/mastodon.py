@@ -4,6 +4,11 @@ Each chunk becomes a Mastodon status posted with visibility="direct"
 so it doesn't appear on public timelines.  The status text is the
 PCHK-encoded chunk string.
 
+Notice: This adapter must only be used with Mastodon accounts and
+instances you own and control.  Use in a manner that violates the
+Terms of Service of the instance you connect to is outside the scope
+of this project and the responsibility of the user.
+
 Requires: pip install picard[mastodon]
 """
 

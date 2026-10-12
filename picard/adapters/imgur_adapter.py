@@ -3,6 +3,11 @@
 Each chunk is uploaded as a 1x1 PNG with data in the description:
     imgur://{image_hash}
 
+Notice: This adapter must only be used with Imgur accounts you own
+and control.  Use in a manner that violates Imgur's Terms of Service
+is outside the scope of this project and the responsibility of the
+user.  No endorsement by or affiliation with Imgur, LLC is implied.
+
 Requires: pip install picard[imgur]
 """
 

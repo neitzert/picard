@@ -6,6 +6,12 @@ Each chunk becomes a tweet or direct message:
 Two modes:
   - API mode (default): Twitter API v2 — requires bearer_token
   - Browser mode: Playwright — pip install picard[browser]
+
+Notice: This adapter must only be used with Twitter/X accounts and
+infrastructure you own and control.  Use in a manner that violates
+X Corp's Terms of Service is outside the scope of this project and
+the responsibility of the user.  No endorsement by or affiliation
+with X Corp is implied.
 """
 
 from __future__ import annotations

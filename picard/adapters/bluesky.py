@@ -4,6 +4,11 @@ Each chunk becomes a post on the authenticated user's Bluesky account.
 The post text is the PCHK-encoded chunk string.  Posts are tagged with
 a manifest-id prefix so they can be discovered for recovery.
 
+Notice: This adapter must only be used with Bluesky accounts you own
+and control.  Use in a manner that violates Bluesky's Terms of Service
+is outside the scope of this project and the responsibility of the
+user.  No endorsement by or affiliation with Bluesky PBLLC is implied.
+
 Requires: pip install picard[bluesky]
 """
 

@@ -1,8 +1,14 @@
 """Spotify adapter — stores chunks in playlist descriptions.
 
-Each chunk becomes a new playlist with the data hidden in the
-description field (up to 300 characters).  Reading extracts the
-description.  Playlists are created as private/unlisted.
+Each chunk becomes a new playlist with chunk data in the description
+field (up to 300 characters).  Reading extracts the description.
+Playlists are created as private/unlisted.
+
+Notice: This adapter must only be used with Spotify accounts you own
+and control.  Use in a manner that violates Spotify's Terms of Service
+or Developer Policy is outside the scope of this project and the
+responsibility of the user.  No endorsement by or affiliation with
+Spotify AB is implied.
 
 Requires: pip install picard[spotify]   (uses aiohttp)
 """

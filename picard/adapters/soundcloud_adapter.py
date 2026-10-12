@@ -3,6 +3,12 @@
 Uploads a silent audio stub and stores chunk data in the track
 description field.
 
+Notice: This adapter must only be used with SoundCloud accounts you
+own and control.  Use in a manner that violates SoundCloud's Terms of
+Service is outside the scope of this project and the responsibility
+of the user.  No endorsement by or affiliation with SoundCloud Ltd.
+is implied.
+
 Requires: pip install picard[soundcloud]   (uses aiohttp)
 """
 

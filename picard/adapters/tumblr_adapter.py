@@ -3,6 +3,11 @@
 Posts are created with state="draft" so they don't appear publicly.
 The blog owner can see and manage them from the dashboard.
 
+Notice: This adapter must only be used with Tumblr blogs you own and
+control.  Use in a manner that violates Tumblr's Terms of Service is
+outside the scope of this project and the responsibility of the user.
+No endorsement by or affiliation with Automattic is implied.
+
 Requires: pip install picard[tumblr]   (uses aiohttp)
 """
 

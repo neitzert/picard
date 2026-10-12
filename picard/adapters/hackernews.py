@@ -3,6 +3,12 @@
 Write via form POST, read via Firebase API:
     hn://{parent_item_id}/{comment_id}
 
+Notice: This adapter must only be used with a Hacker News account
+you own and control, and only in ways consistent with HN's guidelines.
+Bulk or automated posting violates HN's rules and is not a supported
+use case.  No endorsement by or affiliation with Y Combinator is
+implied.
+
 Requires: pip install picard[hn]
 """
 

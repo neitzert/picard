@@ -3,6 +3,12 @@
 Uses the Steam Web API to post comments on a user's own profile or
 create Workshop items with chunk data in the description field.
 
+Notice: This adapter must only be used with Steam accounts and
+Workshop content you own and control.  Use in a manner that violates
+Steam's Subscriber Agreement or API Terms of Use is outside the scope
+of this project and the responsibility of the user.  No endorsement
+by or affiliation with Valve Corporation is implied.
+
 Requires: pip install picard[steam]  (aiohttp)
 """
 
