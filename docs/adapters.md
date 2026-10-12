@@ -11,6 +11,81 @@ This guide covers the complete contract, walks through a working example, and gi
 
 ---
 
+## Adapter Tiers
+
+Adapters are organized by what authorization they require. Choose the right tier for your use case.
+
+### Tier 1: Your own infrastructure
+
+No third-party authorization needed. These are the primary use case for PICARD. You own the endpoint and control the data at rest.
+
+| Category | Adapters |
+|----------|---------|
+| Local storage | filesystem, memory, unix-xattr, named-pipe |
+| Databases / KV | redis, postgresql, sqlite-remote, dynamodb, couchdb, cassandra, memcached, etcd, consul-kv |
+| Object storage | s3, backblaze-b2 |
+| Self-hosted services | webdav, wordpress (self-hosted), nfs, vault |
+| Protocols on own infrastructure | mqtt (own broker), dns (own zone), grpc-metadata, websocket, coap, amqp, tftp, ftp |
+| Mail / calendar (own server) | smtp-imap, caldav, carddav |
+| Self-hosted messaging | matrix (own homeserver), xmpp, irc |
+| P2P / decentralized | ipfs, bittorrent-dht, nostr, ethereum (own wallet), tor hidden services |
+| Version control | git-notes, gitlab (own instance) |
+| Format / encoding on own files | xlsx-hidden, exif, pdf-metadata, zip-comment, docx-custom-xml, steganography, audio-stego, unicode-stego |
+
+### Tier 2: Third-party platforms
+
+Require a valid account you own on the platform and an API key or OAuth token. Each adapter's source file includes a platform-specific Terms of Service notice; read it before use. Never use these against accounts or infrastructure you do not own.
+
+| Platform | Adapter | Auth required |
+|----------|---------|---------------|
+| Bluesky | bluesky | ATP credentials |
+| Reddit | reddit | PRAW OAuth or browser session |
+| Discord | discord | bot token + webhook URL |
+| Telegram | telegram | bot API token |
+| Mastodon | mastodon | OAuth access token |
+| Twitter/X | twitter | API v2 bearer token |
+| YouTube | youtube-comments | OAuth (Data API v3) |
+| TikTok | tiktok | Content API access token |
+| LinkedIn | linkedin | OAuth (UGC API) |
+| Pinterest | pinterest | OAuth access token |
+| Medium | medium | integration token |
+| Tumblr | tumblr | OAuth |
+| Twitch | twitch | Helix API OAuth |
+| Steam | steam | Web API key |
+| Spotify | spotify | OAuth (Web API) |
+| Imgur | imgur | client ID or OAuth |
+| Flickr | flickr | OAuth |
+| SoundCloud | soundcloud | OAuth |
+| Hugging Face | huggingface | API token |
+| GitHub | github | personal access token |
+| Slack | slack | bot OAuth token |
+| Notion | notion | integration token |
+| Freshdesk | freshdesk | API key |
+| Hacker News | hackernews | account credentials |
+| Stack Overflow | stackoverflow | API key |
+| Confluence / Jira | confluence, jira | API token |
+| Trello | trello | API key |
+
+### Tier 3: RF spectrum and regulated hardware
+
+These adapters involve radio frequency transmission or hardware buses with physical safety implications. Authorization requirements vary by jurisdiction, frequency band, transmit power, and device type. Read the regulatory and safety notice in each adapter's source before use.
+
+| Adapter | Notes |
+|---------|-------|
+| lora / lorawan | Frequency plan compliance required; licensed spectrum in some jurisdictions |
+| sdr | Receiving is generally unrestricted; transmitting requires a license |
+| wifi-beacon | Passive listening is unrestricted; injecting beacon frames requires authorization |
+| bluetooth-le | Own devices; check jurisdiction-specific EIRP limits |
+| nfc-ndef | Own devices |
+| canbus | Own vehicle or hardware only. Injecting frames onto a live bus is a physical safety hazard. |
+| zigbee | Own devices; ISM band compliance |
+| ax25 | Requires an amateur radio license in most jurisdictions |
+| serial, usb-hid | Own hardware |
+
+Total: **260 adapter implementations** (263 files including base.py, __init__.py, remote.py).
+
+---
+
 ## The Interface
 
 Every adapter extends `Adapter` from `picard/adapters/base.py` and implements five required methods:
