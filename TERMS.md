@@ -81,5 +81,5 @@ proceed:
 
 ## Contact
 
-Christopher Neitzert, chris@neitzert.com
-https://github.com/neitzert/picard
+Christopher Neitzert
+https://github.com/neitzert/picard/issues

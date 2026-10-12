@@ -1,6 +1,29 @@
 # Changelog
 
-## 0.1.0 (Unreleased)
+## 0.2.0 (2026-10-12)
+
+### Added
+- Version gap detection in `fsck`: reports missing version numbers in the per-path version history
+- Web dashboard screenshots in README with full UI overview and adapter registry views
+- `docs/identifying-picard-in-the-wild.md`: three-layer observability analysis across 18 platforms
+- Blockchain adapter rewrites: Nostr (BIP-340 Schnorr), Solana (compact-u16 + Memo v2), NEAR (Borsh + Ed25519), Ethereum (EIP-1559), Polygon (EIP-1559), Stellar (manage_data, 6144 bytes/chunk), Tezos (server-side forge + Ed25519 watermark), Cardano (pycardano + AlonzoMetadata label 8888)
+- Optional dependency support: `pycardano`, `eth_account`/`web3`, `stellar_sdk` skipped gracefully in tests when not installed
+- Intentional write-path friction in package registry adapters (PyPI, npm, crates.io, RubyGems) to prevent accidental use against public registries
+
+### Changed
+- README restructured: cleaner hero, collapsible origin story, screenshots before quickstart, CLI as tables, tier headings with colons, legal section as collapsible
+- Version bumped to 0.2.0
+
+### Fixed
+- `fsck.py`: `version_gaps` field was declared but never computed; now implemented
+- Solana `test_write_chunk`: mock updated to match rewritten adapter (two RPC calls, `_load_seed` patched)
+- Stellar, NEAR, Tezos, Cardano, Polygon test mocks updated to match rewritten adapter internals
+- Adapter count in README: 260 corrected to 259
+- Test count in README: 4159 corrected to 4236 (now 4156 passing)
+
+---
+
+## 0.1.0 (2025-05-15)
 
 Initial feature-complete release.
 
