@@ -65,10 +65,45 @@ class EthereumAdapter(Adapter):
         return resp.json()
 
     async def _send_tx(self, func_selector: str, key: str, data: str = "") -> str:
-        """Build and send a transaction. Returns tx hash. Mock target."""
-        calldata = func_selector + key[2:] + data.encode().hex()
-        result = await self._rpc("eth_sendRawTransaction", [calldata])
-        return result.get("result", "")
+        """Build, sign (EIP-1559), and submit a transaction. Returns tx hash."""
+        from eth_account import Account
+
+        acct = Account.from_key(self._private_key)
+
+        nonce = int(
+            (await self._rpc("eth_getTransactionCount", [acct.address, "pending"]))
+            .get("result", "0x0"), 16
+        )
+        gas_price = int(
+            (await self._rpc("eth_gasPrice", [])).get("result", "0x3b9aca00"), 16
+        )
+
+        calldata = "0x" + bytes.fromhex(func_selector[2:]) + bytes.fromhex(key[2:])
+        if data:
+            calldata = calldata.hex() if isinstance(calldata, bytes) else calldata
+            calldata += data.encode().hex()
+        if isinstance(calldata, bytes):
+            calldata = "0x" + calldata.hex()
+
+        tx = {
+            "chainId": self._chain_id,
+            "nonce": nonce,
+            "maxFeePerGas": gas_price * 2,
+            "maxPriorityFeePerGas": gas_price,
+            "gas": 100_000,
+            "to": self._contract,
+            "value": 0,
+            "data": calldata,
+        }
+        signed = acct.sign_transaction(tx)
+        result = await self._rpc(
+            "eth_sendRawTransaction",
+            ["0x" + signed.raw_transaction.hex()],
+        )
+        tx_hash = result.get("result", "")
+        if not tx_hash:
+            raise RuntimeError(f"eth_sendRawTransaction failed: {result}")
+        return tx_hash
 
     async def _eth_call(self, func_selector: str, key: str) -> str:
         """Execute a read-only call against the contract."""

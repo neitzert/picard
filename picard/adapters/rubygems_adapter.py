@@ -2,6 +2,9 @@
 
 Each chunk becomes a gem whose summary/description holds the data.
 
+WARNING: Use only with a private gem server or your own rubygems.org
+account. Publishing stub gems to public rubygems.org violates their ToS.
+
 Requires: pip install picard[rubygems]  (aiohttp)
 """
 
@@ -25,11 +28,14 @@ class RubyGemsAdapter(Adapter):
         registry_url: str = "https://rubygems.org",
         gem_prefix: str = "picard-chunk",
         max_chunk_bytes: int = 32768,
+        max_posts: int = 10,
     ) -> None:
         self._api_key = api_key
         self._registry = registry_url.rstrip("/")
         self._prefix = gem_prefix
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._session = None
 
 
@@ -61,6 +67,11 @@ class RubyGemsAdapter(Adapter):
         return {"Authorization": self._api_key}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"RubyGems session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a private gem server"
+            )
         try:
             chunk = Chunk.decode(encoded_chunk)
             gem_name = self._gem_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -86,6 +97,7 @@ class RubyGemsAdapter(Adapter):
             resp.raise_for_status()
 
         loc = f"gems://{gem_name}/{version}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="rubygems", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

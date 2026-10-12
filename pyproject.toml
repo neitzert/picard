@@ -72,7 +72,11 @@ caldav = ["httpx>=0.27"]
 carddav = ["httpx>=0.27"]
 webdav = ["httpx>=0.27"]
 qr = ["qrcode>=7.4", "Pillow>=10.0"]
-ethereum = ["httpx>=0.27"]
+ethereum = ["httpx>=0.27", "eth-account>=0.13.0"]
+polygon = ["eth-account>=0.13.0"]
+stellar = ["stellar-sdk>=11.0"]
+tezos = []
+cardano = ["pycardano>=0.9.0"]
 fuse = ["refuse>=0.0.3"]
 webdav-server = ["wsgidav>=4.0", "cheroot>=10.0"]
 mcp = ["mcp>=1.0"]
@@ -96,4 +100,6 @@ timeout = 30
 markers = [
     "integration: marks tests as integration tests that hit real services",
     "browser: marks tests that require a Playwright browser",
+    "slow: marks tests as slow (large data; skipped by default — run with -m slow)",
+    "timeout: per-test timeout override (used by pytest-timeout plugin)",
 ]

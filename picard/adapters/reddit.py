@@ -41,6 +41,7 @@ class RedditAdapter(Adapter):
         max_chunk_bytes: int = 39_000,
         use_browser: bool = False,
         headless: bool = True,
+        max_posts: int = 10,
     ) -> None:
         self._client_id = client_id
         self._client_secret = client_secret
@@ -52,6 +53,8 @@ class RedditAdapter(Adapter):
         self._use_browser = use_browser
         self._headless = headless
         self._reddit: object | None = None
+        self._max_posts = max_posts
+        self._post_count = 0
 
     def _ensure_reddit(self):
         if self._reddit is not None:
@@ -240,9 +243,17 @@ class RedditAdapter(Adapter):
     # ── Dispatch ────────────────────────────────────────────────
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"Reddit session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a different account"
+            )
         if self._use_browser:
-            return await self._browser_write(encoded_chunk)
-        return await self._api_write(encoded_chunk)
+            result = await self._browser_write(encoded_chunk)
+        else:
+            result = await self._api_write(encoded_chunk)
+        self._post_count += 1
+        return result
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if self._use_browser:

@@ -3,6 +3,9 @@
 Each chunk becomes a PyPI package whose long_description holds the
 encoded chunk data.  Reads via the JSON API.
 
+WARNING: Use only with a private index or your own PyPI account.
+Publishing stub packages to public PyPI violates PyPI's ToS.
+
 Requires: pip install picard[pypi]  (aiohttp)
 """
 
@@ -29,6 +32,7 @@ class PypiAdapter(Adapter):
         index_url: str = "https://pypi.org",
         pkg_prefix: str = "picard-chunk",
         max_chunk_bytes: int = 65536,
+        max_posts: int = 10,
     ) -> None:
         self._username = username
         self._password = password
@@ -36,6 +40,8 @@ class PypiAdapter(Adapter):
         self._index_url = index_url.rstrip("/")
         self._prefix = pkg_prefix
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._session = None
 
 
@@ -63,6 +69,11 @@ class PypiAdapter(Adapter):
         return f"{self._prefix}-{slug}"
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"PyPI session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a private index"
+            )
         try:
             chunk = Chunk.decode(encoded_chunk)
             pkg_name = self._pkg_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -86,6 +97,7 @@ class PypiAdapter(Adapter):
                 resp.raise_for_status()
 
         loc = f"pypi://{pkg_name}/{version}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="pypi", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

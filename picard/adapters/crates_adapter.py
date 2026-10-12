@@ -2,6 +2,9 @@
 
 Each chunk becomes a crate whose description field holds the data.
 
+WARNING: Use only with a private registry or your own crates.io account.
+Publishing stub crates to public crates.io violates their ToS.
+
 Requires: pip install picard[crates]  (aiohttp)
 """
 
@@ -25,11 +28,14 @@ class CratesAdapter(Adapter):
         registry_url: str = "https://crates.io",
         crate_prefix: str = "picard-chunk",
         max_chunk_bytes: int = 32768,
+        max_posts: int = 10,
     ) -> None:
         self._token = token
         self._registry = registry_url.rstrip("/")
         self._prefix = crate_prefix
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._session = None
 
     async def _get_session(self):
@@ -60,6 +66,11 @@ class CratesAdapter(Adapter):
         return {"Authorization": self._token}
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"crates.io session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a private registry"
+            )
         import aiohttp
 
         try:
@@ -88,6 +99,7 @@ class CratesAdapter(Adapter):
             resp.raise_for_status()
 
         loc = f"crates://{crate_name}/{version}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="crates-io", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

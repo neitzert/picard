@@ -17,6 +17,73 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 from picard.chunker import Chunk
 
+# ---------------------------------------------------------------------------
+# secp256k1 + BIP-340 Schnorr (stdlib only: hashlib integers)
+# ---------------------------------------------------------------------------
+
+_P  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2F
+_N  = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141
+_Gx = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798
+_Gy = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8
+
+
+def _ec_add(P, Q):
+    if P is None: return Q
+    if Q is None: return P
+    px, py = P; qx, qy = Q
+    if px == qx:
+        if py != qy: return None
+        lam = (3 * px * px * pow(2 * py, _P - 2, _P)) % _P
+    else:
+        lam = ((qy - py) * pow(qx - px, _P - 2, _P)) % _P
+    x = (lam * lam - px - qx) % _P
+    return (x, (lam * (px - x) - py) % _P)
+
+
+def _ec_mul(k, P=None):
+    if P is None: P = (_Gx, _Gy)
+    R = None
+    while k > 0:
+        if k & 1: R = _ec_add(R, P)
+        P = _ec_add(P, P)
+        k >>= 1
+    return R
+
+
+def _tagged_hash(tag: str, data: bytes) -> bytes:
+    th = hashlib.sha256(tag.encode()).digest()
+    return hashlib.sha256(th + th + data).digest()
+
+
+def _schnorr_pubkey(privhex: str) -> str:
+    """Return the 32-byte x-only BIP-340 public key as hex."""
+    d = int(privhex, 16) % _N
+    return _ec_mul(d)[0].to_bytes(32, "big").hex()
+
+
+def _schnorr_sign(privhex: str, event_id_hex: str) -> str:
+    """Return a 64-byte BIP-340 Schnorr signature as hex."""
+    d0 = int(privhex, 16) % _N
+    msg = bytes.fromhex(event_id_hex)
+    P = _ec_mul(d0)
+    d = d0 if P[1] % 2 == 0 else _N - d0
+    aux = _tagged_hash("BIP0340/aux", b"\x00" * 32)
+    t = (d ^ int.from_bytes(aux, "big")).to_bytes(32, "big")
+    k0 = int.from_bytes(
+        _tagged_hash("BIP0340/nonce", t + P[0].to_bytes(32, "big") + msg), "big"
+    ) % _N
+    if k0 == 0:
+        raise ValueError("degenerate nonce — choose a different private key")
+    R = _ec_mul(k0)
+    k = k0 if R[1] % 2 == 0 else _N - k0
+    e = int.from_bytes(
+        _tagged_hash(
+            "BIP0340/challenge",
+            R[0].to_bytes(32, "big") + P[0].to_bytes(32, "big") + msg,
+        ), "big",
+    ) % _N
+    return (R[0].to_bytes(32, "big") + ((k + e * d) % _N).to_bytes(32, "big")).hex()
+
 
 def _compute_event_id(event: dict) -> str:
     serialized = json.dumps(
@@ -49,18 +116,12 @@ class NostrAdapter(Adapter):
         return self._pubkey_hex
 
     def _derive_pubkey(self, privkey_hex: str) -> str:
-        """Derive the public key from the private key.
-
-        Override or mock for testing.  Real implementation needs secp256k1.
-        """
-        raise NotImplementedError("requires secp256k1 for real usage")
+        """Return the x-only BIP-340 public key for *privkey_hex*."""
+        return _schnorr_pubkey(privkey_hex)
 
     def _sign_event(self, event: dict) -> str:
-        """Produce a Schnorr signature for the event.
-
-        Override or mock for testing.  Real implementation needs secp256k1.
-        """
-        raise NotImplementedError("requires secp256k1 for real usage")
+        """Return a BIP-340 Schnorr signature over the event id."""
+        return _schnorr_sign(self._privkey_hex, event["id"])
 
     def _build_event(self, content: str, kind: int = 1,
                      tags: list | None = None) -> dict:

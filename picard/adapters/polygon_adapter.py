@@ -9,7 +9,6 @@ Requires: pip install picard[polygon]   (aiohttp)
 
 from __future__ import annotations
 
-import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
@@ -54,12 +53,38 @@ class PolygonAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        calldata = "0x" + encoded_chunk.encode().hex()
-        tx_hash = "0x" + uuid.uuid4().hex + uuid.uuid4().hex[:32]
-        await self._rpc(
-            "eth_sendRawTransaction",
-            [calldata],
+        from eth_account import Account
+
+        acct = Account.from_key(self._private_key)
+
+        nonce = int(
+            (await self._rpc("eth_getTransactionCount", [acct.address, "pending"]))
+            .get("result", "0x0"), 16
         )
+        gas_price = int(
+            (await self._rpc("eth_gasPrice", [])).get("result", "0x3b9aca00"), 16
+        )
+        calldata = "0x" + encoded_chunk.encode().hex()
+
+        tx = {
+            "chainId": self._chain_id,
+            "nonce": nonce,
+            "maxFeePerGas": gas_price * 2,
+            "maxPriorityFeePerGas": gas_price,
+            "gas": 50_000 + len(encoded_chunk) * 68,
+            "to": acct.address,      # self-referencing tx (data in calldata)
+            "value": 0,
+            "data": calldata,
+        }
+        signed = acct.sign_transaction(tx)
+        result = await self._rpc(
+            "eth_sendRawTransaction",
+            ["0x" + signed.raw_transaction.hex()],
+        )
+        tx_hash = result.get("result", "")
+        if not tx_hash:
+            raise RuntimeError(f"eth_sendRawTransaction failed: {result}")
+
         return StoredChunkRef(
             adapter_name="polygon", location=f"polygon://{tx_hash}"
         )

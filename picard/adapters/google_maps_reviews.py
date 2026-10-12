@@ -1,9 +1,11 @@
 """Google Maps Reviews adapter — stores chunks in place review data.
 
 Writes chunk data via the Google Places API to places you own or
-manage (Google Business Profile).  Do not use on places you do not
-own or control — this would violate Google's Terms of Service and
-potentially applicable consumer-protection law.
+manage (Google Business Profile).
+
+WARNING: Automated review submission may violate Google's ToS and
+consumer-protection law regardless of ownership. Use only with Google
+Business Profile test environments or private place IDs.
 
 Requires: pip install picard[google-maps]  (aiohttp)
 """
@@ -28,10 +30,12 @@ class GoogleMapsAdapter(Adapter):
         place_id: str,
         *,
         max_chunk_bytes: int = 4096,
+        rating: int = 5,
     ) -> None:
         self._api_key = api_key
         self._place_id = place_id
         self._max = max_chunk_bytes
+        self._rating = rating
         self._cache: dict[str, str] = {}
         self._session = None
 
@@ -70,7 +74,7 @@ class GoogleMapsAdapter(Adapter):
             json={
                 "place_id": self._place_id,
                 "text": review_text,
-                "rating": 5,
+                "rating": self._rating,
             },
         )
         resp.raise_for_status()

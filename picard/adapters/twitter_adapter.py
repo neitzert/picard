@@ -224,7 +224,10 @@ class TwitterAdapter(Adapter):
     async def _browser_read(self, ref: StoredChunkRef) -> str:
         path = ref.location.split("://", 1)[1]
         if path.startswith("dm/"):
-            raise NotImplementedError("browser DM read not supported")
+            raise RuntimeError(
+                "Browser DM reads are not supported. "
+                "Use API mode (use_browser=False) with a valid bearer_token to read DMs."
+            )
         tweet_id = path
 
         page, _ = await self._browser_page()

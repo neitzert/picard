@@ -1,8 +1,10 @@
 """MediaWiki adapter — stores chunks as wiki page edits.
 
-Each chunk becomes the content of a user subpage. Wiki edit history
-is permanent — data persists even if the page is "deleted" by admins
-(it remains in the revision log).
+Each chunk becomes the content of a user subpage.
+
+WARNING: Wiki revision history is permanent and admin-visible. Deleted
+pages remain in the revision log; do not store sensitive data on wikis
+you do not fully control.
 
 Requires: pip install picard[wiki]  (aiohttp)
 """
@@ -29,12 +31,15 @@ class MediaWikiAdapter(Adapter):
         *,
         page_prefix: str | None = None,
         max_chunk_bytes: int = 65536,
+        max_posts: int = 20,
     ) -> None:
         self._api_url = api_url.rstrip("/")
         self._username = username
         self._password = password
         self._page_prefix = page_prefix or f"User:{username}/picard/"
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._token: str | None = None
         self._cache: dict[str, str] = {}
         self._session = None
@@ -90,6 +95,11 @@ class MediaWikiAdapter(Adapter):
         return self._token
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"MediaWiki session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a different wiki"
+            )
         try:
             chunk = Chunk.decode(encoded_chunk)
             key = f"{chunk.manifest_id}/{chunk.block_index}/{chunk.chunk_index}"
@@ -115,6 +125,7 @@ class MediaWikiAdapter(Adapter):
 
         loc = f"wiki://{self._api_url}/{page_title}"
         self._cache[loc] = encoded_chunk
+        self._post_count += 1
         return StoredChunkRef(adapter_name="mediawiki", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

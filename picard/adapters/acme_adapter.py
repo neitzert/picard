@@ -4,6 +4,12 @@ Each chunk is base32-encoded and submitted as DNS SANs in an ACME order.
 The chunk data lives in the order's identifiers until the order expires
 (typically 7 days).
 
+WARNING: The default directory URL targets Let's Encrypt's staging
+environment, which is real shared infrastructure. ACME orders consume
+rate-limited resources. Use only with a self-hosted ACME server (e.g.
+Pebble) unless you are testing against the actual LE staging environment
+intentionally.
+
 Requires: pip install picard[acme]  (aiohttp, cryptography)
 """
 

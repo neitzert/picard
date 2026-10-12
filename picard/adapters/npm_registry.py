@@ -3,6 +3,10 @@
 Each chunk becomes a scoped npm package with the data in the
 description field.  Reads via the registry JSON API.
 
+WARNING: Use only with registries you control (private registry or your
+own npm account). Publishing garbage packages to public npm violates
+npm's ToS.
+
 Requires: pip install picard[npm]  (aiohttp)
 """
 
@@ -28,11 +32,14 @@ class NpmRegistryAdapter(Adapter):
         registry_url: str = "https://registry.npmjs.org",
         scope: str = "@picard",
         max_chunk_bytes: int = 65536,
+        max_posts: int = 10,
     ) -> None:
         self._token = token
         self._registry = registry_url.rstrip("/")
         self._scope = scope
         self._max = max_chunk_bytes
+        self._max_posts = max_posts
+        self._post_count = 0
         self._session = None
 
 
@@ -67,6 +74,11 @@ class NpmRegistryAdapter(Adapter):
         }
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if self._post_count >= self._max_posts:
+            raise RuntimeError(
+                f"npm session post cap reached ({self._max_posts}); "
+                "raise max_posts or use a private registry"
+            )
         try:
             chunk = Chunk.decode(encoded_chunk)
             pkg_name = self._pkg_name(chunk.manifest_id, chunk.block_index, chunk.chunk_index)
@@ -100,6 +112,7 @@ class NpmRegistryAdapter(Adapter):
             resp.raise_for_status()
 
         loc = f"npm://{pkg_name}/{version}"
+        self._post_count += 1
         return StoredChunkRef(adapter_name="npm-registry", location=loc)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:

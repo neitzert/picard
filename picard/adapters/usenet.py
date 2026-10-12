@@ -32,6 +32,7 @@ class UsenetAdapter(Adapter):
         newsgroup: str = "alt.binaries.picard",
         use_ssl: bool = False,
         max_chunk_bytes: int = 500_000,
+        from_address: str = "",
     ) -> None:
         self._host = host
         self._port = port
@@ -40,6 +41,7 @@ class UsenetAdapter(Adapter):
         self._newsgroup = newsgroup
         self._use_ssl = use_ssl
         self._max = max_chunk_bytes
+        self._from_address = from_address
         self._client: object | None = None
 
     def _ensure_client(self):
@@ -75,8 +77,14 @@ class UsenetAdapter(Adapter):
             f"b{chunk.block_index} c{chunk.chunk_index}"
         )
         date_str = formatdate(usegmt=True)
+        if self._from_address:
+            from_header = self._from_address
+        elif self._username:
+            from_header = f"{self._username}@{self._host}"
+        else:
+            from_header = f"picard@{self._host}"
         lines = [
-            f"From: picard@example.com",
+            f"From: {from_header}",
             f"Newsgroups: {self._newsgroup}",
             f"Subject: {subject}",
             f"Message-ID: {message_id}",
@@ -125,8 +133,14 @@ class UsenetAdapter(Adapter):
 
         def _cancel():
             try:
+                if self._from_address:
+                    from_header = self._from_address
+                elif self._username:
+                    from_header = f"{self._username}@{self._host}"
+                else:
+                    from_header = f"picard@{self._host}"
                 article = [
-                    f"From: picard@example.com".encode(),
+                    f"From: {from_header}".encode(),
                     f"Newsgroups: {self._newsgroup}".encode(),
                     f"Subject: cancel".encode(),
                     f"Message-ID: {cancel_id}".encode(),
