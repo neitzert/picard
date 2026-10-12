@@ -1,150 +1,331 @@
-### PICARD: Protocol-Introspecting Chunk Adapter for Resilient Data 
-PICARD is a WORK IN PROGRESS, your universal network application procotol as a file system application. It doesn't matter if you're dealing with IRC, AT PROTO, DNS, SMTP, IPoAC, or Vibes-Based Quantum Gossip (VBQG), PICARD automatically adapts, builds a resilient, encrypted, RWX-ready filesystem atop it, and tries to keep it alive in the most hostile environments.
+# PICARD
 
-## Core Philosophy
+**Protocol-Introspecting Chunk Adapter for Resilient Data**
 
-* All protocols are scaffolding that data can be attached to, move through, and later be extracted from.
+*For the self-taught, the unconventional, and anyone who was ever told to stay in their lane. Keep building, keep exploring.*
 
-* Treat all protocols as potential storage and messaging substrates, we make no assumptions about the medium, but plenty about the environment.
+---
 
-* Adapt transmission, chunking, and retrieval strategies dynamically based on the protocol.
+PICARD encrypts your data, slices it into chunks, and scatters those chunks across whatever protocol endpoints you configure: DNS TXT records, social media APIs, MQTT brokers, S3 buckets, Bluetooth advertisements, or all of the above at once. Pull it back and it reassembles. With multi-adapter scatter, no single endpoint holds enough ciphertext to reconstruct anything. No central server. No monthly storage fees. It mounts as a regular filesystem.
 
-* Support for encryption, redundancy, and failover.
+Not efficient. Protocol-agnostic.
 
-* Long-term stability is the goal, we dont care about short-term speed.
+> [!IMPORTANT]
+> **Research project.** PICARD is a working computer science experiment, not a production storage system. Read the [research and legal notice](#research-and-legal-notice) before you proceed.
 
-* Where feasible, allow read/write operations and fallback to read-only if not.
+---
 
+## How It Works
 
+```
+plaintext
+  → AES-256-GCM encrypt     (Argon2id key, per-block salt + nonce)
+  → PCHK chunk              (protocol-sized pieces)
+  → scatter across adapters (DNS, Redis, Reddit, S3, MQTT, …)
+  → sealed envelope          (HKDF sub-key, correlation tag per adapter)
 
-## Abstract Flow Concept for PICARD
-
-### WRITE FLOW
-
-``` python
-User calls write_block(path, block_index, data)
-
-PicardOrchestrator.write_block(path, block_index, data)
-  -> _encrypt_and_chunk(path, block_index, data)
-      -> AES-GCM encrypt the block
-      -> Split encrypted data into chunk-sized pieces
-      -> Attach metadata (file_id, block_index, chunk_index, total_chunks)
-
-  -> For each adapter in self.adapters:
-      -> if adapter.is_available():
-          -> For each chunk:
-              -> adapter.write_chunk(...)
+retrieve
+  ← fan out to all adapters
+  ← collect, verify, assemble
+  ← decrypt
 ```
 
-### READ FLOW
+Each block is independently encrypted with its own random salt and nonce. Chunks scatter round-robin or via RAID profiles. No adapter sees plaintext; no adapter sees enough ciphertext to reconstruct anything.
 
-``` python
-User calls read_block(path, block_index)
+The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk locations. Lose the passphrase, lose the data.
 
-PicardOrchestrator.read_block(path, block_index)
-  -> For each adapter in self.adapters:
-      -> if adapter.is_available():
-          -> chunks = adapter.read_chunks(file_id, block_index)
-          -> if chunks:
-              -> _reassemble_and_decrypt(path, block_index, chunks)
-                  -> Join chunks
-                  -> AES-GCM decrypt to get original block
-                  -> return decrypted block
+<details>
+<summary>The origin: a wall and some birds</summary>
+
+*It was a cool Berlin morning. From my patio I stared at a plain stucco wall capped by red brick. A blur of wings caught my eye, a small bird veering into a drain hole near the roofline and vanishing. Another head appeared from a different hole, chirping. Five drain holes, five nests. The gutters were meant to move water, not host families, yet the birds had found shelter, cover, and easy access. I had never noticed because I had never bothered to look.*
+
+*Our digital infrastructure carries more than it was designed to store. DNS TXT records accept arbitrary text within spec. MQTT retained messages persist data on the broker. ICMP echo packets carry a payload field. Social media APIs accept freeform structured text. Each of these protocols defines fields intended for metadata, discovery, or diagnostics. Those fields can carry bytes just as well as their designers' intended use cases.*
+
+[Medium: A Wall, Some Birds, and The Internet Protocols We Aren't Looking At, Christopher Neitzert, May 2025](https://ckn46.medium.com/a-wall-some-birds-and-the-internet-protocols-we-arent-looking-at-0500922f3806?sharedUserId=ckn46)
+
+</details>
+
+---
+
+## Web Dashboard
+
+`picard web` opens a browser dashboard at [http://localhost:8471](http://localhost:8471).
+
+![PICARD dashboard overview](docs/img/ui-overview.png)
+*Storage surface by category, adapter health, and encryption details at a glance.*
+
+![PICARD adapter registry](docs/img/ui-adapters.png)
+*259 adapters browsable by category, with required parameters and one-click add.*
+
+---
+
+## Quickstart
+
+```bash
+pip install picard
+
+export PICARD_PASSPHRASE="your-passphrase"   # or picard will prompt
+
+picard init                                  # create picard.toml
+
+# edit picard.toml to add your adapters, then:
+picard put myfile.txt --as /docs/myfile.txt
+picard get /docs/myfile.txt -o recovered.txt
+picard ls
+picard tree /
 ```
 
-### Adapters Overview
-Adapters are the protocol-specific modules that handle the storage and retrieval of chunked data. Whether it's DNS, MQTT, ATProto, or any other transport mechanism, each adapter knows how to interact with its respective protocol to read and write chunks of data.
+**From source:**
 
-Adapters don't care about encryption or chunking: That's handled by the PicardOrchestrator.
+```bash
+git clone https://github.com/neitzert/picard
+cd picard
+pip install -e ".[dev]"
+python -m pytest --tb=short -q
+```
 
-Adapters do care about how to transport data: They deal with storing chunks and fetching them.
+---
 
-Adapters implement basic operations such as write_chunk and read_chunks, but the orchestrator manages the encryption, chunking, and metadata.
+## Configuration
 
-### Key Adapter Attributes
-name: The name of the protocol (e.g., mqtt, dns).
+```toml
+# picard.toml
 
-persistent: Whether the adapter can store data persistently.
+[general]
+block_size = 65536
 
-ordered: Whether the adapter maintains the order of chunks.
+[[adapters]]
+name       = "dns-primary"
+type       = "dns"
+enabled    = true
+params     = { nameserver = "10.10.10.10", domain = "chunks.example.com" }
 
-max_chunk_size: The maximum size for each chunk, adjusted based on protocol limitations (e.g., DNS TXT records).
+[[adapters]]
+name       = "s3-backup"
+type       = "s3"
+enabled    = true
+tor_proxy  = true              # route through Tor SOCKS5
+params     = { bucket = "picard-chunks", prefix = "data/" }
 
+[[adapters]]
+name         = "reddit-stash"
+type         = "reddit"
+enabled      = true
+browser_mode = "headed"        # api | headless | headed
+params       = { subreddit = "u_myuser" }
 
-### Example Adapters
-dns_adapter.py: Uses DNS to store and retrieve encrypted data chunks as TXT records.
+[[raid]]
+level    = "raid5"
+adapters = ["dns-primary", "s3-backup", "filesystem"]
 
-* The max_chunk_size is 384 bytes to fit within DNS record size limits, taking base64 encoding overhead into account. The adapter stores the encrypted data as TXT records, where each record can hold a maximum of 512 bytes (after encoding).
+[scatter.paranoid]
+raid_level   = "raid10"
+min_adapters = 4
+```
 
-mqtt_adapter.py: Uses MQTT topics with base64-encoded payloads (supports retained messages).
+**Scatter profiles:** `quiet`, `resilient`, `speed`, `paranoid`
 
-* Designed for low-latency, lightweight storage in IoT systems or other MQTT-based environments.
+---
 
-atproto_adapter.py: Uses the ATProto/Bluesky API to publish and retrieve data chunks as posts.
+## CLI Reference
 
-* Adapts data to the social media-oriented ATProto network.
+### Core operations
 
+| Command | Description |
+|---------|-------------|
+| `picard put <file> --as <path>` | Store a file |
+| `picard get <path> -o <file>` | Retrieve a file |
+| `picard ls [path]` | List files |
+| `picard rm <path>` | Delete |
+| `picard cp / mv` | Copy / rename |
+| `picard tree /` | Directory tree |
+| `picard verify <path>` | Chunk integrity check |
 
-### Adding New Adapters
-Adding new protocols to PICARD is simple:
+### Filesystem
 
-Create a new Python file in the adapters/ directory.
+| Command | Description |
+|---------|-------------|
+| `picard mkdir / ln / head / tail / touch / log / stat / find` | Standard filesystem operations |
+| `picard fsck` | Consistency check and repair |
+| `picard mount <mountpoint>` | FUSE mount |
+| `picard webdav` | WebDAV server (port 8471) |
 
-Ensure it inherits from BaseTransportAdapter and implements the required methods (write_chunk and read_chunks).
+### Infrastructure
 
-Add any necessary configuration handling to interact with the chosen protocol.
+| Command | Description |
+|---------|-------------|
+| `picard web` | Web dashboard (dark/light, drag-and-drop) |
+| `picard scatter-report` | Storage surface map |
+| `picard adapters / profiles` | List adapters and scatter profiles |
+| `picard recover` | Journal crash recovery |
+| `picard tor-check / tor-serve / tor-peer / tor-mount` | Tor operations |
+| `picard init` | Create default `picard.toml` |
 
+Most commands accept `--json` for machine-readable output.
 
-### Configuration
-Adapters typically require configuration to function properly. These configurations are defined in JSON files associated with each adapter.
+---
 
-For example, the DNS Adapter (dns_adapter.py) uses a configuration like this in dns_adapter.json:
-``` JSON
+## Filesystem Mount
+
+`picard mount` exposes the virtual filesystem via FUSE. Standard shell tools work: `cp`, `ls`, `mv`, `rm`, `mkdir`, `cat`, `chmod`, `ln -s`, and `df` all behave as expected.
+
+**Platform requirements:**
+
+| Platform | Requirement |
+|----------|-------------|
+| Linux | `sudo apt install libfuse-dev` (or distro equivalent) |
+| macOS | `brew install --cask macfuse` |
+| Windows | [WinFSP](https://winfsp.dev/), or use `picard webdav` with Explorer's Map Network Drive |
+
+**Known limitations:** no hard links, no file locking (`flock`/`fcntl`). Writes buffer the whole file in RAM and flush on close. Do not run SQLite WAL mode or Git object stores directly inside a mount.
+
+`picard webdav` is the zero-driver alternative. Start it, point Explorer, Finder, or Nautilus at `http://localhost:8471`, and drag files in.
+
+---
+
+## MCP Server
+
+PICARD exposes storage tools as an MCP server for Claude and other MCP-compatible agents:
+
+```json
 {
-    "dns_server": {
-        "ip": "192.168.1.100",
-        "port": 53,
-        "domain": "example.com",
-        "server_name": "DNSaaFS_DNS"
-    },
-    "timeout": 5,
-    "retries": 3
+  "mcpServers": {
+    "picard-store": {
+      "command": "picard-mcp",
+      "env": { "PICARD_PASSPHRASE": "your-passphrase" }
+    }
+  }
 }
 ```
-* dns_server: The DNS server's IP, port, domain, and server name.
-* timeout and retries: Control the DNS query behavior for timeouts and retries.
 
-
-# Extending PICARD with New Protocols
-Add new adapters by following the same template as the existing ones.
-
-Update PicardOrchestrator to detect and use new adapters automatically by placing them in the adapters/ directory.
-
-Adapters can be configured dynamically using the configuration files, which PICARD reads at runtime.
+See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ---
 
-### Example Use Case
-Initialization:
-The orchestrator is initialized with a list of adapters (e.g., DNSAdapter, MQTTAdapter) and an encryption key.
+## Adapters
 
-``` python
-orchestrator = PicardOrchestrator(
-    adapters=[DNSAdapter(config_file="dns_adapter.json"), MQTTAdapter(config_file="mqtt_adapter.json")],
-    encryption_key=hashlib.sha256("mysecurekey".encode()).digest()
-)
-```
-Write Data:
-Data is encrypted, chunked, and then distributed to the adapters for storage:
+259 adapters in three tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
-```
-orchestrator.write_block(path="testfile", block_index=0, data=b"Some encrypted data")
-```
-Read Data:
-The orchestrator retrieves and decrypts the data from the adapters:
-```
-retrieved_data = orchestrator.read_block(path="testfile", block_index=0)
-```
+### Tier 1: Your own infrastructure
+
+No third-party authorization required. These are the primary use case.
+
+| Category | Examples |
+|----------|---------|
+| Local / database | Filesystem, Redis, PostgreSQL, S3, SQLite, etcd, CouchDB, Cassandra |
+| Self-hosted services | WebDAV, Matrix (own homeserver), MQTT (own broker), XMPP, IRC |
+| Mail / calendar | SMTP/IMAP, CalDAV, CardDAV |
+| P2P / decentralized | IPFS, BitTorrent DHT, Nostr, Ethereum (own wallet), Tor hidden services |
+| Steganography | Image LSB, audio WAV LSB, EXIF, XLSX hidden cells, ZIP comments |
+
+### Tier 2: Third-party platforms
+
+Require a valid account and API authorization on the relevant platform. Each adapter's source includes a platform-specific Terms of Service notice.
+
+| Category | Examples |
+|----------|---------|
+| Social | Bluesky, Reddit, Discord, Telegram, Mastodon, Twitter/X, Tumblr |
+| Media | YouTube, TikTok, Spotify, SoundCloud, Imgur, Flickr, Twitch |
+| Professional | LinkedIn, GitHub, Slack, Notion, HuggingFace, Medium, Hacker News, Pinterest, Steam |
+| Package registries | PyPI, npm, crates.io, RubyGems |
+
+> **Note on package registry adapters (PyPI, npm, crates.io, RubyGems):** these are research demonstrations. Some contain intentional friction in their write paths that prevents out-of-the-box use against public registries. If an adapter silently succeeds but data does not appear, or fails with an unexpected protocol error, read the source. The fix in each case is a small, deliberate change. This is by design.
+
+### Tier 3: RF spectrum and regulated hardware
+
+Authorization requirements vary by jurisdiction, frequency, and device type. Read the regulatory notice in each adapter's source before use.
+
+| Category | Examples |
+|----------|---------|
+| Radio | LoRa/LoRaWAN, SDR (receive-only without license), WiFi beacons, AX.25/amateur radio |
+| Short-range | Bluetooth LE, NFC, ZigBee |
+| Hardware buses | CAN bus (own hardware only), USB-HID, serial |
+
+Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
+
 ---
 
-PICARD aims to be a versatile and modular experiment designed for resilient data storage across a wide variety of protocols.
+## Cryptographic Posture
+
+All symmetric: Argon2id key derivation, HKDF-SHA256 sub-keys, AES-256-GCM authenticated encryption, HMAC-SHA256 for transport auth and correlation tags. No public-key cryptography in the storage path.
+
+AES-256 provides 128-bit security against Grover's algorithm on a fault-tolerant quantum computer, matching the security target of NIST post-quantum standards. The ciphertext format carries a version byte so the cipher suite can be swapped without re-encrypting stored data.
+
+---
+
+## Honest Downsides
+
+PICARD is not magic, perhaps poetic. It is certainly not efficient, will not be fast, and offers zero guarantees.
+
+- **Reads are slow.** Writes may partially fail.
+- **Chunk loss means data loss.** No global index, no recovery path if too many chunks go missing.
+- **Best for small, critical datasets** (a few MB to low GB). Larger files compound both retrieval slowness and chunk-loss risk.
+- **Adapters age.** As protocols evolve or get patched, adapters may need updates.
+- **Invisible to standard monitoring.** Chunks are opaque to conventional storage tools unless you know where to look.
+
+If you need uptime guarantees, deterministic performance, or expect everything to work without tinkering, this is probably not for you.
+
+---
+
+## Research and Legal Notice
+
+PICARD is an experimental computer science research project exploring protocol-agnostic storage abstractions. It is published for educational, experimental, and interoperability research purposes under the MIT license.
+
+Users are solely responsible for ensuring their use complies with applicable law and the terms of service of any third-party platform or network accessed through a PICARD adapter. **PICARD does not authorize access to systems, accounts, or infrastructure the user does not own or have explicit permission to use.**
+
+<details>
+<summary>Full dual-use notice and terms</summary>
+
+Like most security and systems research, PICARD has dual-use capabilities: the same techniques that enable resilient personal storage can, in principle, be misused. Publishing this work does not endorse or encourage misuse; it serves the community's interest in understanding these surfaces so they can be studied, defended against, and properly accounted for.
+
+**Acceptable use.** Any use of PICARD to violate applicable law (including but not limited to computer fraud and abuse statutes, electronic communications privacy law, or the Terms of Service of any platform) immediately and irrevocably voids any claim to acceptable use under this project. If you use PICARD to break the law or violate platform Terms of Service, you are entirely on your own. The authors provide no support, defense, or indemnification for unlawful or unauthorized use. This is not a disclaimer of liability; it is a boundary.
+
+Each adapter's source includes a platform-specific notice. Read it before you use the adapter.
+
+The full terms are in [TERMS.md](TERMS.md). On first run, `picard` will prompt you to accept them. Pass `--accept-terms` to accept permanently, or set `PICARD_ACCEPT_TERMS=1` for scripted use.
+
+By using PICARD you accept full responsibility for your actions and their consequences. You agree to indemnify, defend, and hold harmless the authors, contributors, and maintainers of PICARD from and against any and all claims, liabilities, damages, losses, costs, and expenses arising out of or related to your use or misuse of this software.
+
+**On ethics.** Ethics in this context is the mortar between the bricks, not an optional coat of paint. The premise of this research is not that protocol fields are available for any purpose; it is that understanding them as storage substrates is a useful contribution to the literature, and that the community benefits from knowing these surfaces exist. Exploration is fine, even necessary, but it comes with the obligation to think through collateral damage, disclose what you find, and leave breadcrumbs for defenders to address if they choose. Running PICARD responsibly means using it on infrastructure you control, resisting the urge to turn research findings into personal leverage, and being ready to stop when the experiment tips from curiosity into something else.
+
+</details>
+
+---
+
+## Test Coverage and Contributing
+
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,236 tests). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
+
+**Pull requests are welcomed**, especially for:
+
+- Integration tests for adapter browser paths (see `tests/integration/`)
+- Tests or fixes for untested or partially-tested adapters
+- Real-world validation of exotic protocol adapters
+- New adapters (include at least a mocked unit test covering `write_chunk()`, `read_chunk()`, and `delete_chunk()`)
+- Documentation improvements and usage examples
+
+Open an issue for bugs or questions.
+
+---
+
+## Documentation
+
+| Doc | Contents |
+|-----|---------|
+| [Architecture](docs/architecture.md) | Data flow, key hierarchy, RAID, scatter profiles |
+| [Adapters](docs/adapters.md) | Full adapter list, writing custom adapters |
+| [CLI Reference](docs/cli.md) | All commands with examples |
+| [MCP Server](docs/mcp.md) | Agent storage interface, setup, available tools |
+| [FUSE Mount](docs/fuse.md) | Mounting, performance, platform notes |
+| [WebDAV](docs/webdav.md) | Network drive mounting, native OS drag-and-drop |
+| [Tor](docs/tor.md) | Anonymity, hidden services, .onion peers |
+| [Network](docs/network.md) | Transport layer, peer discovery, remote adapters |
+| [Identifying PICARD in the Wild](docs/identifying-picard-in-the-wild.md) | Observability, confidentiality, and attribution across 18 platforms |
+
+---
+
+## License
+
+MIT. Copyright 2024–2026 Christopher Neitzert.
+
+*In the wild, anything left open long enough becomes habitat.*

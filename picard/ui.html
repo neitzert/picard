@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PICARD Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #080b12;
+  --surface: #0e1420;
+  --surface2: #141a28;
+  --border: #1a2030;
+  --border2: #1e2538;
+  --text: #e0e4ee;
+  --text2: #7d8599;
+  --text3: #4d5a70;
+  --accent: #00d8ff;
+  --accent2: #0099b8;
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --yellow: #facc15;
+  --purple: #a78bfa;
+  --font: 'Space Grotesk', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'Consolas', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #080b12;
+    --surface: #0e1420;
+    --surface2: #141a28;
+    --border: #1a2030;
+    --border2: #1e2538;
+    --text: #e0e4ee;
+    --text2: #7d8599;
+    --text3: #4d5a70;
+    --accent: #00d8ff;
+    --accent2: #0099b8;
+    --green: #22c55e;
+    --red: #ef4444;
+    --orange: #f59e0b;
+    --yellow: #facc15;
+    --purple: #a78bfa;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #080b12;
+  --surface: #0e1420;
+  --surface2: #141a28;
+  --border: #1a2030;
+  --border2: #1e2538;
+  --text: #e0e4ee;
+  --text2: #7d8599;
+  --text3: #4d5a70;
+  --accent: #00d8ff;
+  --accent2: #0099b8;
+  --green: #22c55e;
+  --red: #ef4444;
+  --orange: #f59e0b;
+  --yellow: #facc15;
+  --purple: #a78bfa;
+}
+:root[data-theme="light"] {
+  --bg: #f0f2f7;
+  --surface: #ffffff;
+  --surface2: #f8f9fc;
+  --border: #dce0ea;
+  --border2: #e8ebf0;
+  --text: #1a1e2e;
+  --text2: #6b7088;
+  --text3: #9ca3b4;
+  --accent: #0891b2;
+  --accent2: #0e7490;
+  --green: #16a34a;
+  --red: #dc2626;
+  --orange: #d97706;
+  --yellow: #ca8a04;
+  --purple: #7c3aed;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font-family: var(--mono); font-size: 12px; }
+
+/* Layout */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 20;
+}
+.main { flex: 1; margin-left: 220px; display: flex; flex-direction: column; min-height: 100vh; }
+.topbar {
+  height: 56px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 28px;
+  gap: 16px;
+  background: var(--bg);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar h2 { font-size: 16px; font-weight: 600; }
+.content { flex: 1; padding: 24px 28px; max-width: 1400px; }
+
+/* Sidebar nav */
+.sidebar-logo {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-logo-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-logo-text {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  color: var(--accent);
+}
+.sidebar-logo-sub {
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+.sidebar-nav { flex: 1; padding: 8px 0; overflow-y: auto; }
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  border-left: 2px solid transparent;
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: none;
+  border-top: none;
+  border-right: none;
+  border-bottom: none;
+  font-family: var(--font);
+  width: 100%;
+  text-align: left;
+}
+.nav-item:hover { color: var(--text); }
+.nav-item.active {
+  color: var(--accent);
+  background: rgba(0,216,255,0.08);
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+.nav-sep { height: 1px; background: var(--border); margin: 8px 20px; }
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.card-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.card-header h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.card-body { padding: 20px; }
+
+/* Tables */
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  padding: 8px 12px;
+  color: var(--text3);
+  font-weight: 400;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border-bottom: 1px solid var(--border);
+}
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(0, 216, 255, 0.03); }
+
+/* Badges */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+.badge-network { background: #1a237e; color: #64b5f6; }
+.badge-social { background: #311b92; color: #b388ff; }
+.badge-storage { background: #1b5e20; color: #81c784; }
+.badge-cloud { background: #e65100; color: #ffb74d; }
+.badge-cicd { background: #263238; color: #80cbc4; }
+.badge-industrial { background: #4a148c; color: #ce93d8; }
+.badge-radio { background: #880e4f; color: #f48fb1; }
+.badge-blockchain { background: #f57f17; color: #fff176; }
+.badge-steganography { background: #004d40; color: #80cbc4; }
+.badge-identity { background: #bf360c; color: #ffab91; }
+.badge-packages { background: #33691e; color: #aed581; }
+.badge-os-level { background: #3e2723; color: #bcaaa4; }
+.badge-enterprise { background: #0d47a1; color: #90caf9; }
+.badge-misc { background: #37474f; color: #b0bec5; }
+.badge-other { background: #37474f; color: #b0bec5; }
+.badge-enabled { background: rgba(34,197,94,0.15); color: var(--green); }
+.badge-disabled { background: rgba(239,68,68,0.15); color: var(--red); }
+.badge-tor { background: rgba(167,139,250,0.15); color: var(--purple); font-size: 9px; font-weight: 600; letter-spacing: 0.5px; }
+.badge-browser { background: rgba(245,158,11,0.15); color: var(--orange); font-size: 9px; font-weight: 600; letter-spacing: 0.5px; }
+.badge-headed { background: rgba(239,68,68,0.15); color: var(--red); font-size: 9px; font-weight: 600; letter-spacing: 0.5px; }
+
+/* Segmented Control */
+.seg-control { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.seg-control button { padding: 6px 14px; border: none; background: transparent; color: var(--text2); font-family: var(--font); font-size: 12px; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.seg-control button:hover { color: var(--text); }
+.seg-control button.active { background: var(--accent); color: #000; font-weight: 600; }
+.seg-control button.active-orange { background: var(--orange); color: #000; font-weight: 600; }
+
+/* Buttons */
+.btn {
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-primary {
+  background: var(--accent);
+  color: #080b12;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.btn-primary:hover { background: var(--accent2); border-color: var(--accent2); }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover { background: var(--red); color: #fff; }
+.btn-sm { padding: 4px 10px; font-size: 11px; }
+
+/* Forms */
+.form-group { margin-bottom: 14px; }
+.form-group label {
+  display: block;
+  color: var(--text2);
+  font-size: 11px;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+input, select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 12px;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+input[type="password"] { letter-spacing: 2px; font-family: var(--mono); }
+
+/* Toggle switch */
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border2);
+  border-radius: 11px;
+  transition: background 0.2s;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text2);
+  transition: all 0.2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.toggle input:checked + .toggle-track { background: var(--green); }
+.toggle input:checked + .toggle-track + .toggle-thumb {
+  left: 20px;
+  background: #fff;
+}
+.toggle.toggle-purple input:checked + .toggle-track { background: var(--purple); }
+.toggle.toggle-accent input:checked + .toggle-track { background: var(--accent); }
+
+/* Modal */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 80px;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  width: 520px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.modal-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-header h3 { font-size: 14px; font-weight: 600; }
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text2);
+  font-size: 18px;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; }
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Search/filter */
+.search-bar { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+.search-bar input { max-width: 300px; }
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 14px;
+  width: 240px;
+}
+.search-box svg { flex-shrink: 0; }
+.search-box input {
+  border: none;
+  background: none;
+  padding: 0;
+  width: 100%;
+  font-size: 12px;
+}
+.search-box input:focus { outline: none; border: none; }
+.filter-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill {
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text2);
+  font-family: var(--font);
+  transition: all 0.15s;
+}
+.pill:hover, .pill.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(0, 216, 255, 0.08);
+}
+
+/* Grid */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 1100px) {
+  .grid-4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 900px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+/* Stat cards */
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+.stat-card .number {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: var(--mono);
+}
+.stat-card .label {
+  font-size: 10px;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+.stat-card .note {
+  font-size: 11px;
+  color: var(--text2);
+  margin-top: 4px;
+}
+
+/* RAID visual */
+.raid-visual {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+  height: 100px;
+  margin: 12px 0;
+}
+.raid-disk {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--text2);
+  position: relative;
+  overflow: hidden;
+}
+.raid-disk .fill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0, 216, 255, 0.1);
+  transition: height 0.3s;
+}
+.raid-disk .label { position: relative; z-index: 1; }
+
+/* Credential icons */
+.lock { color: var(--orange); }
+.unlock { color: var(--green); }
+
+/* Panel */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  background: var(--surface);
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  color: var(--green);
+  font-family: var(--font);
+  font-size: 12px;
+  z-index: 200;
+  animation: slideIn 0.2s ease;
+}
+.toast.error { border-color: var(--red); color: var(--red); }
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* Theme toggle pill */
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.theme-btn {
+  padding: 4px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.theme-btn.active {
+  background: var(--surface2);
+}
+.theme-btn svg { width: 14px; height: 14px; }
+
+/* Tor global toggle */
+.tor-global {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(167,139,250,0.08);
+  border: 1px solid rgba(167,139,250,0.2);
+  border-radius: 8px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.tor-global-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--purple);
+  letter-spacing: 0.5px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text2); }
+
+/* Adapter rows */
+.adapter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+.adapter-row:nth-child(odd) { background: var(--surface2); }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Toggle row (for settings) */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 0;
+}
+.toggle-row-info { flex: 1; }
+.toggle-row-title { font-size: 13px; color: var(--text); margin-bottom: 2px; }
+.toggle-row-desc { font-size: 11px; color: var(--text3); }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-logo-inner">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <rect x="2" y="2" width="24" height="24" rx="6" stroke="var(--accent)" stroke-width="1.5"/>
+          <path d="M8 14h12M14 8v12" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/>
+          <circle cx="14" cy="14" r="3" stroke="var(--accent)" stroke-width="1.5"/>
+        </svg>
+        <span class="sidebar-logo-text">PICARD</span>
+      </div>
+      <div class="sidebar-logo-sub">RESILIENT DATA PROTOCOL</div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-item active" data-panel="overview">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        Overview
+      </button>
+      <button class="nav-item" data-panel="adapters">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="18" r="2.5"/><circle cx="19" cy="18" r="2.5"/><path d="M12 10v3M7.5 16l3-3M16.5 16l-3-3"/></svg>
+        Adapters
+      </button>
+      <button class="nav-item" data-panel="credentials">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+        Credentials
+      </button>
+      <button class="nav-item" data-panel="raid">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        RAID
+      </button>
+      <button class="nav-item" data-panel="files">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+        Files
+      </button>
+      <button class="nav-item" data-panel="filesystem">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="4" width="22" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M6 12h12M6 16h8"/></svg>
+        Filesystem
+      </button>
+      <button class="nav-item" data-panel="peers">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+        Peers
+      </button>
+      <div class="nav-sep"></div>
+      <button class="nav-item" data-panel="config">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </nav>
+    <div class="sidebar-footer">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span style="font-size:11px;font-weight:600;color:var(--purple);letter-spacing:1px">TOR</span>
+        <span id="tor-sidebar-dot" style="width:6px;height:6px;border-radius:50%;background:var(--text3);margin-left:auto"></span>
+      </div>
+      <div id="tor-sidebar-status" style="font-size:10px;color:var(--text3);font-family:var(--mono)">SOCKS5 :9050</div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- Top bar -->
+    <div class="topbar">
+      <h2 id="topbar-title">Overview</h2>
+      <div style="flex:1"></div>
+
+      <!-- Global Tor toggle -->
+      <div class="tor-global" onclick="toggleGlobalTor()">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span class="tor-global-label">ALL VIA TOR</span>
+        <label class="toggle toggle-purple" style="margin-left:4px" onclick="event.stopPropagation()">
+          <input type="checkbox" id="global-tor-toggle" onchange="toggleGlobalTor()">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+
+      <!-- Theme toggle -->
+      <div class="theme-toggle">
+        <button class="theme-btn active" id="theme-dark-btn" onclick="setTheme('dark')" title="Dark mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text)" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+        <button class="theme-btn" id="theme-light-btn" onclick="setTheme('light')" title="Light mode">
+          <svg viewBox="0 0 24 24" fill="none" stroke="var(--text3)" stroke-width="1.5"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Content panels -->
+    <div class="content">
+      <!-- Overview -->
+      <div class="panel active" id="panel-overview">
+        <div class="grid-4" id="overview-stats" style="margin-bottom:24px"></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Storage Surface by Category</h3></div>
+            <div class="card-body" id="category-chart"></div>
+          </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>Active Adapters</h3>
+              <span style="color:var(--text3);font-size:11px;margin-left:auto" id="configured-count"></span>
+            </div>
+            <div class="card-body" id="configured-list" style="padding:0 12px 12px"></div>
+          </div>
+        </div>
+        <div class="card" id="health-card" style="display:none">
+          <div class="card-header">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <h3>Storage Health</h3>
+            <span id="health-summary" style="color:var(--text3);font-size:11px;margin-left:auto"></span>
+            <button class="btn btn-sm" onclick="loadHealth()" style="margin-left:8px">Refresh</button>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Adapter</th>
+                  <th>Type</th>
+                  <th>Latency</th>
+                  <th>Chunks</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody id="health-table">
+                <tr><td colspan="6" style="color:var(--text2);padding:16px;text-align:center">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Adapters -->
+      <div class="panel" id="panel-adapters">
+        <div class="search-bar">
+          <input type="text" id="adapter-search" placeholder="Search adapters...">
+          <div class="filter-pills" id="category-filters"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h3>Adapter Registry</h3>
+            <span id="adapter-count" style="color:var(--text3);font-size:11px;margin-left:auto"></span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Type</th>
+                  <th>Category</th>
+                  <th>Parameters</th>
+                  <th>Status</th>
+                  <th style="width:100px"></th>
+                </tr>
+              </thead>
+              <tbody id="adapter-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Credentials -->
+      <div class="panel" id="panel-credentials">
+        <div class="card">
+          <div class="card-header">
+            <h3>Credential Manager</h3>
+            <span style="color:var(--text3);font-size:11px;margin-left:auto">
+              Credentials are stored in the OS keyring, referenced by config.toml
+            </span>
+          </div>
+          <div class="card-body" id="credentials-body">
+            <p style="color:var(--text2)">Select a configured adapter to manage its credentials.</p>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Configured Adapters with Credential Fields</h3></div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Adapter</th>
+                  <th>Type</th>
+                  <th>Credential Fields</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cred-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- RAID -->
+      <div class="panel" id="panel-raid">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>RAID Configuration</h3></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>RAID Level</label>
+                <select id="raid-level">
+                  <option value="raid0">RAID 0 - Striping</option>
+                  <option value="raid1">RAID 1 - Mirroring</option>
+                  <option value="raid5">RAID 5 - Parity</option>
+                  <option value="raid10">RAID 10 - Striped Mirrors</option>
+                </select>
+              </div>
+              <div id="raid-desc" style="color:var(--text2);font-size:12px;margin:12px 0"></div>
+              <div class="form-group">
+                <label>Adapters in Pool</label>
+                <div id="raid-adapter-list" style="max-height:200px;overflow-y:auto"></div>
+              </div>
+              <div id="raid-mirror-group" style="display:none">
+                <div class="form-group">
+                  <label>Mirror Count</label>
+                  <input type="number" id="raid-mirror-count" value="2" min="2" max="10" style="width:80px">
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Pool Visualization</h3></div>
+            <div class="card-body">
+              <div id="raid-visual" class="raid-visual"></div>
+              <div id="raid-info" style="color:var(--text2);font-size:12px;margin-top:12px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>RAID Levels Reference</h3></div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead><tr><th>Level</th><th>Strategy</th><th>Min Adapters</th><th>Redundancy</th><th>Storage Overhead</th></tr></thead>
+              <tbody>
+                <tr><td style="color:var(--accent)">RAID 0</td><td>Striping</td><td>2</td><td>None</td><td>0%</td></tr>
+                <tr><td style="color:var(--accent)">RAID 1</td><td>Mirroring</td><td>2</td><td>Full</td><td>(N-1)x</td></tr>
+                <tr><td style="color:var(--accent)">RAID 5</td><td>Striping + Parity</td><td>3</td><td>1 adapter failure</td><td>1/N</td></tr>
+                <tr><td style="color:var(--accent)">RAID 10</td><td>Striped Mirrors</td><td>4 (even)</td><td>1 per mirror group</td><td>50%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Files -->
+      <div class="panel" id="panel-files">
+        <div class="card">
+          <div class="card-header">
+            <h3>Stored Files</h3>
+            <span style="color:var(--text3);font-size:11px;margin-left:auto">Virtual filesystem mount-points</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Virtual Path</th>
+                  <th>Size</th>
+                  <th>Blocks</th>
+                  <th>Chunks</th>
+                  <th>Adapters</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="files-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filesystem -->
+      <div class="panel" id="panel-filesystem">
+        <div style="display:flex;gap:16px;height:calc(100vh - 200px);min-height:400px">
+          <div class="card" style="width:260px;flex-shrink:0;overflow-y:auto;margin-bottom:0">
+            <div class="card-header"><h3>Directory Tree</h3></div>
+            <div class="card-body" id="fs-tree" style="font-size:12px"></div>
+          </div>
+          <div id="fs-main" style="flex:1;display:flex;flex-direction:column;gap:16px;min-width:0;position:relative">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div id="fs-breadcrumb" style="flex:1;font-size:12px;color:var(--text2)"></div>
+              <label class="btn btn-sm" style="cursor:pointer">
+                Upload
+                <input type="file" id="fs-file-input" multiple style="display:none" onchange="fsUploadFiles(this.files)">
+              </label>
+              <button class="btn btn-sm" onclick="fsNewFolder()">New Folder</button>
+            </div>
+            <div id="fs-drop-zone" class="card" style="flex:1;overflow-y:auto;margin-bottom:0;position:relative">
+              <div id="fs-drop-overlay" style="display:none;position:absolute;inset:0;background:rgba(0,216,255,0.06);border:2px dashed var(--accent);border-radius:10px;z-index:5;flex-direction:column;align-items:center;justify-content:center;gap:12px;pointer-events:none">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span style="color:var(--accent);font-size:14px;font-weight:600">Drop files to upload</span>
+                <span style="color:var(--text2);font-size:12px" id="fs-drop-path"></span>
+              </div>
+              <div class="card-body" style="padding:0">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Type</th>
+                      <th>Size</th>
+                      <th>Version</th>
+                      <th>Modified</th>
+                      <th style="width:80px"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="fs-file-table"></tbody>
+                </table>
+              </div>
+              <div id="fs-upload-progress" style="display:none;padding:12px 20px;border-top:1px solid var(--border)">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+                  <span style="font-size:12px;color:var(--text2)" id="fs-upload-label">Uploading...</span>
+                  <span style="font-size:11px;color:var(--text3);margin-left:auto" id="fs-upload-count"></span>
+                </div>
+                <div style="height:4px;background:var(--surface2);border-radius:2px;overflow:hidden">
+                  <div id="fs-upload-bar" style="height:100%;background:var(--accent);border-radius:2px;transition:width 0.3s;width:0%"></div>
+                </div>
+              </div>
+            </div>
+            <div class="card" id="fs-detail" style="display:none;margin-bottom:0">
+              <div class="card-header">
+                <h3 id="fs-detail-title">File Detail</h3>
+                <button class="btn btn-sm" onclick="document.getElementById('fs-detail').style.display='none'" style="margin-left:auto">&times;</button>
+              </div>
+              <div class="card-body" id="fs-detail-body"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Peers -->
+      <div class="panel" id="panel-peers">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Known Peers</h3></div>
+            <div class="card-body" style="padding:0">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>URL</th>
+                    <th>Adapters</th>
+                    <th>Last Seen</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="peers-table"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><h3>Add Peer</h3></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>Peer URL</label>
+                <input type="text" id="peer-url" placeholder="http://host:8471">
+              </div>
+              <button class="btn btn-primary" onclick="addPeer()">Add Peer</button>
+            </div>
+            <div class="card-header" style="border-top:1px solid var(--border)"><h3>Journal Status</h3></div>
+            <div class="card-body">
+              <div id="journal-status" style="color:var(--text2);font-size:12px">Loading...</div>
+              <button class="btn btn-sm" onclick="runRecover()" style="margin-top:12px">Run Recovery</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Config / Settings -->
+      <div class="panel" id="panel-config">
+        <!-- Network & Privacy section -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-body" style="padding:24px">
+            <div style="display:flex;align-items:flex-start;gap:20px">
+              <div style="width:48px;height:48px;border-radius:12px;background:rgba(167,139,250,0.12);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--purple)" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <div style="flex:1">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+                  <span style="font-size:15px;font-weight:600">Route All Traffic via Tor</span>
+                  <label class="toggle toggle-purple" style="margin-left:auto">
+                    <input type="checkbox" id="settings-tor-toggle" onchange="toggleGlobalTor()">
+                    <span class="toggle-track"></span>
+                    <span class="toggle-thumb"></span>
+                  </label>
+                </div>
+                <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Every adapter connection routes through SOCKS5 proxy. Hides your IP from all storage services.</div>
+                <div class="grid-3" style="gap:16px">
+                  <div>
+                    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Status</div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span id="tor-settings-dot" class="status-dot" style="background:var(--text3)"></span>
+                      <span id="tor-settings-label" style="font-size:12px;color:var(--text2)">Unknown</span>
+                    </div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">SOCKS5 Proxy</div>
+                    <div style="font-size:12px;font-family:var(--mono);color:var(--text)">127.0.0.1:9050</div>
+                  </div>
+                  <div>
+                    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px">Hidden Service</div>
+                    <div id="tor-onion-addr" style="font-size:11px;font-family:var(--mono);color:var(--purple);word-break:break-all">Not configured</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-bottom:16px">
+          <!-- VPN Device -->
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h4M6 14h12"/></svg>
+              <h3>VPN Device</h3>
+            </div>
+            <div class="card-body">
+              <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Bind adapter traffic to a specific network interface.</div>
+              <div class="form-group">
+                <label>Active Interface</label>
+                <select id="vpn-device-select" onchange="saveVpnDevice()">
+                  <option value="">None (default route)</option>
+                </select>
+              </div>
+              <div id="vpn-interfaces-list" style="margin-top:12px"></div>
+            </div>
+          </div>
+
+          <!-- General Settings -->
+          <div class="card" style="margin-bottom:0">
+            <div class="card-header"><h3>General Settings</h3></div>
+            <div class="card-body">
+              <div class="form-group">
+                <label>Block Size (bytes)</label>
+                <input type="number" id="cfg-block-size" value="65536" min="1">
+              </div>
+              <div class="form-group">
+                <label>Index Database Path</label>
+                <input type="text" id="cfg-index-db">
+              </div>
+              <div class="form-group">
+                <label>Config File</label>
+                <input type="text" id="cfg-path" disabled style="opacity:0.5">
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+                <button class="btn" onclick="initConfig()" id="init-btn">Initialize Config</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Browser Automation -->
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--orange)" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+            <h3>Browser Automation</h3>
+            <span style="color:var(--text3);font-size:11px;margin-left:auto">Playwright headless/headed per adapter</span>
+          </div>
+          <div class="card-body">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:16px">When API keys are unavailable, adapters can use Playwright to access data via browser. <strong>Headless</strong> runs invisibly; <strong>Headed</strong> opens a visible browser window (useful for login flows).</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+              <div>
+                <div style="font-size:13px;font-weight:500">Default Browser Mode</div>
+                <div style="font-size:11px;color:var(--text3)">Applied to new adapters</div>
+              </div>
+              <div class="seg-control" id="default-browser-mode">
+                <button class="active" onclick="setDefaultBrowserMode('api', this)">API</button>
+                <button onclick="setDefaultBrowserMode('headless', this)">Headless</button>
+                <button onclick="setDefaultBrowserMode('headed', this)">Headed</button>
+              </div>
+            </div>
+            <div id="browser-mode-summary" style="display:flex;gap:16px;flex-wrap:wrap"></div>
+          </div>
+        </div>
+
+        <!-- Per-Adapter Routing -->
+        <div class="card">
+          <div class="card-header">
+            <h3>Per-Adapter Routing</h3>
+            <span style="color:var(--text3);font-size:11px;margin-left:auto">Override global settings per adapter</span>
+          </div>
+          <div class="card-body" style="padding:0">
+            <table>
+              <thead>
+                <tr>
+                  <th>Adapter</th>
+                  <th>Type</th>
+                  <th>Browser</th>
+                  <th>Via Tor</th>
+                  <th>Active</th>
+                </tr>
+              </thead>
+              <tbody id="routing-table"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Configure Adapter Modal -->
+<div class="modal-overlay" id="modal-configure">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Configure Adapter</h3>
+      <button class="modal-close" onclick="closeModal('modal-configure')">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-configure')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveAdapter()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Credential Modal -->
+<div class="modal-overlay" id="modal-credential">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="cred-modal-title">Set Credential</h3>
+      <button class="modal-close" onclick="closeModal('modal-credential')">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Adapter</label>
+        <input type="text" id="cred-adapter" disabled>
+      </div>
+      <div class="form-group">
+        <label>Parameter</label>
+        <input type="text" id="cred-param" disabled>
+      </div>
+      <div class="form-group">
+        <label>Value</label>
+        <input type="password" id="cred-value" placeholder="Enter credential value...">
+      </div>
+      <div style="color:var(--text2);font-size:11px;margin-top:8px">
+        Stored securely in the OS keyring. Config.toml will reference it as
+        <code>keyring:picard/&lt;adapter&gt;/&lt;param&gt;</code>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModal('modal-credential')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveCredential()">Save to Keyring</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let registryData = [];
+let configuredData = [];
+let statsData = {};
+let currentFilter = 'all';
+let editingAdapter = null;
+let globalTorEnabled = false;
+
+// ── Theme ──
+
+function setTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  try { localStorage.setItem('picard-theme', theme); } catch {}
+  document.getElementById('theme-dark-btn').classList.toggle('active', theme === 'dark');
+  document.getElementById('theme-light-btn').classList.toggle('active', theme === 'light');
+  const darkSvg = document.querySelector('#theme-dark-btn svg');
+  const lightSvg = document.querySelector('#theme-light-btn svg');
+  if (darkSvg) darkSvg.style.stroke = theme === 'dark' ? 'var(--text)' : 'var(--text3)';
+  if (lightSvg) lightSvg.style.stroke = theme === 'light' ? 'var(--text)' : 'var(--text3)';
+}
+
+(function initTheme() {
+  let saved = null;
+  try { saved = localStorage.getItem('picard-theme'); } catch {}
+  if (saved) {
+    setTheme(saved);
+  } else {
+    setTheme('dark');
+  }
+})();
+
+// ── Init ──
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const panel = item.dataset.panel;
+      if (panel) switchTab(panel);
+    });
+  });
+  loadAll();
+});
+
+const panelTitles = {
+  overview: 'Overview',
+  adapters: 'Adapters',
+  credentials: 'Credentials',
+  raid: 'RAID',
+  files: 'Files',
+  filesystem: 'Filesystem',
+  peers: 'Peers',
+  config: 'Settings',
+};
+
+function switchTab(panel) {
+  document.querySelectorAll('.nav-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  const navBtn = document.querySelector(`.nav-item[data-panel="${panel}"]`);
+  if (navBtn) navBtn.classList.add('active');
+  document.getElementById(`panel-${panel}`).classList.add('active');
+  document.getElementById('topbar-title').textContent = panelTitles[panel] || panel;
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadRegistry(), loadConfigured(), loadConfig(), loadFiles()]);
+  renderOverview();
+  renderAdapters();
+  renderCredentials();
+  renderRaid();
+  renderRoutingTable();
+  renderBrowserSummary();
+  loadFsLs('/');
+  loadPeers();
+  loadJournal();
+}
+
+// ── API ──
+
+async function api(path, opts = {}) {
+  const res = await fetch(`/api${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || res.statusText);
+  }
+  return res.json();
+}
+
+async function loadStats() {
+  statsData = await api('/stats');
+}
+
+async function loadRegistry() {
+  registryData = await api('/adapters/registry');
+}
+
+async function loadConfigured() {
+  configuredData = await api('/adapters/configured');
+}
+
+async function loadConfig() {
+  const cfg = await api('/config');
+  document.getElementById('cfg-block-size').value = cfg.block_size;
+  document.getElementById('cfg-index-db').value = cfg.index_db;
+  document.getElementById('cfg-path').value = cfg.config_path;
+}
+
+async function loadFiles() {
+  try {
+    const files = await api('/files');
+    renderFiles(files);
+  } catch { renderFiles([]); }
+}
+
+// ── Global Tor Toggle ──
+
+function toggleGlobalTor() {
+  globalTorEnabled = !globalTorEnabled;
+  document.getElementById('global-tor-toggle').checked = globalTorEnabled;
+  document.getElementById('settings-tor-toggle').checked = globalTorEnabled;
+  if (globalTorEnabled) {
+    document.getElementById('tor-sidebar-dot').style.background = 'var(--green)';
+    document.getElementById('tor-settings-dot').style.background = 'var(--green)';
+    document.getElementById('tor-settings-label').textContent = 'Active';
+    document.getElementById('tor-settings-label').style.color = 'var(--green)';
+  } else {
+    document.getElementById('tor-sidebar-dot').style.background = 'var(--text3)';
+    document.getElementById('tor-settings-dot').style.background = 'var(--text3)';
+    document.getElementById('tor-settings-label').textContent = 'Inactive';
+    document.getElementById('tor-settings-label').style.color = 'var(--text2)';
+  }
+}
+
+// ── VPN ──
+
+function saveVpnDevice() {
+  const device = document.getElementById('vpn-device-select').value;
+  try { localStorage.setItem('picard-vpn-device', device); } catch {}
+  toast(device ? 'VPN device set to ' + device : 'VPN device cleared');
+}
+
+// ── Render Overview ──
+
+function renderOverview() {
+  const cats = statsData.categories || {};
+  const catEntries = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+
+  document.getElementById('overview-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Protocol Adapters</div>
+      <div class="number">${statsData.total_adapters}</div>
+      <div class="note" style="color:var(--green)">All registered</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Storage Categories</div>
+      <div class="number">${catEntries.length}</div>
+      <div class="note">Storage surfaces</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Configured</div>
+      <div class="number">${statsData.configured_adapters}</div>
+      <div class="note">${statsData.enabled_adapters} enabled</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Block Size</div>
+      <div class="number">${formatBytes(statsData.block_size).replace(' ', '')}</div>
+      <div class="note">AES-256-GCM</div>
+    </div>
+  `;
+
+  const maxCount = Math.max(...catEntries.map(([, c]) => c), 1);
+  const barColors = {
+    social: '#6366f1', cloud: '#f59e0b', storage: '#22c55e', network: '#06b6d4',
+    steganography: '#14b8a6', enterprise: '#3b82f6', blockchain: '#eab308',
+    identity: '#f97316', cicd: '#8b5cf6', industrial: '#ec4899', radio: '#f43f5e',
+    packages: '#84cc16', 'os-level': '#a8a29e', misc: '#94a3b8', other: '#64748b',
+  };
+  document.getElementById('category-chart').innerHTML = catEntries.map(([cat, count]) => `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="font-size:11px;color:var(--text2);width:80px;text-align:right;flex-shrink:0">${escapeHtml(cat)}</span>
+      <div style="flex:1;height:20px;background:var(--surface2);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${(count/maxCount*100).toFixed(0)}%;background:${barColors[cat] || '#64748b'};border-radius:4px;transition:width 0.3s"></div>
+      </div>
+      <span style="color:var(--accent);min-width:28px;text-align:right;font-family:var(--mono);font-size:12px">${count}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('configured-count').textContent = configuredData.length + ' configured';
+  if (configuredData.length === 0) {
+    document.getElementById('configured-list').innerHTML =
+      '<p style="color:var(--text2);padding:12px 0">No adapters configured yet. Go to the Adapters tab to add some.</p>';
+  } else {
+    document.getElementById('configured-list').innerHTML = configuredData.map((a, i) => `
+      <div class="adapter-row">
+        <span class="status-dot" style="background:${a.enabled ? 'var(--green)' : 'var(--orange)'}"></span>
+        <span style="font-size:12px;font-weight:500;color:var(--text);flex:1">${escapeHtml(a.name)}</span>
+        <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${escapeHtml(a.type)}</span>
+        ${a.tor_proxy ? '<span class="badge badge-tor">TOR</span>' : ''}
+      </div>
+    `).join('');
+  }
+}
+
+// ── Render Adapters ──
+
+function renderAdapters() {
+  const categories = [...new Set(registryData.map(a => a.category))].sort();
+  const filtersEl = document.getElementById('category-filters');
+  filtersEl.innerHTML = `<span class="pill ${currentFilter === 'all' ? 'active' : ''}" onclick="filterAdapters('all')">all</span>` +
+    categories.map(c => `<span class="pill ${currentFilter === c ? 'active' : ''}" onclick="filterAdapters('${escapeAttr(c)}')">${escapeHtml(c)}</span>`).join('');
+
+  const search = (document.getElementById('adapter-search').value || '').toLowerCase();
+  let filtered = registryData;
+  if (currentFilter !== 'all') filtered = filtered.filter(a => a.category === currentFilter);
+  if (search) filtered = filtered.filter(a => a.type.includes(search) || a.class.includes(search));
+
+  document.getElementById('adapter-count').textContent = `${filtered.length} / ${registryData.length}`;
+
+  const configuredNames = new Set(configuredData.map(c => c.type));
+
+  document.getElementById('adapter-table').innerHTML = filtered.map(a => {
+    const isConfigured = configuredNames.has(a.type);
+    const ce = configuredData.find(c => c.type === a.type);
+    return `
+      <tr>
+        <td style="color:var(--accent);font-weight:600">${escapeHtml(a.type)}</td>
+        <td><span class="badge badge-${escapeAttr(a.category)}">${escapeHtml(a.category)}</span></td>
+        <td>
+          ${a.params.length === 0 ? '<span style="color:var(--text3)">none</span>' :
+            a.params.map(p =>
+              `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${escapeHtml(p.name)}${p.required ? '*' : ''}</span>`
+            ).join(', ')}
+        </td>
+        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}${ce && ce.tor_proxy ? ' <span class="badge badge-tor">TOR</span>' : ''}${ce && ce.browser_mode === 'headless' ? ' <span class="badge badge-browser">HEADLESS</span>' : ''}${ce && ce.browser_mode === 'headed' ? ' <span class="badge badge-headed">HEADED</span>' : ''}</td>
+        <td style="text-align:right">
+          <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;").replace(/</g, "\\x3c").replace(/>/g, "\\x3e")})'>${isConfigured ? 'Edit' : 'Add'}</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('adapter-search').addEventListener('input', renderAdapters);
+
+function filterAdapters(cat) {
+  currentFilter = cat;
+  renderAdapters();
+}
+
+// ── Configure Modal ──
+
+function openConfigure(adapter) {
+  editingAdapter = adapter;
+  const existing = configuredData.find(c => c.type === adapter.type);
+  const name = existing ? existing.name : adapter.type;
+  const enabled = existing ? existing.enabled : true;
+  const params = existing ? existing.params : {};
+  const torProxy = existing ? (existing.tor_proxy || false) : false;
+  const browserMode = existing ? (existing.browser_mode || 'api') : 'api';
+  currentBrowserMode = browserMode;
+
+  document.getElementById('modal-title').textContent = `Configure: ${adapter.type}`;
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group">
+      <label>Instance Name</label>
+      <input type="text" id="cfg-name" value="${escapeAttr(name)}">
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:13px;color:var(--text)">Enabled</div>
+        <div style="font-size:11px;color:var(--text3)">Accept scatter operations</div>
+      </div>
+      <label class="toggle toggle-accent">
+        <input type="checkbox" id="cfg-enabled" ${enabled ? 'checked' : ''}>
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:13px;color:var(--purple)">Route via Tor</div>
+        <div style="font-size:11px;color:var(--text3)">SOCKS5 proxy &mdash; hides your IP</div>
+      </div>
+      <label class="toggle toggle-purple">
+        <input type="checkbox" id="cfg-tor-proxy" ${torProxy ? 'checked' : ''}>
+        <span class="toggle-track"></span>
+        <span class="toggle-thumb"></span>
+      </label>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div>
+        <div style="font-size:13px;color:var(--orange)">Browser Mode</div>
+        <div style="font-size:11px;color:var(--text3)">Data access method for this adapter</div>
+      </div>
+      <div class="seg-control" id="cfg-browser-mode">
+        <button class="${browserMode === 'api' ? 'active' : ''}" onclick="setBrowserMode('api')">API</button>
+        <button class="${browserMode === 'headless' ? 'active-orange' : ''}" onclick="setBrowserMode('headless')">Headless</button>
+        <button class="${browserMode === 'headed' ? 'active-orange' : ''}" onclick="setBrowserMode('headed')">Headed</button>
+      </div>
+    </div>
+    ${adapter.params.length > 0 ? '<div style="height:1px;background:var(--border);margin:16px 0"></div><div style="font-size:12px;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:1px">Parameters</div>' : ''}
+    ${adapter.params.map(p => `
+      <div class="form-group">
+        <label>${escapeHtml(p.name)} ${p.required ? '<span style="color:var(--red)">*</span>' : ''} ${p.is_credential ? '<span class="lock">&#128274;</span>' : ''}</label>
+        <input type="${p.is_credential ? 'password' : 'text'}"
+               id="param-${escapeAttr(p.name)}"
+               value="${escapeAttr(params[p.name] || (p.default && !p.required ? p.default.replace(/^'|'$/g, '') : ''))}"
+               placeholder="${escapeAttr(p.is_credential ? 'Stored in OS keyring' : (p.default || ''))}">
+        ${p.annotation ? `<span style="color:var(--text2);font-size:10px">${escapeHtml(p.annotation)}</span>` : ''}
+      </div>
+    `).join('')}
+  `;
+
+  document.getElementById('modal-configure').classList.add('active');
+}
+
+let currentBrowserMode = 'api';
+function setBrowserMode(mode) {
+  currentBrowserMode = mode;
+  const btns = document.querySelectorAll('#cfg-browser-mode button');
+  btns.forEach(b => { b.className = ''; });
+  btns.forEach(b => {
+    if (b.textContent.toLowerCase() === mode) b.className = mode === 'api' ? 'active' : 'active-orange';
+  });
+}
+
+async function saveAdapter() {
+  const name = document.getElementById('cfg-name').value.trim();
+  const enabled = document.getElementById('cfg-enabled').checked;
+  if (!name) { toast('Name is required', true); return; }
+
+  const params = {};
+  editingAdapter.params.forEach(p => {
+    const val = document.getElementById(`param-${p.name}`).value;
+    if (val) params[p.name] = val;
+  });
+
+  try {
+    for (const p of editingAdapter.params) {
+      if (p.is_credential && params[p.name] && !params[p.name].startsWith('keyring:') && params[p.name] !== '***') {
+        await api('/credentials', {
+          method: 'POST',
+          body: { adapter_name: name, param_name: p.name, value: params[p.name] },
+        });
+        params[p.name] = `keyring:picard/${name}/${p.name}`;
+      }
+    }
+
+    const torProxy = document.getElementById('cfg-tor-proxy').checked;
+    await api('/adapters/configure', {
+      method: 'POST',
+      body: { name, type: editingAdapter.type, enabled, params, tor_proxy: torProxy, browser_mode: currentBrowserMode },
+    });
+    closeModal('modal-configure');
+    toast(`Adapter "${name}" saved`);
+    await Promise.all([loadConfigured(), loadStats()]);
+    renderOverview();
+    renderAdapters();
+    renderCredentials();
+    renderRoutingTable();
+    renderBrowserSummary();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ── Credentials ──
+
+function renderCredentials() {
+  const rows = [];
+  for (const cfg of configuredData) {
+    const reg = registryData.find(r => r.type === cfg.type);
+    if (!reg) continue;
+    const credFields = reg.params.filter(p => p.is_credential);
+    if (credFields.length === 0) continue;
+    rows.push({ cfg, credFields });
+  }
+
+  if (rows.length === 0) {
+    document.getElementById('cred-table').innerHTML =
+      '<tr><td colspan="4" style="color:var(--text2);text-align:center;padding:20px">No configured adapters with credential fields.</td></tr>';
+    return;
+  }
+
+  document.getElementById('cred-table').innerHTML = rows.map(({ cfg, credFields }) => `
+    <tr>
+      <td style="color:var(--accent)">${escapeHtml(cfg.name)}</td>
+      <td>${escapeHtml(cfg.type)}</td>
+      <td>${credFields.map(f => {
+        const hasValue = cfg.params[f.name] && (cfg.params[f.name] === '***' || cfg.params[f.name].startsWith('keyring:'));
+        return `<span style="color:${hasValue ? 'var(--green)' : 'var(--orange)'}">${hasValue ? '&#9679;' : '&#9675;'} ${escapeHtml(f.name)}</span>`;
+      }).join('&nbsp;&nbsp;')}</td>
+      <td style="text-align:right">
+        ${credFields.map(f => `<button class="btn btn-sm" onclick="openCredential('${escapeAttr(cfg.name)}','${escapeAttr(f.name)}')">Set ${escapeHtml(f.name)}</button>`).join(' ')}
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openCredential(adapterName, paramName) {
+  document.getElementById('cred-adapter').value = adapterName;
+  document.getElementById('cred-param').value = paramName;
+  document.getElementById('cred-value').value = '';
+  document.getElementById('cred-modal-title').textContent = `Set Credential: ${adapterName} / ${paramName}`;
+  document.getElementById('modal-credential').classList.add('active');
+}
+
+async function saveCredential() {
+  const adapterName = document.getElementById('cred-adapter').value;
+  const paramName = document.getElementById('cred-param').value;
+  const value = document.getElementById('cred-value').value;
+  if (!value) { toast('Value is required', true); return; }
+
+  try {
+    await api('/credentials', {
+      method: 'POST',
+      body: { adapter_name: adapterName, param_name: paramName, value },
+    });
+    closeModal('modal-credential');
+    toast('Credential saved to keyring');
+    await loadConfigured();
+    renderCredentials();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ── RAID ──
+
+const raidDescs = {
+  raid0: 'Round-robin striping across adapters. Maximum throughput, zero redundancy. Losing any adapter loses data.',
+  raid1: 'Mirror every chunk to all adapters. Full redundancy. Storage = N copies.',
+  raid5: 'Stripe with single parity block per stripe. Survives one adapter failure. ~1/N storage overhead.',
+  raid10: 'Striped mirror groups. Each group mirrors data, groups are striped. Requires even adapter count.',
+};
+
+function renderRaid() {
+  const levelEl = document.getElementById('raid-level');
+  levelEl.addEventListener('change', updateRaidVis);
+
+  const listEl = document.getElementById('raid-adapter-list');
+  if (configuredData.length === 0) {
+    listEl.innerHTML = '<span style="color:var(--text2)">Configure adapters first to build a RAID pool.</span>';
+  } else {
+    listEl.innerHTML = configuredData.map(a => `
+      <label style="display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer">
+        <input type="checkbox" class="raid-adapter-cb" value="${escapeAttr(a.name)}" ${a.enabled ? 'checked' : ''}>
+        <span style="color:var(--accent)">${escapeHtml(a.name)}</span>
+        <span style="color:var(--text2);font-size:11px">(${escapeHtml(a.type)})</span>
+      </label>
+    `).join('');
+  }
+
+  document.querySelectorAll('.raid-adapter-cb').forEach(cb => cb.addEventListener('change', updateRaidVis));
+  updateRaidVis();
+}
+
+function updateRaidVis() {
+  const level = document.getElementById('raid-level').value;
+  document.getElementById('raid-desc').textContent = raidDescs[level] || '';
+
+  const mirrorGroup = document.getElementById('raid-mirror-group');
+  mirrorGroup.style.display = (level === 'raid1' || level === 'raid10') ? 'block' : 'none';
+
+  const selected = [...document.querySelectorAll('.raid-adapter-cb:checked')].map(cb => cb.value);
+  const vis = document.getElementById('raid-visual');
+  const info = document.getElementById('raid-info');
+
+  if (selected.length < 2) {
+    vis.innerHTML = '<span style="color:var(--text2)">Select at least 2 adapters</span>';
+    info.textContent = '';
+    return;
+  }
+
+  let labels = [];
+  if (level === 'raid0') {
+    labels = selected.map((n, i) => ({ name: n, role: `D${i}`, color: 'var(--accent)' }));
+  } else if (level === 'raid1') {
+    labels = selected.map(n => ({ name: n, role: 'Mirror', color: 'var(--green)' }));
+  } else if (level === 'raid5') {
+    labels = selected.map((n, i) => ({
+      name: n,
+      role: i === selected.length - 1 ? 'Parity' : `D${i}`,
+      color: i === selected.length - 1 ? 'var(--orange)' : 'var(--accent)',
+    }));
+  } else if (level === 'raid10') {
+    labels = selected.map((n, i) => ({
+      name: n,
+      role: `G${Math.floor(i / 2)}-M${i % 2}`,
+      color: i % 2 === 0 ? 'var(--accent)' : 'var(--green)',
+    }));
+  }
+
+  vis.innerHTML = labels.map(l => `
+    <div class="raid-disk">
+      <div class="fill" style="height:60%"></div>
+      <div class="label">
+        <div style="color:${l.color};font-weight:bold;font-size:11px">${l.role}</div>
+        <div style="font-size:9px;margin-top:4px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(l.name)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  const minReq = { raid0: 2, raid1: 2, raid5: 3, raid10: 4 }[level];
+  const valid = selected.length >= minReq && (level !== 'raid10' || selected.length % 2 === 0);
+  const storageNote = {
+    raid0: `${selected.length} adapters striped, 0% overhead`,
+    raid1: `${selected.length} mirrors, ${((selected.length - 1) * 100).toFixed(0)}% overhead`,
+    raid5: `${selected.length - 1} data + 1 parity, ${(100 / selected.length).toFixed(0)}% overhead`,
+    raid10: `${selected.length / 2} mirror groups, 50% overhead`,
+  }[level];
+  info.innerHTML = valid
+    ? `<span style="color:var(--green)">&#10003;</span> Valid configuration: ${storageNote}`
+    : `<span style="color:var(--red)">&#10007;</span> Need at least ${minReq} adapters${level === 'raid10' ? ' (even count)' : ''}`;
+}
+
+// ── Per-Adapter Routing Table ──
+
+function renderRoutingTable() {
+  const tbody = document.getElementById('routing-table');
+  if (configuredData.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text2);text-align:center;padding:20px">No configured adapters.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = configuredData.map(a => {
+    const bm = a.browser_mode || 'api';
+    return `
+    <tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="status-dot" style="background:${a.enabled ? 'var(--green)' : 'var(--text3)'}"></span>
+          <span style="font-weight:500">${escapeHtml(a.name)}</span>
+        </div>
+      </td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${escapeHtml(a.type)}</td>
+      <td>
+        <div class="seg-control" style="transform:scale(0.85);transform-origin:left">
+          <button class="${bm === 'api' ? 'active' : ''}" onclick="updateAdapterBrowserMode('${escapeAttr(a.name)}', 'api')">API</button>
+          <button class="${bm === 'headless' ? 'active-orange' : ''}" onclick="updateAdapterBrowserMode('${escapeAttr(a.name)}', 'headless')">HL</button>
+          <button class="${bm === 'headed' ? 'active-orange' : ''}" onclick="updateAdapterBrowserMode('${escapeAttr(a.name)}', 'headed')">HD</button>
+        </div>
+      </td>
+      <td>
+        <label class="toggle toggle-purple">
+          <input type="checkbox" ${a.tor_proxy ? 'checked' : ''} onchange="updateAdapterRouting('${escapeAttr(a.name)}', '${escapeAttr(a.type)}', this.checked, ${a.enabled})">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </td>
+      <td>
+        <label class="toggle">
+          <input type="checkbox" ${a.enabled ? 'checked' : ''} onchange="updateAdapterRouting('${escapeAttr(a.name)}', '${escapeAttr(a.type)}', ${a.tor_proxy}, this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </td>
+    </tr>
+  `}).join('');
+}
+
+async function updateAdapterBrowserMode(name, mode) {
+  try {
+    const existing = configuredData.find(c => c.name === name);
+    if (!existing) return;
+    await api('/adapters/configure', {
+      method: 'POST',
+      body: { name, type: existing.type, enabled: existing.enabled, params: existing.params, tor_proxy: existing.tor_proxy, browser_mode: mode },
+    });
+    await Promise.all([loadConfigured(), loadStats()]);
+    renderOverview();
+    renderAdapters();
+    renderRoutingTable();
+    renderBrowserSummary();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+async function updateAdapterRouting(name, type, torProxy, enabled) {
+  try {
+    const existing = configuredData.find(c => c.name === name);
+    const params = existing ? existing.params : {};
+    const browserMode = existing ? (existing.browser_mode || 'api') : 'api';
+    await api('/adapters/configure', {
+      method: 'POST',
+      body: { name, type, enabled, params, tor_proxy: torProxy, browser_mode: browserMode },
+    });
+    await Promise.all([loadConfigured(), loadStats()]);
+    renderOverview();
+    renderAdapters();
+    renderRoutingTable();
+    renderBrowserSummary();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+// ── Browser Automation ──
+
+function setDefaultBrowserMode(mode, btn) {
+  const btns = document.querySelectorAll('#default-browser-mode button');
+  btns.forEach(b => { b.className = ''; });
+  btn.className = mode === 'api' ? 'active' : 'active-orange';
+}
+
+function renderBrowserSummary() {
+  const el = document.getElementById('browser-mode-summary');
+  if (!el) return;
+  const counts = { api: 0, headless: 0, headed: 0 };
+  configuredData.forEach(a => { counts[a.browser_mode || 'api']++; });
+  el.innerHTML = Object.entries(counts).map(([mode, count]) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)">
+      <span style="font-size:20px;font-weight:700;color:${mode === 'api' ? 'var(--accent)' : 'var(--orange)'}">${count}</span>
+      <div>
+        <div style="font-size:12px;font-weight:500;text-transform:uppercase">${escapeHtml(mode)}</div>
+        <div style="font-size:10px;color:var(--text3)">adapter${count !== 1 ? 's' : ''}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── Files ──
+
+function renderFiles(files) {
+  const tbody = document.getElementById('files-table');
+  if (files.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2);text-align:center;padding:20px">No files stored yet. Use <code>picard put</code> to scatter a file.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = files.map(f => `
+    <tr>
+      <td style="color:var(--accent)">${escapeHtml(f.path)}</td>
+      <td>${formatBytes(f.original_size)}</td>
+      <td>${f.total_blocks}</td>
+      <td>${f.total_chunks}</td>
+      <td>${f.adapters.map(a => `<span class="badge badge-${escapeAttr(getCat(a))}" style="margin:1px">${escapeHtml(a)}</span>`).join(' ')}</td>
+      <td style="color:var(--text2)">${f.created_at ? new Date(f.created_at).toLocaleString() : '-'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Config ──
+
+async function saveConfig() {
+  try {
+    await api('/config', {
+      method: 'POST',
+      body: {
+        block_size: parseInt(document.getElementById('cfg-block-size').value),
+        index_db: document.getElementById('cfg-index-db').value,
+      },
+    });
+    toast('Configuration saved');
+  } catch (e) { toast(e.message, true); }
+}
+
+async function initConfig() {
+  try {
+    await api('/config/init', { method: 'POST' });
+    toast('Config initialized');
+    await loadConfig();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Helpers ──
+
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function formatBytes(b) {
+  if (b == null) return '-';
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KiB';
+  return (b/1024/1024).toFixed(1) + ' MiB';
+}
+var fmtSize = formatBytes;
+function getCat(type) {
+  const r = registryData.find(a => a.type === type);
+  return r ? r.category : 'other';
+}
+function toast(msg, isError = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' error' : '');
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 3000);
+}
+
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function escapeAttr(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;')
+    .replace(/\\/g, '\\\\');
+}
+
+// ── Filesystem ──
+
+let fsCurrentPath = '/';
+
+function fsBreadcrumb(path) {
+  const parts = path === '/' ? [''] : path.split('/');
+  let html = '<a href="#" onclick="loadFsLs(\'/\');return false" style="color:var(--accent)">/</a>';
+  let accum = '';
+  for (let i = 1; i < parts.length; i++) {
+    accum += '/' + parts[i];
+    const p = accum;
+    html += ` <span style="color:var(--text3)">/</span> <a href="#" onclick="loadFsLs('${escapeAttr(p)}');return false" style="color:var(--accent)">${escapeHtml(parts[i])}</a>`;
+  }
+  return html;
+}
+
+async function loadFsLs(path) {
+  fsCurrentPath = path || '/';
+  document.getElementById('fs-breadcrumb').innerHTML = fsBreadcrumb(fsCurrentPath);
+  try {
+    const files = await api('/fs/ls?path=' + encodeURIComponent(fsCurrentPath === '/' ? '' : fsCurrentPath));
+    renderFsTable(files);
+    loadFsTree();
+  } catch (e) {
+    document.getElementById('fs-file-table').innerHTML = `<tr><td colspan="6" style="color:var(--text2);padding:16px">${escapeHtml(e.message)}</td></tr>`;
+  }
+}
+
+async function loadFsTree() {
+  try {
+    const files = await api('/fs/ls?path=');
+    const dirs = files.filter(f => f.type === 'directory');
+    if (dirs.length === 0) {
+      document.getElementById('fs-tree').innerHTML = '<div style="color:var(--text2)">No directories</div>';
+      return;
+    }
+    document.getElementById('fs-tree').innerHTML = dirs.map(d => `
+      <div style="padding:4px 8px;cursor:pointer;border-radius:6px;${d.path === fsCurrentPath ? 'background:var(--surface2)' : ''}"
+           onclick="loadFsLs('${escapeAttr(d.path)}')">
+        <span style="color:var(--accent2)">&#128193;</span> ${escapeHtml(d.name)}
+      </div>
+    `).join('');
+  } catch { document.getElementById('fs-tree').innerHTML = '<div style="color:var(--text2)">Unavailable</div>'; }
+}
+
+function renderFsTable(files) {
+  const tbody = document.getElementById('fs-file-table');
+  if (!files.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2);padding:16px">Empty directory</td></tr>';
+    return;
+  }
+  tbody.innerHTML = files.map(f => {
+    const isDir = f.type === 'directory';
+    const icon = isDir ? '&#128193;' : f.type === 'symlink' ? '&#128279;' : '&#128196;';
+    const nameHtml = isDir
+      ? `<a href="#" onclick="loadFsLs('${escapeAttr(f.path)}');return false" style="color:var(--accent2)">${escapeHtml(f.name)}</a>`
+      : `<a href="#" onclick="showFsStat('${escapeAttr(f.path)}');return false" style="color:var(--accent)">${escapeHtml(f.name)}</a>`;
+    return `<tr>
+      <td>${icon} ${nameHtml}</td>
+      <td>${escapeHtml(f.type || '-')}</td>
+      <td>${f.size != null ? fmtSize(f.size) : '-'}</td>
+      <td>${f.version ?? '-'}</td>
+      <td>${escapeHtml(f.mtime || '-')}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="fsDelete('${escapeAttr(f.path)}')">Del</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function showFsStat(path) {
+  try {
+    const s = await api('/fs/stat?path=' + encodeURIComponent(path));
+    const versions = await api('/fs/versions?path=' + encodeURIComponent(path)).catch(() => []);
+    const detail = document.getElementById('fs-detail');
+    document.getElementById('fs-detail-title').textContent = path;
+    document.getElementById('fs-detail-body').innerHTML = `
+      <div class="grid-2" style="gap:8px;font-size:12px">
+        <div><b>Type:</b> ${escapeHtml(s.type)}</div>
+        <div><b>Size:</b> ${fmtSize(s.size)}</div>
+        <div><b>Mode:</b> ${s.mode != null ? '0' + s.mode.toString(8) : '-'}</div>
+        <div><b>Version:</b> ${s.version}</div>
+        <div><b>Blocks:</b> ${s.total_blocks}</div>
+        <div><b>Block size:</b> ${s.block_size}</div>
+        <div><b>Manifest:</b> <span style="font-family:var(--mono);font-size:11px">${escapeHtml(s.manifest_id || '-')}</span></div>
+        <div><b>Hash:</b> <span style="font-family:var(--mono);font-size:11px">${s.plaintext_hash ? escapeHtml(s.plaintext_hash.slice(0, 16)) + '...' : '-'}</span></div>
+        <div><b>Symlink:</b> ${escapeHtml(s.symlink_target || '-')}</div>
+        <div><b>nlink:</b> ${s.nlink ?? '-'}</div>
+        <div><b>uid/gid:</b> ${s.uid}/${s.gid}</div>
+        <div><b>Parent:</b> ${escapeHtml(s.parent_path || '/')}</div>
+      </div>
+      ${versions.length > 1 ? '<h4 style="margin-top:12px">Version History</h4><table><thead><tr><th>Version</th><th>Type</th><th>Size</th><th>Created</th></tr></thead><tbody>' +
+        versions.map(v => `<tr><td>v${v.version}</td><td>${escapeHtml(v.file_type || '-')}</td><td>${fmtSize(v.original_size)}</td><td>${escapeHtml(v.created_at || '-')}</td></tr>`).join('') +
+        '</tbody></table>' : ''}
+    `;
+    detail.style.display = 'block';
+  } catch (e) { toast(e.message, true); }
+}
+
+async function fsNewFolder() {
+  const name = prompt('Folder name:');
+  if (!name) return;
+  const path = fsCurrentPath === '/' ? '/' + name : fsCurrentPath + '/' + name;
+  try {
+    await api('/fs/mkdir', { method: 'POST', body: { path, parents: true } });
+    toast('Created ' + path);
+    loadFsLs(fsCurrentPath);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function fsDelete(path) {
+  if (!confirm('Delete ' + path + '?')) return;
+  try {
+    await api('/fs/rm?path=' + encodeURIComponent(path), { method: 'DELETE' });
+    toast('Deleted ' + path);
+    loadFsLs(fsCurrentPath);
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Peers ──
+
+async function loadPeers() {
+  try {
+    const peers = await api('/peers');
+    const tbody = document.getElementById('peers-table');
+    if (!peers.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text2);padding:16px">No peers registered</td></tr>';
+      return;
+    }
+    tbody.innerHTML = peers.map(p => `<tr>
+      <td><span class="badge badge-${p.status === 'online' ? 'enabled' : 'disabled'}">${escapeHtml(p.status)}</span></td>
+      <td style="font-family:var(--mono);font-size:12px">${escapeHtml(p.url)}</td>
+      <td>${(p.adapters || []).length}</td>
+      <td>${p.last_seen ? new Date(p.last_seen * 1000).toLocaleString() : '-'}</td>
+      <td><button class="btn btn-sm btn-danger" onclick="removePeer(decodeURIComponent('${encodeURIComponent(p.url)}'))">Remove</button></td>
+    </tr>`).join('');
+  } catch { document.getElementById('peers-table').innerHTML = '<tr><td colspan="5" style="color:var(--text2);padding:16px">Unavailable</td></tr>'; }
+}
+
+async function addPeer() {
+  const url = document.getElementById('peer-url').value.trim();
+  if (!url) { toast('Enter a peer URL', true); return; }
+  try {
+    await api('/peers', { method: 'POST', body: { url } });
+    document.getElementById('peer-url').value = '';
+    toast('Added peer ' + url);
+    loadPeers();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function removePeer(url) {
+  if (!confirm('Remove peer ' + url + '?')) return;
+  try {
+    await api('/peers?url=' + encodeURIComponent(url), { method: 'DELETE' });
+    toast('Removed peer');
+    loadPeers();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Journal ──
+
+async function loadJournal() {
+  try {
+    const entries = await api('/journal');
+    const el = document.getElementById('journal-status');
+    if (!entries.length) {
+      el.innerHTML = '<span style="color:var(--green)">Clean — no incomplete journal entries</span>';
+      return;
+    }
+    el.innerHTML = `<span style="color:var(--yellow)">${entries.length} incomplete entries</span><br>` +
+      entries.map(e => `<div style="margin-top:4px"><code>${escapeHtml(e.path)}</code> — ${escapeHtml(e.state)} (${escapeHtml(e.operation)})</div>`).join('');
+  } catch { document.getElementById('journal-status').textContent = 'Unavailable'; }
+}
+
+async function runRecover() {
+  try {
+    const result = await api('/recover', { method: 'POST' });
+    toast('Recovery complete');
+    loadJournal();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Drag & Drop Upload ──
+
+(function initDragDrop() {
+  let dragCounter = 0;
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const zone = document.getElementById('fs-drop-zone');
+    if (!zone) return;
+
+    zone.addEventListener('dragenter', e => {
+      e.preventDefault();
+      dragCounter++;
+      const overlay = document.getElementById('fs-drop-overlay');
+      overlay.style.display = 'flex';
+      document.getElementById('fs-drop-path').textContent = 'into ' + fsCurrentPath;
+    });
+
+    zone.addEventListener('dragleave', e => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        document.getElementById('fs-drop-overlay').style.display = 'none';
+      }
+    });
+
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      dragCounter = 0;
+      document.getElementById('fs-drop-overlay').style.display = 'none';
+      const files = e.dataTransfer.files;
+      if (files.length > 0) fsUploadFiles(files);
+    });
+  });
+})();
+
+async function fsUploadFiles(files) {
+  if (!files || files.length === 0) return;
+  const progressEl = document.getElementById('fs-upload-progress');
+  const barEl = document.getElementById('fs-upload-bar');
+  const labelEl = document.getElementById('fs-upload-label');
+  const countEl = document.getElementById('fs-upload-count');
+  progressEl.style.display = 'block';
+  barEl.style.width = '0%';
+
+  let done = 0;
+  let errors = 0;
+  const total = files.length;
+
+  for (const file of files) {
+    labelEl.textContent = 'Uploading ' + file.name + '...';
+    countEl.textContent = done + '/' + total;
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('path', fsCurrentPath);
+      const res = await fetch('/api/fs/write', { method: 'POST', body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || res.statusText);
+      }
+    } catch (e) {
+      errors++;
+      toast('Failed: ' + file.name + ' — ' + e.message, true);
+    }
+    done++;
+    barEl.style.width = (done / total * 100).toFixed(0) + '%';
+  }
+
+  countEl.textContent = done + '/' + total;
+  if (errors === 0) {
+    labelEl.textContent = 'Uploaded ' + total + ' file' + (total > 1 ? 's' : '');
+    toast('Uploaded ' + total + ' file' + (total > 1 ? 's' : ''));
+  } else {
+    labelEl.textContent = (total - errors) + ' uploaded, ' + errors + ' failed';
+  }
+  setTimeout(() => { progressEl.style.display = 'none'; }, 3000);
+  loadFsLs(fsCurrentPath);
+  const fileInput = document.getElementById('fs-file-input');
+  if (fileInput) fileInput.value = '';
+}
+
+// ── Storage Health ──
+
+async function loadHealth() {
+  const card = document.getElementById('health-card');
+  const tbody = document.getElementById('health-table');
+  const summary = document.getElementById('health-summary');
+  try {
+    const res = await fetch('/api/health');
+    if (!res.ok) throw new Error('health endpoint unavailable');
+    const data = await res.json();
+    card.style.display = 'block';
+    const s = data.summary;
+    summary.textContent = s.healthy + ' healthy, ' + s.errors + ' errors, ' + s.disabled + ' disabled';
+
+    if (data.adapters.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text2);padding:16px;text-align:center">No adapters configured</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = data.adapters.map(a => {
+      const dot = a.status === 'healthy' ? 'var(--green)' : a.status === 'error' ? 'var(--red)' : 'var(--text3)';
+      const badge = a.status === 'healthy' ? 'badge-enabled' : a.status === 'error' ? 'badge-disabled' : '';
+      return `<tr>
+        <td><span class="status-dot" style="background:${dot};display:inline-block;vertical-align:middle"></span> <span class="badge ${badge}">${escapeHtml(a.status)}</span></td>
+        <td style="font-weight:500">${escapeHtml(a.name)}</td>
+        <td style="font-family:var(--mono);font-size:11px;color:var(--text2)">${escapeHtml(a.type)}</td>
+        <td style="font-family:var(--mono)">${a.latency_ms != null ? a.latency_ms.toFixed(1) + ' ms' : '-'}</td>
+        <td style="font-family:var(--mono)">${a.chunks != null ? a.chunks : '-'}</td>
+        <td style="color:var(--red);font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${a.error ? escapeAttr(a.error) : ''}">${a.error ? escapeHtml(a.error) : '-'}</td>
+      </tr>`;
+    }).join('');
+  } catch {
+    card.style.display = 'none';
+  }
+}
+
+// load health on startup
+document.addEventListener('DOMContentLoaded', () => { setTimeout(loadHealth, 500); });
+</script>
+</body>
+</html>
