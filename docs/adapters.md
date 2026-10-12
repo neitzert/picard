@@ -1,170 +1,400 @@
-# Adapters
+# Writing a PICARD Adapter
 
-PICARD uses pluggable adapters to scatter encrypted chunks across protocols and platforms.
-Each adapter speaks one protocol or storage backend.
+An adapter is a small, self-contained Python class that knows two things:
 
-## Categories
+1. How to place an encrypted chunk string into a protocol, API, or storage backend.
+2. How to get that chunk string back out.
 
-| Category | Count | Adapters |
-|----------|-------|----------|
-| Social / Messaging | 12 | bluesky, reddit, mastodon, discord, telegram, matrix, slack, nostr, github, gitlab, irc, xmpp |
-| Network Protocols | 20 | dns, cloudflare-dns, mqtt, icmp, ntp, snmp, sip, http-headers, coap, amqp, tftp, ftp, websocket, grpc-metadata, mdns, ssdp, udp, ipv6-flowlabel, tcp-options, named-pipe |
-| Storage / KV | 11 | memory, filesystem, s3, redis, memcached, etcd, consul-kv, couchdb, sqlite-remote, postgresql, dynamodb |
-| Mail / Calendar | 4 | smtp-imap, caldav, carddav, webdav |
-| P2P / Exotic | 10 | ipfs, bittorrent-dht, ethereum, qr-codes, steganography, gopher, gemini, bluetooth-le, nfc-ndef, usb-hid |
-| Format / Encoding | 7+ | xlsx-hidden, exif, pdf-metadata, zip-comment, docx-custom-xml, font-name-table, ico-comment |
-| Broadcast / Discovery | 10+ | mdns, ssdp, wifi-beacon, llmnr, netbios, upnp, bluetooth-le adv, nfc-broadcast |
-| Platform / Browser | 11 | twitter/x, youtube, tiktok, instagram, pinterest, linkedin, medium, notion, trello, jira, confluence |
-| Remote | 1 | remote (proxy to peer's transport API) |
-| ... | 160+ | Every other protocol gap: syslog, kafka, zeromq, rsync, git-notes, dns-over-https, tor hidden services, and more |
+That's it. The adapter does not encrypt, does not chunk, does not track manifests. It just offers shelter. The orchestrator handles everything else.
 
-Total: **260 adapter implementations** (263 files including base.py, __init__.py, remote.py).
+This guide covers the complete contract, walks through a working example, and gives explicit rules for agents writing adapters automatically.
 
-## Adapter Interface
+---
 
-Every adapter implements the `Adapter` abstract base class from `picard/adapters/base.py`:
+## The Interface
+
+Every adapter extends `Adapter` from `picard/adapters/base.py` and implements five required methods:
 
 ```python
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 
 class MyAdapter(Adapter):
+
     def profile(self) -> AdapterProfile:
-        return AdapterProfile(
-            name="my-adapter",
-            max_chunk_bytes=4096,
-            tags={"category": "custom"},
-        )
+        """Describe this adapter's capabilities."""
+        ...
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        # Store the chunk data, return a reference
+        """Store one chunk. Return a reference to find it again."""
         ...
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        # Retrieve chunk data by reference
+        """Retrieve the exact string that was passed to write_chunk."""
         ...
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        # Remove stored chunk
+        """Delete the chunk. Return True if it existed, False if not found."""
         ...
 
-    async def list_chunks(self, manifest_id: str) -> list[StoredChunkRef]:
-        # List all chunks for a manifest (used by fsck rebuild)
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        """Return all stored chunks whose location contains manifest_id.
+        Used for scan-based recovery when the local index is lost."""
+        ...
+```
+
+Two optional methods are strongly recommended for production adapters:
+
+```python
+    async def close(self) -> None:
+        """Release resources: close HTTP sessions, DB connections, etc."""
         ...
 
-    # Optional:
     async def health_check(self) -> bool:
+        """Return True if the backend is currently reachable."""
         ...
+```
 
+And one optional method for capacity reporting:
+
+```python
     async def capacity(self) -> dict[str, int | None]:
-        ...
+        """Return storage stats. Any unknown value should be None.
+        Keys: used_bytes, free_bytes, total_bytes, chunk_count."""
+        return {"used_bytes": None, "free_bytes": None,
+                "total_bytes": None, "chunk_count": None}
 ```
 
-### AdapterProfile
+---
+
+## AdapterProfile Fields
 
 ```python
-@dataclass
+@dataclass(frozen=True, slots=True)
 class AdapterProfile:
-    name: str                       # unique identifier
-    max_chunk_bytes: int = 65536    # maximum chunk payload size
-    tags: dict[str, str] = {}       # metadata for scatter profile filtering
+    name: str                        # unique lowercase identifier, e.g. "my-adapter"
+    max_chunk_bytes: int             # largest encoded chunk the backend accepts
+    persistent: bool = True          # False if chunks vanish on session end (e.g. ICMP)
+    ordered: bool = True             # False if retrieval order != write order
+    ttl_seconds: int | None = None   # seconds until chunks auto-expire; None = forever
+    rate_limit_per_min: int = 60     # writes per minute the backend tolerates
+    max_total_bytes: int | None = None  # storage quota; None = unknown/unlimited
+    tags: dict[str, str] = {}        # metadata for scatter profile filtering
 ```
 
-Tags are used by scatter profiles to filter adapters. For example:
-`tags={"category": "social", "low-profile": "true"}`.
+`max_chunk_bytes` is the most important field. If you set it too high the backend will reject writes. When in doubt, be conservative. DNS TXT records: 4096 bytes. Social media posts: 2000–8000 bytes. S3 objects: ~5 GB but PICARD's chunker caps at 65536 by default.
 
-### StoredChunkRef
+Common tag keys used by scatter profiles: `"category"`, `"persistent"`, `"low-profile"`, `"steganographic"`.
+
+---
+
+## StoredChunkRef
 
 ```python
-@dataclass
+@dataclass(frozen=True, slots=True)
 class StoredChunkRef:
-    adapter_name: str   # which adapter stored it
-    location: str       # adapter-specific identifier (URL, key, path, etc.)
+    adapter_name: str   # must match profile().name exactly
+    location: str       # whatever your adapter needs to retrieve the chunk:
+                        # a URL, an ID, a key, a file path, a composite string
 ```
 
-## Writing a Custom Adapter
+`location` is a free-form string — pack in whatever the read path needs. For example: `"reddit://t3_abc123"`, `"s3://my-bucket/chunks/a1b2c3"`, `"dns://chunks.example.com/pchk-0001"`.
 
-1. Create a file in `picard/adapters/`, e.g. `picard/adapters/my_protocol.py`
-2. Implement the `Adapter` ABC (all five required methods)
-3. The adapter is auto-discovered by the registry via importlib scanning
+---
 
-### Example: File-Based Adapter
+## Complete Example: an HTTPS Pastebin Adapter
+
+This example shows every required and recommended method with resource cleanup:
 
 ```python
-"""Custom adapter that stores chunks as files in a directory."""
-from pathlib import Path
-import uuid
+"""Pastebin adapter — stores chunks as paste text.
+
+Each chunk is uploaded as an anonymous paste via the Pastebin API.
+The paste key is the chunk reference.
+
+Notice: This adapter must only be used with Pastebin accounts you own
+and control.  Use in a manner that violates Pastebin's Terms of Service
+is outside the scope of this project and the responsibility of the user.
+No endorsement by or affiliation with Pastebin is implied.
+
+Requires: pip install picard[pastebin]  (uses aiohttp)
+"""
+
+from __future__ import annotations
+
+from typing import Sequence
+
+import aiohttp
+
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 
-class MyFileAdapter(Adapter):
-    def __init__(self, directory: str = "/tmp/my-chunks") -> None:
-        self._dir = Path(directory)
-        self._dir.mkdir(parents=True, exist_ok=True)
+_API = "https://pastebin.com/api/api_post.php"
+_RAW = "https://pastebin.com/raw/{key}"
+
+
+class PastebinAdapter(Adapter):
+    """Scatter chunks into Pastebin pastes."""
+
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        max_chunk_bytes: int = 8_000,
+        expire: str = "N",       # N=never, 1H, 1D, 1W, 2W, 1M
+    ) -> None:
+        self._api_key = api_key
+        self._max = max_chunk_bytes
+        self._expire = expire
+        self._session: aiohttp.ClientSession | None = None
+
+    # ── resource management ─────────────────────────────────────────────────
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self) -> None:
+        if self._session is not None and not self._session.closed:
+            await self._session.close()
+            self._session = None
+
+    # ── profile ─────────────────────────────────────────────────────────────
 
     def profile(self) -> AdapterProfile:
-        return AdapterProfile(name="my-file", max_chunk_bytes=1_000_000)
+        return AdapterProfile(
+            name="pastebin",
+            max_chunk_bytes=self._max,
+            persistent=True,
+            ordered=False,
+            rate_limit_per_min=10,
+            tags={"category": "social"},
+        )
+
+    # ── required operations ─────────────────────────────────────────────────
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        name = uuid.uuid4().hex
-        (self._dir / name).write_text(encoded_chunk)
-        return StoredChunkRef(adapter_name="my-file", location=name)
+        session = await self._get_session()
+        async with session.post(
+            _API,
+            data={
+                "api_dev_key": self._api_key,
+                "api_option": "paste",
+                "api_paste_code": encoded_chunk,
+                "api_paste_private": "1",          # unlisted
+                "api_paste_expire_date": self._expire,
+            },
+        ) as resp:
+            resp.raise_for_status()
+            body = await resp.text()
+
+        # Pastebin returns the full URL on success, or "Bad API Request: ..."
+        if body.startswith("Bad API"):
+            raise RuntimeError(f"Pastebin write failed: {body}")
+
+        key = body.rsplit("/", 1)[-1]
+        return StoredChunkRef(adapter_name="pastebin", location=key)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        return (self._dir / ref.location).read_text()
+        session = await self._get_session()
+        async with session.get(_RAW.format(key=ref.location)) as resp:
+            resp.raise_for_status()
+            return await resp.text()
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        path = self._dir / ref.location
-        if path.exists():
-            path.unlink()
-            return True
+        # Pastebin's free API doesn't support deletion; guest pastes expire only
         return False
 
-    async def list_chunks(self, manifest_id: str) -> list[StoredChunkRef]:
-        return [
-            StoredChunkRef(adapter_name="my-file", location=f.name)
-            for f in self._dir.iterdir()
-        ]
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        # No listing API for anonymous pastes; return empty (index-dependent recovery)
+        return []
+
+    # ── optional ────────────────────────────────────────────────────────────
+
+    async def health_check(self) -> bool:
+        try:
+            session = await self._get_session()
+            async with session.get("https://pastebin.com") as resp:
+                return resp.status == 200
+        except Exception:
+            return False
 ```
 
-3. Register in config.toml:
+---
 
-```toml
-[[adapters]]
-name = "my-storage"
-type = "my_file"
-enabled = true
-params = { directory = "/data/picard-chunks" }
+## Rules and Checklist
+
+The following rules apply to every adapter. When in doubt, look at any existing adapter in `picard/adapters/` for reference.
+
+### Required
+
+- [ ] Extend `Adapter` from `picard.adapters.base`
+- [ ] Implement `profile()`, `write_chunk()`, `read_chunk()`, `delete_chunk()`, `list_chunks()`
+- [ ] `profile().name` is lowercase, hyphen-separated, unique across all adapters
+- [ ] `profile().max_chunk_bytes` is conservative — what the backend actually accepts
+- [ ] `write_chunk` returns a `StoredChunkRef` with `adapter_name` matching `profile().name`
+- [ ] `read_chunk` returns the **exact string** passed to `write_chunk` — no transformation
+- [ ] `delete_chunk` returns `True` if the chunk existed, `False` if not found; never raises on 404
+- [ ] `list_chunks` filters by `manifest_id` appearing in the location or stored data
+
+### Strongly Recommended
+
+- [ ] Implement `close()` and release all HTTP sessions, DB connections, file handles
+- [ ] Use `async with session.get(...)` or equivalent; never leave connections open on error
+- [ ] Implement `health_check()` — a simple connectivity probe, swallow all exceptions, return bool
+- [ ] Set `persistent=False` if chunks do not survive a process restart
+- [ ] Set `ttl_seconds` if the backend expires content automatically
+
+### Docstring Format
+
+Every adapter file must have a module docstring in this format:
+
+```python
+"""<Protocol> adapter — <one line what it stores and where>.
+
+<One to three sentences describing the storage mechanism.>
+<If dual-mode: document both API mode and browser mode.>
+
+Notice: This adapter must only be used with <Platform> accounts and
+infrastructure you own and control.  Use in a manner that violates
+<Platform>'s Terms of Service is outside the scope of this project and
+the responsibility of the user.  No endorsement by or affiliation with
+<Company> is implied.
+
+Requires: pip install picard[<extra>]   (<dependency>)
+"""
 ```
 
-## Browser-Mode Adapters
+The Notice block is required for any adapter that connects to a third-party service or platform. Skip it only for adapters that operate entirely on infrastructure the user controls (local filesystem, self-hosted servers, raw hardware).
 
-Some social/platform adapters support dual-mode operation:
-- **API mode**: direct HTTP calls (faster, needs credentials)
-- **Browser mode**: headless Playwright browser (slower, more resilient to API changes)
+### Testing
 
-Browser-mode adapters use a shared `BrowserPool` singleton that manages Playwright
-browser contexts with persistent sessions. The pool handles context reuse,
-credential persistence, and graceful shutdown.
+Every adapter must have a mocked unit test covering `put()`, `get()`, and `rm()` through the full orchestrator pipeline. The standard pattern:
 
-Adapters with browser support: bluesky, reddit, discord, twitter, youtube,
-tiktok, instagram, pinterest, linkedin, medium.
+```python
+import pytest
+from picard.adapters.pastebin import PastebinAdapter
+from unittest.mock import AsyncMock, patch
 
-## Testing Adapters
+@pytest.mark.asyncio
+async def test_pastebin_roundtrip():
+    adapter = PastebinAdapter(api_key="test-key")
 
-The `MemoryAdapter` (in-process dict) is the standard test adapter:
+    with patch.object(adapter, "_get_session") as mock_sess:
+        # mock write: returns paste URL
+        mock_post = AsyncMock()
+        mock_post.__aenter__ = AsyncMock(return_value=mock_post)
+        mock_post.__aexit__ = AsyncMock(return_value=False)
+        mock_post.raise_for_status = AsyncMock()
+        mock_post.text = AsyncMock(return_value="https://pastebin.com/abc123")
+
+        # mock read: returns original text
+        mock_get = AsyncMock()
+        mock_get.__aenter__ = AsyncMock(return_value=mock_get)
+        mock_get.__aexit__ = AsyncMock(return_value=False)
+        mock_get.raise_for_status = AsyncMock()
+        mock_get.text = AsyncMock(return_value="PCHK:1:test_data")
+
+        session = AsyncMock()
+        session.post.return_value = mock_post
+        session.get.return_value = mock_get
+        mock_sess.return_value = session
+
+        ref = await adapter.write_chunk("PCHK:1:test_data")
+        assert ref.adapter_name == "pastebin"
+        assert ref.location == "abc123"
+
+        result = await adapter.read_chunk(ref)
+        assert result == "PCHK:1:test_data"
+
+    await adapter.close()
+```
+
+For a simpler end-to-end test without mocks, use `MemoryAdapter`:
 
 ```python
 from picard.adapters.memory import MemoryAdapter
 from picard.index import Index
 from picard.orchestrator import Orchestrator
 
-adapter = MemoryAdapter()
-index = Index(":memory:")
-orch = Orchestrator([adapter], index)
-
-manifest = await orch.put("/test.txt", b"hello", "passphrase")
-data = await orch.get("/test.txt", "passphrase")
-assert data == b"hello"
+@pytest.mark.asyncio
+async def test_full_pipeline():
+    orch = Orchestrator([MemoryAdapter()], Index(":memory:"))
+    await orch.put("/test.txt", b"hello world", "passphrase")
+    data = await orch.get("/test.txt", "passphrase")
+    assert data == b"hello world"
 ```
 
-All 4150+ tests use this pattern, exercising the full pipeline without
-external service dependencies.
+---
+
+## Registration
+
+Adapters are discovered automatically by the registry via `importlib` scanning of `picard/adapters/`. Place your file in that directory and it will be found.
+
+To use it from config:
+
+```toml
+[[adapters]]
+name = "my-pastebin"
+type = "pastebin"           # maps to picard/adapters/pastebin.py → PastebinAdapter
+enabled = true
+params = { api_key = "your-api-key", expire = "1W" }
+```
+
+The `type` field maps to the adapter file name (without `.py`) and the class name is expected to be the CamelCase version of the file name followed by `Adapter`. For example:
+
+| File | Class |
+|------|-------|
+| `pastebin.py` | `PastebinAdapter` |
+| `my_protocol.py` | `MyProtocolAdapter` |
+| `dns.py` | `DnsAdapter` |
+
+---
+
+## Browser-Mode Adapters
+
+Some social platform adapters support dual-mode operation:
+
+- **API mode** — direct HTTP calls, faster, requires credentials
+- **Browser mode** — headless Playwright browser, more resilient to API changes
+
+Browser-mode adapters use a shared `BrowserPool` singleton:
+
+```python
+from picard.browser_pool import BrowserPool
+
+pool = await BrowserPool.get(headless=self._headless)
+ctx = await pool.context("my-platform")
+page = await ctx.new_page()
+try:
+    await page.goto("https://example.com", wait_until="domcontentloaded")
+    # ... interact with the page ...
+    await pool.save_state("my-platform")   # persist login cookies
+finally:
+    await page.close()
+```
+
+Adapters with browser support: bluesky, reddit, discord, twitter, youtube, tiktok, instagram, pinterest, linkedin, medium. See any of these for a full dual-mode pattern.
+
+Requires: `pip install picard[browser]` (installs `playwright` and runs `playwright install chromium`).
+
+---
+
+## Agent Notes
+
+If you are an AI agent writing a new PICARD adapter:
+
+1. **Read an existing adapter first.** Pick one in the same category as what you're building. For HTTP APIs: `spotify_adapter.py`. For network protocols: `dns.py`. For browser-mode: `reddit.py`.
+
+2. **`read_chunk` must return the exact encoded_chunk string** — no decoding, no stripping, no transformation. The orchestrator owns the encoding.
+
+3. **Never raise in `delete_chunk` on 404** — return `False`.
+
+4. **Never swallow all exceptions broadly** — `except Exception: return False` is only acceptable in `health_check()` and `delete_chunk()`. Everywhere else, let errors propagate so the orchestrator can retry or fall back.
+
+5. **Always implement `close()`** if you open any session, connection, or file handle. Use `async with` context managers where possible.
+
+6. **The Notice block in the docstring is not optional** for any third-party platform. Write it.
+
+7. **Write the test first** — even a minimal mock test. It forces you to think about what `location` should contain and what the read path needs.
+
+8. **`list_chunks` is used for disaster recovery**, not for normal reads. It's OK for it to return `[]` if the backend has no listing API, but document why.
