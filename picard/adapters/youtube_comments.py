@@ -9,7 +9,7 @@ Terms of Service is outside the scope of this project and the
 responsibility of the user.  No endorsement by or affiliation with
 Google LLC or YouTube is implied.
 
-Requires: pip install picard[youtube]
+Requires: pip install picard-store[youtube]
 """
 
 from __future__ import annotations

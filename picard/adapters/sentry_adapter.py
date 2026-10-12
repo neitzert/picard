@@ -3,7 +3,7 @@
 Each chunk becomes a Sentry event with the data in the message or
 extra fields, stored in the error tracking system.
 
-Requires: pip install picard[sentry]  (aiohttp)
+Requires: pip install picard-store[sentry]  (aiohttp)
 """
 
 from __future__ import annotations

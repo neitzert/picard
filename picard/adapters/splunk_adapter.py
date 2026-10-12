@@ -3,7 +3,7 @@
 Data is stored through Splunk's HEC endpoint, appearing
 as routine log ingestion traffic.
 
-Requires: pip install picard[splunk]  (uses aiohttp)
+Requires: pip install picard-store[splunk]  (uses aiohttp)
 """
 
 from __future__ import annotations

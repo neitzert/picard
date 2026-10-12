@@ -7,7 +7,7 @@ populated by a listener on the VXLAN port.
 Note: VXLAN is ubiquitous in cloud/DC networks.  A custom VNI with
 chunk payloads blends with normal overlay traffic.
 
-Requires: pip install picard[vxlan]  (no external deps, uses stdlib socket)
+Requires: pip install picard-store[vxlan]  (no external deps, uses stdlib socket)
 """
 
 from __future__ import annotations

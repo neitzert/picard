@@ -9,7 +9,7 @@ the radio transport requires a platform driver. Subclass ZigbeeAdapter and imple
 the three abstract methods below to connect a real coordinator (e.g. zigpy + EZSP,
 zigpy-znp, or a custom AT-command driver).
 
-Requires: pip install picard[zigbee]  (zigpy + radio driver)
+Requires: pip install picard-store[zigbee]  (zigpy + radio driver)
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@
 
 Uses S3v4 signature for authentication against Wasabi's S3-compatible API.
 
-Requires: pip install picard[wasabi]   (boto3)
+Requires: pip install picard-store[wasabi]   (boto3)
 """
 
 from __future__ import annotations

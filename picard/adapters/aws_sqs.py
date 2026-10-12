@@ -4,7 +4,7 @@ Each chunk becomes a message with the chunk data as body and a
 MessageAttribute holding the chunk key for retrieval. Messages use
 long visibility timeout to stay available.
 
-Requires: pip install picard[aws]  (aiobotocore)
+Requires: pip install picard-store[aws]  (aiobotocore)
 """
 
 from __future__ import annotations

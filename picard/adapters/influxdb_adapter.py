@@ -3,7 +3,7 @@
 Each chunk becomes a point in an InfluxDB v2 bucket.  The chunk data
 lives in a field value, tagged by manifest/block/chunk index.
 
-Requires: pip install picard[influxdb]  (aiohttp)
+Requires: pip install picard-store[influxdb]  (aiohttp)
 """
 
 from __future__ import annotations

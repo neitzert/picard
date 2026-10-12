@@ -4,7 +4,7 @@ Works with local SQLite files, in-memory databases, or remote
 libSQL/Turso instances via compatible drivers.  Each chunk is a row
 in a dedicated table.
 
-Requires: pip install picard[sqlite]
+Requires: pip install picard-store[sqlite]
 """
 
 from __future__ import annotations

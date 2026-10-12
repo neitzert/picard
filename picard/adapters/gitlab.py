@@ -4,7 +4,7 @@ Each chunk becomes a private snippet whose title encodes the manifest,
 block, and chunk indices for discovery.  The snippet body holds the
 PCHK-encoded string.
 
-Requires: pip install picard[gitlab]   (httpx)
+Requires: pip install picard-store[gitlab]   (httpx)
 """
 
 from __future__ import annotations

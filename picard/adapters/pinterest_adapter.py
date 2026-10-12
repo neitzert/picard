@@ -9,7 +9,7 @@ Service is outside the scope of this project and the responsibility
 of the user.  No endorsement by or affiliation with Pinterest, Inc.
 is implied.
 
-Requires: pip install picard[pinterest]   (uses aiohttp)
+Requires: pip install picard-store[pinterest]   (uses aiohttp)
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ Each chunk becomes an OP_RETURN output (max 80 bytes) on the
 Bitcoin blockchain.  Once confirmed, data is permanent and
 censorship-resistant.
 
-Requires: pip install picard[bitcoin]  (aiohttp for JSON-RPC)
+Requires: pip install picard-store[bitcoin]  (aiohttp for JSON-RPC)
 """
 
 from __future__ import annotations

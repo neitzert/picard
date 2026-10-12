@@ -10,7 +10,7 @@ rate-limited resources. Use only with a self-hosted ACME server (e.g.
 Pebble) unless you are testing against the actual LE staging environment
 intentionally.
 
-Requires: pip install picard[acme]  (aiohttp, cryptography)
+Requires: pip install picard-store[acme]  (aiohttp, cryptography)
 """
 
 from __future__ import annotations

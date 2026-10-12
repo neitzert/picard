@@ -3,7 +3,7 @@
 Uses DHCP option 224-254 (site-specific) or option 43 (vendor-specific)
 to carry small payloads in DHCPINFORM messages.  Very low bandwidth.
 
-Requires: pip install picard[dhcp]  (scapy)
+Requires: pip install picard-store[dhcp]  (scapy)
 """
 
 from __future__ import annotations

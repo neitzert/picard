@@ -10,7 +10,7 @@ Telegram's Terms of Service is outside the scope of this project and
 the responsibility of the user.  No endorsement by or affiliation
 with Telegram FZ LLC is implied.
 
-Requires: pip install picard[telegram]  (uses httpx)
+Requires: pip install picard-store[telegram]  (uses httpx)
 """
 
 from __future__ import annotations

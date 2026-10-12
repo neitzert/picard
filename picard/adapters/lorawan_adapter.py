@@ -4,7 +4,7 @@ Sends chunk data to LoRaWAN devices via the application server API
 (e.g. ChirpStack, The Things Network).  Range: kilometers.
 Bandwidth: bytes.
 
-Requires: pip install picard[lorawan]  (aiohttp)
+Requires: pip install picard-store[lorawan]  (aiohttp)
 """
 
 from __future__ import annotations

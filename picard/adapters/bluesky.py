@@ -9,7 +9,7 @@ and control.  Use in a manner that violates Bluesky's Terms of Service
 is outside the scope of this project and the responsibility of the
 user.  No endorsement by or affiliation with Bluesky PBLLC is implied.
 
-Requires: pip install picard[bluesky]
+Requires: pip install picard-store[bluesky]
 """
 
 from __future__ import annotations

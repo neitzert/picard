@@ -5,7 +5,7 @@ gRPC metadata header.  The
 cooperating service exposes JSON-transcoded gRPC endpoints so no proto
 compilation is needed on the client side.
 
-Requires: pip install picard[grpc-metadata]  (httpx with h2)
+Requires: pip install picard-store[grpc-metadata]  (httpx with h2)
 """
 
 from __future__ import annotations

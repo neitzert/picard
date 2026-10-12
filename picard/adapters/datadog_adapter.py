@@ -3,7 +3,7 @@
 Data is embedded inside Datadog event bodies, stored
 alongside normal observability traffic.
 
-Requires: pip install picard[datadog]  (uses aiohttp)
+Requires: pip install picard-store[datadog]  (uses aiohttp)
 """
 
 from __future__ import annotations

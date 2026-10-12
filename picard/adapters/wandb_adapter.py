@@ -2,7 +2,7 @@
 
 Chunks are uploaded as files within W&B artifact versions.
 
-Requires: pip install picard[wandb]  (aiohttp)
+Requires: pip install picard-store[wandb]  (aiohttp)
 """
 
 from __future__ import annotations

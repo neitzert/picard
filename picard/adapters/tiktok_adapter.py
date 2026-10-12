@@ -5,7 +5,7 @@ descriptions via the video query endpoint.
 
 Two modes:
   - API mode (default): TikTok Content API — requires access_token + open_id
-  - Browser mode: Playwright — pip install picard[browser]
+  - Browser mode: Playwright — pip install picard-store[browser]
 
 Notice: This adapter must only be used with TikTok accounts and
 infrastructure you own and control.  Use in a manner that violates

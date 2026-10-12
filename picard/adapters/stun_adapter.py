@@ -5,7 +5,7 @@ Read-back depends on a local cache since TURN allocations are
 ephemeral.  Useful in NAT-traversal scenarios where direct
 connectivity is blocked.
 
-Requires: pip install picard[stun]  (aioice or raw socket)
+Requires: pip install picard-store[stun]  (aioice or raw socket)
 """
 
 from __future__ import annotations

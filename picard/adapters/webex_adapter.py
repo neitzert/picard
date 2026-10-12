@@ -1,6 +1,6 @@
 """Cisco Webex adapter — stores chunks as messages in a Webex space.
 
-Requires: pip install picard[webex]  (uses aiohttp)
+Requires: pip install picard-store[webex]  (uses aiohttp)
 """
 
 from __future__ import annotations

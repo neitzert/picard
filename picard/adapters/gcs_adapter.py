@@ -2,7 +2,7 @@
 
 Each chunk becomes an object in a GCS bucket, keyed by manifest/block/chunk.
 
-Requires: pip install picard[gcs]   (google-auth, aiohttp)
+Requires: pip install picard-store[gcs]   (google-auth, aiohttp)
 """
 
 from __future__ import annotations

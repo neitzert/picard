@@ -3,7 +3,7 @@
 Each chunk becomes a gist file:
     gist://{gist_id}
 
-Requires: pip install picard[gist]
+Requires: pip install picard-store[gist]
 """
 
 from __future__ import annotations

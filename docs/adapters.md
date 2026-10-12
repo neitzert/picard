@@ -191,7 +191,7 @@ and control.  Use in a manner that violates Pastebin's Terms of Service
 is outside the scope of this project and the responsibility of the user.
 No endorsement by or affiliation with Pastebin is implied.
 
-Requires: pip install picard[pastebin]  (uses aiohttp)
+Requires: pip install picard-store[pastebin]  (uses aiohttp)
 """
 
 from __future__ import annotations
@@ -335,7 +335,7 @@ infrastructure you own and control.  Use in a manner that violates
 the responsibility of the user.  No endorsement by or affiliation with
 <Company> is implied.
 
-Requires: pip install picard[<extra>]   (<dependency>)
+Requires: pip install picard-store[<extra>]   (<dependency>)
 """
 ```
 
@@ -457,7 +457,7 @@ finally:
 
 Adapters with browser support: bluesky, reddit, discord, twitter, youtube, tiktok, pinterest, linkedin, medium. See any of these for a full dual-mode pattern.
 
-Requires: `pip install picard[browser]` (installs `playwright` and runs `playwright install chromium`).
+Requires: `pip install picard-store[browser]` (installs `playwright` and runs `playwright install chromium`).
 
 ---
 

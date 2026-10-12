@@ -10,7 +10,7 @@ Discord's Terms of Service is outside the scope of this project and
 the responsibility of the user.  No endorsement by or affiliation
 with Discord Inc. is implied.
 
-Requires: pip install picard[cloudflare]   (uses httpx)
+Requires: pip install picard-store[cloudflare]   (uses httpx)
 """
 
 from __future__ import annotations

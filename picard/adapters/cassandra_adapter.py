@@ -3,7 +3,7 @@
 Stores chunks in distributed wide-column stores used for
 time-series, IoT, and high-throughput workloads.
 
-Requires: pip install picard[cassandra]  (cassandra-driver)
+Requires: pip install picard-store[cassandra]  (cassandra-driver)
 """
 
 from __future__ import annotations

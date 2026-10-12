@@ -9,7 +9,7 @@ Steam's Subscriber Agreement or API Terms of Use is outside the scope
 of this project and the responsibility of the user.  No endorsement
 by or affiliation with Valve Corporation is implied.
 
-Requires: pip install picard[steam]  (aiohttp)
+Requires: pip install picard-store[steam]  (aiohttp)
 """
 
 from __future__ import annotations

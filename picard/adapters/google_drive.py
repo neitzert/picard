@@ -3,7 +3,7 @@
 Each chunk becomes a file in Google Drive, optionally inside a specific
 folder. Data can also be stored in appProperties (not shown in the Drive UI).
 
-Requires: pip install picard[gdrive]   (aiohttp)
+Requires: pip install picard-store[gdrive]   (aiohttp)
 """
 
 from __future__ import annotations

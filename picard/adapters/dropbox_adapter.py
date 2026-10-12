@@ -2,7 +2,7 @@
 
 Each chunk becomes a file at /{root_path}/{manifest_id}/{block}_{chunk}.pchk.
 
-Requires: pip install picard[dropbox]  (aiohttp)
+Requires: pip install picard-store[dropbox]  (aiohttp)
 """
 
 from __future__ import annotations

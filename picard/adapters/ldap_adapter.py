@@ -5,7 +5,7 @@ the ``description`` attribute:
 
     ou=c{chunk}.b{block}.{manifest_id},{base_dn}
 
-Requires: pip install picard[ldap]   (ldap3)
+Requires: pip install picard-store[ldap]   (ldap3)
 """
 
 from __future__ import annotations

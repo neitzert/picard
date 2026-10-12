@@ -3,7 +3,7 @@
 Posts are created with status="draft" so they're invisible to the public.
 Any self-hosted WordPress site with the REST API enabled works.
 
-Requires: pip install picard[wordpress]   (uses aiohttp)
+Requires: pip install picard-store[wordpress]   (uses aiohttp)
 """
 
 from __future__ import annotations

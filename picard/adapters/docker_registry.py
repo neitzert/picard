@@ -3,7 +3,7 @@
 Each chunk becomes a blob in an OCI-compliant registry:
     oci://{registry}/{repo}@sha256:{digest}
 
-Requires: pip install picard[docker]
+Requires: pip install picard-store[docker]
 """
 
 from __future__ import annotations

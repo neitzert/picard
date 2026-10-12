@@ -4,7 +4,7 @@ Chunks are written as files in a Kerberos-authenticated store directory,
 with GSSAPI context used for authentication. The credential cache itself
 serves as proof of authorization.
 
-Requires: pip install picard[kerberos]   (gssapi)
+Requires: pip install picard-store[kerberos]   (gssapi)
 """
 
 from __future__ import annotations

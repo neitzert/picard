@@ -3,7 +3,7 @@
 Each chunk becomes a document in a dedicated database, keyed by
 manifest/block/chunk identity.
 
-Requires: pip install picard[couchdb]  (just httpx)
+Requires: pip install picard-store[couchdb]  (just httpx)
 """
 
 from __future__ import annotations

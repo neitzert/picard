@@ -4,7 +4,7 @@ Each chunk gets its own durable queue named ``picard.{msg_id}``.  A single
 direct exchange fans writes to the correct queue.  Reads use ``basic_get``
 with requeue so the message stays available for future reads.
 
-Requires: pip install picard[amqp]   (aio-pika)
+Requires: pip install picard-store[amqp]   (aio-pika)
 """
 
 from __future__ import annotations

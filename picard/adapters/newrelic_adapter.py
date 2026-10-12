@@ -2,7 +2,7 @@
 
 Data is stored in New Relic Insights as custom events.
 
-Requires: pip install picard[newrelic]  (uses aiohttp)
+Requires: pip install picard-store[newrelic]  (uses aiohttp)
 """
 
 from __future__ import annotations

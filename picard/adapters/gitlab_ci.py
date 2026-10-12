@@ -2,7 +2,7 @@
 
 Stores data as CI pipeline build artifacts.
 
-Requires: pip install picard[gitlab-ci]  (aiohttp)
+Requires: pip install picard-store[gitlab-ci]  (aiohttp)
 """
 
 from __future__ import annotations

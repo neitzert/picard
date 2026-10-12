@@ -2,7 +2,7 @@
 
 Zero signup required — pick a topic name and start sending.
 
-Requires: pip install picard[ntfy]  (uses aiohttp)
+Requires: pip install picard-store[ntfy]  (uses aiohttp)
 """
 
 from __future__ import annotations

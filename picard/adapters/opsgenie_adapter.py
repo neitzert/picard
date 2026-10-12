@@ -2,7 +2,7 @@
 
 Data is stored inside OpsGenie alert fields.
 
-Requires: pip install picard[opsgenie]  (uses aiohttp)
+Requires: pip install picard-store[opsgenie]  (uses aiohttp)
 """
 
 from __future__ import annotations

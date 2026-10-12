@@ -4,7 +4,7 @@ Each chunk is stored in the EXIF UserComment tag of a minimal JPEG.
 Standard EXIF fields (GPS, camera model) are populated with placeholder
 values to produce a structurally valid image file.
 
-Requires: pip install picard[exif]  (Pillow)
+Requires: pip install picard-store[exif]  (Pillow)
 """
 
 from __future__ import annotations

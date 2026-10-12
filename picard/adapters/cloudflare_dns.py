@@ -9,7 +9,7 @@ record under the configured zone:
 StoredChunkRef.location format:
     cf:{record_id}@{fqdn}
 
-Requires: pip install picard[cloudflare]
+Requires: pip install picard-store[cloudflare]
 """
 
 from __future__ import annotations

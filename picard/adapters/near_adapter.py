@@ -4,7 +4,7 @@ Each chunk is sent as arguments to a FunctionCall action.  Reads use a
 view call (free, no signing) to query state.  Once included in a block
 the data is permanent.
 
-Requires: pip install picard[near]   (aiohttp, cryptography)
+Requires: pip install picard-store[near]   (aiohttp, cryptography)
 """
 
 from __future__ import annotations

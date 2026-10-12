@@ -10,7 +10,7 @@ is outside the scope of this project and the responsibility of the
 user.  No endorsement by or affiliation with A Medium Corporation
 is implied.
 
-Requires: pip install picard[medium]   (uses aiohttp)
+Requires: pip install picard-store[medium]   (uses aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes an S3 object keyed by manifest/block/chunk path.
 Uses boto3 wrapped in asyncio.to_thread() for async compatibility.
 
-Requires: pip install picard[s3]
+Requires: pip install picard-store[s3]
 """
 
 from __future__ import annotations

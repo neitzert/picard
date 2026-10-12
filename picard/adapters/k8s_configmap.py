@@ -3,7 +3,7 @@
 Each chunk becomes a ConfigMap in the target namespace. Blends in
 with normal application configuration objects.
 
-Requires: pip install picard[k8s]  (kubernetes-asyncio)
+Requires: pip install picard-store[k8s]  (kubernetes-asyncio)
 """
 
 from __future__ import annotations

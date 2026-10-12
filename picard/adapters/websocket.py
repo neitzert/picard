@@ -3,7 +3,7 @@
 Chunks are transmitted as JSON commands over a persistent WebSocket
 connection. The server implements a simple key-value store protocol.
 
-Requires: pip install picard[websocket]  (websockets)
+Requires: pip install picard-store[websocket]  (websockets)
 """
 
 from __future__ import annotations

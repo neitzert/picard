@@ -5,7 +5,7 @@ Each chunk becomes a crate whose description field holds the data.
 WARNING: Use only with a private registry or your own crates.io account.
 Publishing stub crates to public crates.io violates their ToS.
 
-Requires: pip install picard[crates]  (aiohttp)
+Requires: pip install picard-store[crates]  (aiohttp)
 """
 
 from __future__ import annotations

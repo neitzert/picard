@@ -5,7 +5,7 @@ Each chunk becomes a file on a remote SMB share:
 
 Optionally stores data in NTFS alternate data streams (ADS).
 
-Requires: pip install picard[smb]  (smbprotocol)
+Requires: pip install picard-store[smb]  (smbprotocol)
 """
 
 from __future__ import annotations

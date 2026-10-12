@@ -4,7 +4,7 @@ Each chunk becomes a NIP-01 event published to the configured relay.
 Events are tagged with ["picard", manifest_id] for discovery.
 Signing is delegated to a _sign_event method for pluggable backends.
 
-Requires: pip install picard[nostr]
+Requires: pip install picard-store[nostr]
 """
 
 from __future__ import annotations

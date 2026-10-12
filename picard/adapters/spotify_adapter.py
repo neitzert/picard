@@ -10,7 +10,7 @@ or Developer Policy is outside the scope of this project and the
 responsibility of the user.  No endorsement by or affiliation with
 Spotify AB is implied.
 
-Requires: pip install picard[spotify]   (uses aiohttp)
+Requires: pip install picard-store[spotify]   (uses aiohttp)
 """
 
 from __future__ import annotations

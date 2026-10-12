@@ -3,7 +3,7 @@
 Each chunk becomes a paste:
     paste://{paste_key}
 
-Requires: pip install picard[pastebin]
+Requires: pip install picard-store[pastebin]
 """
 
 from __future__ import annotations

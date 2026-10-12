@@ -3,7 +3,7 @@
 Each chunk becomes a VEVENT on a CalDAV calendar, with the encoded
 chunk data in the DESCRIPTION field and metadata in the SUMMARY.
 
-Requires: pip install picard[caldav]  (httpx)
+Requires: pip install picard-store[caldav]  (httpx)
 """
 
 from __future__ import annotations

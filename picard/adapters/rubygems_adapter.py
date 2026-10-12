@@ -5,7 +5,7 @@ Each chunk becomes a gem whose summary/description holds the data.
 WARNING: Use only with a private gem server or your own rubygems.org
 account. Publishing stub gems to public rubygems.org violates their ToS.
 
-Requires: pip install picard[rubygems]  (aiohttp)
+Requires: pip install picard-store[rubygems]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes a block blob in an Azure Storage container at
 {manifest_id}/{block}_{chunk}.pchk.
 
-Requires: pip install picard[azure]  (aiohttp)
+Requires: pip install picard-store[azure]  (aiohttp)
 """
 
 from __future__ import annotations

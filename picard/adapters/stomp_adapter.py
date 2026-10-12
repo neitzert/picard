@@ -5,7 +5,7 @@ plugin), Apollo, etc.  Chunks are sent with a picard-key header
 for retrieval, and the adapter maintains a local receive cache
 for read-back.
 
-Requires: pip install picard[stomp]  (stomp.py)
+Requires: pip install picard-store[stomp]  (stomp.py)
 """
 
 from __future__ import annotations

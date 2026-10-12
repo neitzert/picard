@@ -7,7 +7,7 @@ Note: WireGuard traffic is encrypted and looks like ordinary UDP.
 Combined with a storage endpoint on the tunnel network, chunks are
 encrypted at both the tunnel layer and the PICARD layer.
 
-Requires: pip install picard[wireguard]  (aiohttp, wg CLI)
+Requires: pip install picard-store[wireguard]  (aiohttp, wg CLI)
 """
 
 from __future__ import annotations

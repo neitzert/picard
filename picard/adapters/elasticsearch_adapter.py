@@ -2,7 +2,7 @@
 
 Stores data in the search/observability infrastructure as indexed documents.
 
-Requires: pip install picard[elasticsearch]  (aiohttp)
+Requires: pip install picard-store[elasticsearch]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk becomes a snippet:
     glsnip://{snippet_id}
 
-Requires: pip install picard[gitlab]
+Requires: pip install picard-store[gitlab]
 """
 
 from __future__ import annotations

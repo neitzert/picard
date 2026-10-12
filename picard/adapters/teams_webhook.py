@@ -2,7 +2,7 @@
 
 Write via webhook URL (Adaptive Card). Read-back requires Microsoft Graph API token.
 
-Requires: pip install picard[teams-webhook]  (uses aiohttp)
+Requires: pip install picard-store[teams-webhook]  (uses aiohttp)
 """
 
 from __future__ import annotations

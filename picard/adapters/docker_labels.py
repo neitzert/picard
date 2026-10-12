@@ -3,7 +3,7 @@
 Stores data in Docker metadata. Labels are arbitrary key-value pairs
 attached to containers and images.
 
-Requires: pip install picard[docker]  (aiodocker)
+Requires: pip install picard-store[docker]  (aiodocker)
 """
 
 from __future__ import annotations

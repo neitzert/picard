@@ -4,7 +4,7 @@ Each chunk becomes a message in the configured channel. The message
 text is the PCHK-encoded chunk string. Messages are identified by
 their timestamp (ts), which is Slack's unique message ID.
 
-Requires: pip install picard[slack]  (uses httpx)
+Requires: pip install picard-store[slack]  (uses httpx)
 """
 
 from __future__ import annotations

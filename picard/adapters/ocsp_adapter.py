@@ -4,7 +4,7 @@ Embeds small chunks in the nonce extension field of OCSP requests.
 Ephemeral by nature — uses a local cache for read-back since OCSP
 is request/response with no persistent server-side storage of nonces.
 
-Requires: pip install picard[ocsp]  (aiohttp, cryptography)
+Requires: pip install picard-store[ocsp]  (aiohttp, cryptography)
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ Service is outside the scope of this project and the responsibility
 of the user.  No endorsement by or affiliation with SoundCloud Ltd.
 is implied.
 
-Requires: pip install picard[soundcloud]   (uses aiohttp)
+Requires: pip install picard-store[soundcloud]   (uses aiohttp)
 """
 
 from __future__ import annotations

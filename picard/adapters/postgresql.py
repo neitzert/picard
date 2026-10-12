@@ -2,7 +2,7 @@
 
 Each chunk becomes a row with its encoded data in a TEXT column.
 
-Requires: pip install picard[postgresql]  (asyncpg)
+Requires: pip install picard-store[postgresql]  (asyncpg)
 """
 
 from __future__ import annotations

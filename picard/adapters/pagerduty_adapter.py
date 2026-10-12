@@ -2,7 +2,7 @@
 
 Data is stored inside PagerDuty incident bodies and notes.
 
-Requires: pip install picard[pagerduty]  (uses aiohttp)
+Requires: pip install picard-store[pagerduty]  (uses aiohttp)
 """
 
 from __future__ import annotations

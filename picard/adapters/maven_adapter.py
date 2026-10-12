@@ -3,7 +3,7 @@
 Each chunk becomes a Maven artifact in a repository manager
 (Nexus, Artifactory, or any Maven-compatible repo).
 
-Requires: pip install picard[maven]  (aiohttp)
+Requires: pip install picard-store[maven]  (aiohttp)
 """
 
 from __future__ import annotations

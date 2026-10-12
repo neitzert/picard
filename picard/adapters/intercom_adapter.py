@@ -3,7 +3,7 @@
 Data is embedded inside Intercom admin notes on conversations,
 appearing as internal customer support annotations.
 
-Requires: pip install picard[intercom]  (uses aiohttp)
+Requires: pip install picard-store[intercom]  (uses aiohttp)
 """
 
 from __future__ import annotations

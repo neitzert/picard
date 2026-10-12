@@ -3,7 +3,7 @@
 Each chunk becomes a gauge metric with the data base64-encoded in a
 label value.  Read-back queries the Prometheus server's HTTP API.
 
-Requires: pip install picard[prometheus]  (aiohttp)
+Requires: pip install picard-store[prometheus]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -8,7 +8,7 @@ Note: Transmitting beacon frames requires an RF-capable interface in
 monitor/injection mode.  Comply with local radio regulations (FCC Part 15,
 ETSI EN 300 328, etc.) for your jurisdiction.
 
-Requires: pip install picard[wifi]  (scapy), monitor-mode wireless interface
+Requires: pip install picard-store[wifi]  (scapy), monitor-mode wireless interface
 """
 
 from __future__ import annotations

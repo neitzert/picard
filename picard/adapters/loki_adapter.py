@@ -2,7 +2,7 @@
 
 Data is pushed into Loki log streams as structured log entries.
 
-Requires: pip install picard[loki]  (uses aiohttp)
+Requires: pip install picard-store[loki]  (uses aiohttp)
 """
 
 from __future__ import annotations

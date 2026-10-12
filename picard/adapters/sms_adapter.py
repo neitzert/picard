@@ -3,7 +3,7 @@
 Each chunk becomes an SMS or concatenated SMS via Twilio.  Persistent
 in the carrier's message log; standard SMS billing applies.
 
-Requires: pip install picard[sms]  (aiohttp)
+Requires: pip install picard-store[sms]  (aiohttp)
 """
 
 from __future__ import annotations

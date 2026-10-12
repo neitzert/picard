@@ -8,7 +8,7 @@ control.  Use in a manner that violates Tumblr's Terms of Service is
 outside the scope of this project and the responsibility of the user.
 No endorsement by or affiliation with Automattic is implied.
 
-Requires: pip install picard[tumblr]   (uses aiohttp)
+Requires: pip install picard-store[tumblr]   (uses aiohttp)
 """
 
 from __future__ import annotations

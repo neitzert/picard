@@ -2,7 +2,7 @@
 
 Data arrives on the target device as a push notification.
 
-Requires: pip install picard[pushover]  (uses aiohttp)
+Requires: pip install picard-store[pushover]  (uses aiohttp)
 """
 
 from __future__ import annotations

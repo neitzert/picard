@@ -48,7 +48,7 @@ async def tor_session(config: TorProxyConfig | None = None):
         from httpx_socks import AsyncProxyTransport
     except ImportError:
         raise RuntimeError(
-            "Tor proxy requires 'httpx-socks'. Install with: pip install picard[tor]"
+            "Tor proxy requires 'httpx-socks'. Install with: pip install picard-store[tor]"
         )
 
     transport = AsyncProxyTransport.from_url(cfg.proxy_url)

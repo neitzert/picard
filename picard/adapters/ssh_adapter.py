@@ -3,7 +3,7 @@
 Each chunk becomes a file on the remote system:
     {remote_dir}/{manifest_id}/{block}_{chunk}.pchk
 
-Requires: pip install picard[ssh]  (asyncssh)
+Requires: pip install picard-store[ssh]  (asyncssh)
 """
 
 from __future__ import annotations

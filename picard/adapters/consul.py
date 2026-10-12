@@ -3,7 +3,7 @@
 Each chunk becomes a KV entry under a configurable prefix, keyed by
 manifest/block/chunk identity.
 
-Requires: pip install picard[consul]  (just httpx)
+Requires: pip install picard-store[consul]  (just httpx)
 """
 
 from __future__ import annotations

@@ -4,7 +4,7 @@ Chunks are written and read by calling an HTTP-triggered Cloud Function.
 The function acts as a stateless front-end to whatever storage the
 function author wires up (Firestore, GCS, /tmp).
 
-Requires: pip install picard[gcp]  (aiohttp)
+Requires: pip install picard-store[gcp]  (aiohttp)
 """
 
 from __future__ import annotations

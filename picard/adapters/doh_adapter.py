@@ -6,7 +6,7 @@ Reads via DoH GET with base64url-encoded DNS queries.
 Note: DoH traffic is encrypted HTTPS to well-known resolvers
 (Cloudflare, Google), providing standard DNS transport privacy.
 
-Requires: pip install picard[doh]  (aiohttp, dnspython)
+Requires: pip install picard-store[doh]  (aiohttp, dnspython)
 """
 
 from __future__ import annotations

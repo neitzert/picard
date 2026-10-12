@@ -2,7 +2,7 @@
 
 End-to-end encrypted. Carrier cannot see content.
 
-Requires: signal-cli REST API running, pip install picard[signal]  (uses aiohttp)
+Requires: signal-cli REST API running, pip install picard-store[signal]  (uses aiohttp)
 """
 
 from __future__ import annotations

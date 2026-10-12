@@ -3,7 +3,7 @@
 Each chunk becomes a TXT record under a configurable zone:
     c{chunk_index}.b{block_index}.{manifest_id}.{zone}
 
-Requires: pip install picard[dns]
+Requires: pip install picard-store[dns]
 """
 
 from __future__ import annotations

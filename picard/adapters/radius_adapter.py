@@ -6,7 +6,7 @@ VSA attributes on Access-Request packets and the response is used
 to confirm storage. The local dict is the real store, backed by
 RADIUS for authentication/authorization proof.
 
-Requires: pip install picard[radius]   (pyrad)
+Requires: pip install picard-store[radius]   (pyrad)
 """
 
 from __future__ import annotations

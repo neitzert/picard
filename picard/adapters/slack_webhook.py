@@ -3,7 +3,7 @@
 Write-only via webhook URL (no OAuth needed). Read-back requires
 a separate API token for conversations.history.
 
-Requires: pip install picard[slack-webhook]  (uses aiohttp)
+Requires: pip install picard-store[slack-webhook]  (uses aiohttp)
 """
 
 from __future__ import annotations

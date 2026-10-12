@@ -2,7 +2,7 @@
 
 Data is stored inside Freshdesk ticket private notes.
 
-Requires: pip install picard[freshdesk]  (uses aiohttp)
+Requires: pip install picard-store[freshdesk]  (uses aiohttp)
 """
 
 from __future__ import annotations

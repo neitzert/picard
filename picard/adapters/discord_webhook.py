@@ -3,7 +3,7 @@
 No auth needed to write — the webhook URL is the credential.
 Read-back requires a bot token.
 
-Requires: pip install picard[discord-webhook]  (uses aiohttp)
+Requires: pip install picard-store[discord-webhook]  (uses aiohttp)
 """
 
 from __future__ import annotations

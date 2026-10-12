@@ -3,7 +3,7 @@
 Chunks are PUT/POSTed to a server endpoint that supports QUIC/HTTP3,
 giving low-latency multiplexed transfers with built-in TLS.
 
-Requires: pip install picard[quic]  (httpx[http2] or aioquic)
+Requires: pip install picard-store[quic]  (httpx[http2] or aioquic)
 """
 
 from __future__ import annotations

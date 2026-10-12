@@ -4,7 +4,7 @@ Stores data in analytics infrastructure. ClickHouse is optimized for
 fast reads over huge datasets, making it a high-throughput backend for
 chunk storage.
 
-Requires: pip install picard[clickhouse]  (aiohttp)
+Requires: pip install picard-store[clickhouse]  (aiohttp)
 """
 
 from __future__ import annotations

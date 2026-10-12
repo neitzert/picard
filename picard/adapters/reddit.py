@@ -5,8 +5,8 @@ Posts are titled with a manifest-id tag so they can be filtered for
 recovery.
 
 Two modes:
-  - API mode (default): uses PRAW — pip install picard[reddit]
-  - Browser mode: uses Playwright — pip install picard[browser]
+  - API mode (default): uses PRAW — pip install picard-store[reddit]
+  - Browser mode: uses Playwright — pip install picard-store[browser]
 
 Notice: This adapter must only be used with Reddit accounts and
 subreddits you own and control.  Use in a manner that violates

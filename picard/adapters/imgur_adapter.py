@@ -8,7 +8,7 @@ and control.  Use in a manner that violates Imgur's Terms of Service
 is outside the scope of this project and the responsibility of the
 user.  No endorsement by or affiliation with Imgur, LLC is implied.
 
-Requires: pip install picard[imgur]
+Requires: pip install picard-store[imgur]
 """
 
 from __future__ import annotations

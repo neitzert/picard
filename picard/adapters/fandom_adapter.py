@@ -8,7 +8,7 @@ in a manner that violates Fandom's Terms of Service is outside the
 scope of this project and the responsibility of the user.  No
 endorsement by or affiliation with Fandom, Inc. is implied.
 
-Requires: pip install picard[wiki]  (aiohttp)
+Requires: pip install picard-store[wiki]  (aiohttp)
 """
 
 from __future__ import annotations

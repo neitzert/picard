@@ -6,7 +6,7 @@ WARNING: Wiki revision history is permanent and admin-visible. Deleted
 pages remain in the revision log; do not store sensitive data on wikis
 you do not fully control.
 
-Requires: pip install picard[wiki]  (aiohttp)
+Requires: pip install picard-store[wiki]  (aiohttp)
 """
 
 from __future__ import annotations

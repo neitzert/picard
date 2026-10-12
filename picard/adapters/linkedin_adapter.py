@@ -12,7 +12,7 @@ LinkedIn's Terms of Service, is outside the scope of this project
 and the responsibility of the user.  No endorsement by or
 affiliation with LinkedIn or Microsoft is implied.
 
-Requires: pip install picard[linkedin]   (uses aiohttp)
+Requires: pip install picard-store[linkedin]   (uses aiohttp)
 """
 
 from __future__ import annotations

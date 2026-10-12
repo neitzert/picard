@@ -4,7 +4,7 @@ Chunks are sent as structured-data in syslog messages.  Read-back
 requires a log aggregation API (Elasticsearch, Loki, Splunk) since
 syslog itself is write-only.
 
-Requires: pip install picard[syslog]  (aiohttp for read-back API)
+Requires: pip install picard-store[syslog]  (aiohttp for read-back API)
 """
 
 from __future__ import annotations

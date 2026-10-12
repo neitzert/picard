@@ -3,7 +3,7 @@
 Stores chunk data in the vault itself — the trusted secret store.
 Uses KV v2 secrets engine.
 
-Requires: pip install picard[vault]  (aiohttp)
+Requires: pip install picard-store[vault]  (aiohttp)
 """
 
 from __future__ import annotations

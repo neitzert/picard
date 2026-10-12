@@ -3,7 +3,7 @@
 Encodes chunk data into high-density 2D barcodes that look like ordinary
 shipping labels or ID cards.  A scanner or camera can read them back.
 
-Requires: pip install picard[barcode]  (pylibdmtx, pyzbar, Pillow)
+Requires: pip install picard-store[barcode]  (pylibdmtx, pyzbar, Pillow)
 """
 
 from __future__ import annotations

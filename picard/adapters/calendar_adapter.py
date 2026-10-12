@@ -2,7 +2,7 @@
 
 Creates calendar events with chunk data in the description field.
 
-Requires: pip install picard[gcal]  (google-api-python-client, google-auth)
+Requires: pip install picard-store[gcal]  (google-api-python-client, google-auth)
 """
 
 from __future__ import annotations

@@ -10,7 +10,7 @@ is outside the scope of this project and the responsibility of the
 user.  No endorsement by or affiliation with Twitch Interactive, Inc.
 or Amazon is implied.
 
-Requires: pip install picard[twitch]   (uses aiohttp)
+Requires: pip install picard-store[twitch]   (uses aiohttp)
 """
 
 from __future__ import annotations

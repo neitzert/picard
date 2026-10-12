@@ -3,7 +3,7 @@
 MinIO is common in on-prem and edge deployments. This adapter uses the
 minio Python SDK for native S3-compatible access.
 
-Requires: pip install picard[minio]   (minio)
+Requires: pip install picard-store[minio]   (minio)
 """
 
 from __future__ import annotations

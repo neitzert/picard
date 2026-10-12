@@ -5,7 +5,7 @@ Retrieval uses XEP-0313 (MAM) to query the message archive.
 Deletion is best-effort via a control message since XMPP lacks native
 message deletion.
 
-Requires: pip install picard[xmpp]
+Requires: pip install picard-store[xmpp]
 """
 
 from __future__ import annotations

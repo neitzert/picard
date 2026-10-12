@@ -3,7 +3,7 @@
 Stores data in the cluster's variable store alongside application
 configuration.
 
-Requires: pip install picard[nomad]  (aiohttp)
+Requires: pip install picard-store[nomad]  (aiohttp)
 """
 
 from __future__ import annotations

@@ -3,7 +3,7 @@
 Each chunk is encoded into a QR code and saved as a PNG file in a
 configured directory.  Retrieval decodes the QR image back to text.
 
-Requires: pip install picard[qr]   (qrcode, Pillow or pyzbar for decode)
+Requires: pip install picard-store[qr]   (qrcode, Pillow or pyzbar for decode)
 """
 
 from __future__ import annotations
