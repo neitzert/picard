@@ -70,6 +70,16 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 
 Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
 
+## Web Dashboard
+
+`picard web` opens a browser dashboard on [http://localhost:8471](http://localhost:8471).
+
+![PICARD dashboard overview](docs/img/ui-overview.png)
+*Storage surface by category, adapter health, and encryption details at a glance.*
+
+![PICARD adapter registry](docs/img/ui-adapters.png)
+*259 adapters browsable by category, with required parameters and one-click add.*
+
 ## Quickstart
 
 ```bash
