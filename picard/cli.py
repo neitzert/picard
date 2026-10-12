@@ -37,6 +37,45 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit()
 
 
+_TERMS_PATH = Path.home() / ".picard" / "terms_accepted"
+
+_TERMS_NOTICE = """\
+
+PICARD requires acceptance of its Terms of Use before first run.
+
+Key points:
+  1. Use only on systems, accounts, and infrastructure you own or have
+     explicit written authorization to access.
+  2. Using PICARD to break any law or platform Terms of Service voids
+     acceptable use; you are entirely on your own.
+  3. You indemnify the authors for all consequences of your use.
+
+Full terms: TERMS.md
+            https://github.com/neitzert/picard/blob/main/TERMS.md
+
+To accept and continue, add --accept-terms to your command:
+  picard --accept-terms <command>
+
+To accept for one invocation (CI / scripted use):
+  PICARD_ACCEPT_TERMS=1 picard <command>
+"""
+
+
+def _terms_accepted() -> bool:
+    if os.environ.get("PICARD_ACCEPT_TERMS"):
+        return True
+    return _TERMS_PATH.exists()
+
+
+def _record_acceptance() -> None:
+    from datetime import datetime, timezone
+    _TERMS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _TERMS_PATH.write_text(
+        datetime.now(timezone.utc).isoformat() + "\n",
+        encoding="utf-8",
+    )
+
+
 app = typer.Typer(
     name="picard",
     help="Scatter encrypted data across protocol gaps.",
@@ -50,8 +89,17 @@ def _main(
         False, "--version", "-V", callback=_version_callback,
         is_eager=True, help="Show version and exit.",
     ),
+    accept_terms: bool = typer.Option(
+        False, "--accept-terms",
+        help="Accept the terms of use (see TERMS.md). Stored permanently on this machine.",
+    ),
 ) -> None:
-    pass
+    if not _terms_accepted():
+        if accept_terms:
+            _record_acceptance()
+        else:
+            err_console.print(_TERMS_NOTICE)
+            raise typer.Exit(2)
 
 console = Console()
 err_console = Console(stderr=True)
@@ -574,7 +622,7 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
             b"This data was encrypted with AES-256-GCM, chunked,\n"
             b"and scattered across every protocol adapter PICARD knows.\n\n"
             b"If you are reading this, the reassembly worked.\n"
-            b"Your firewall didn't help.\n"
+            b"Protocol-agnostic. Experimental. Research only.\n"
         )
         name = "picard-demo.txt"
 
@@ -637,14 +685,14 @@ async def _demo_async(file: Path | None, adapter_count: int) -> None:
     console.print(f"\n{'='*70}")
     console.print(f"  [bold]STORAGE SURFACE REPORT[/bold]")
     console.print(f"{'='*70}")
-    console.print(f"\n  To intercept this data, a defender would need to monitor:\n")
+    console.print(f"\n  Protocol endpoints used for this file:\n")
     for i, proto in enumerate(protocols_used, 1):
         typer.echo(f"  {i:>4}. {proto}")
 
     console.print(f"\n  Total protocols: {len(protocols_used)}")
     console.print(f"  Total chunks:    {manifest.total_chunks}")
-    console.print(f"  Missing ANY one chunk makes the data unrecoverable.")
-    console.print(f"\n  [bold]Platform security is not protocol security.[/bold]")
+    console.print(f"  All endpoints required for reconstruction.")
+    console.print(f"\n  [bold]Protocol fields as storage substrate.[/bold]")
     console.print(f"{'='*70}\n")
 
 
@@ -672,8 +720,8 @@ def scatter_report(
         for name, count in sorted(dist.items()):
             typer.echo(f"    {name:30s}  {count} chunks")
 
-        typer.echo(f"\n  A defender must monitor all {len(dist)} protocols simultaneously.")
-        typer.echo(f"  Missing any single chunk renders the data unrecoverable.\n")
+        typer.echo(f"\n  Distributed across {len(dist)} protocols; all required for reconstruction.")
+        typer.echo(f"  Missing any single chunk renders the file unrecoverable.\n")
 
 
 @app.command()

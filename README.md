@@ -232,6 +232,8 @@ Users are solely responsible for ensuring their use complies with applicable law
 
 Each adapter's source includes a platform-specific notice. Read it before you use the adapter.
 
+The full terms are in [TERMS.md](TERMS.md). On first run, `picard` will prompt you to accept them. Pass `--accept-terms` to accept permanently, or set `PICARD_ACCEPT_TERMS=1` for scripted use.
+
 Think before you act. By using PICARD you accept full responsibility for your actions and their consequences. You agree to indemnify, defend, and hold harmless the authors, contributors, and maintainers of PICARD from and against any and all claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to your use or misuse of this software.
 
 ### A note on ethics
