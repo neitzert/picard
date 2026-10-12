@@ -218,7 +218,7 @@ PICARD is not magic, perhaps it is poetic. It is certainly not efficient, will n
 - If too many chunks go missing, your data is gone. No global index, no versioning by default.
 - Works best for small, critical datasets (a few MB to low GB). Larger files increase the risk of chunk loss and make already-slow retrieval worse.
 - As protocols evolve or get patched, adapters may need updates, much like birds adapting to new environments.
-- CISOs and sysadmins will not love that PICARD inhabits protocol assumptions that weren't designed with secondary use of metadata fields in mind.
+- Protocol-based storage adds diagnostic complexity: chunks are invisible to standard monitoring tools unless you know where to look.
 
 If you need guarantees, if uptime matters more than resilience, or if you expect everything to behave without some tinkering, this probably isn't for you.
 
