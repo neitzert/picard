@@ -46,6 +46,7 @@ from picard.adapters.cpu_cache_adapter import (
     _calibrate_threshold,
     _open_shared_mmap,
     BYTES_PER_BIT,
+    CACHE_LINE_BYTES,
     _X86,
 )
 import ctypes
@@ -73,7 +74,7 @@ def test_jit():
     if not _X86:
         return fail("_X86 is False -- adapter will use fallback, not JIT")
     try:
-        clflush, rdtsc, buf = _get_primitives()
+        clflush, rdtsc, just_probe, preload_probe, flush_probe, buf = _get_primitives()
     except Exception as e:
         return fail(f"_get_primitives() raised: {e}")
 
@@ -102,51 +103,55 @@ def test_jit():
 # =============================================================================
 
 def test_calibration(shared_path: str):
-    print(f"\n{BOLD}2. L3 hit vs DRAM miss threshold calibration{RESET}")
-    n_bits = 256
-    region = n_bits * BYTES_PER_BIT
+    """Calibrate using JIT probes -- no Python overhead in the timing window.
+
+    preload_probe: warms the line then times the second (L1) access in JIT.
+    flush_probe:   evicts the line then times the cold (DRAM) access in JIT.
+    Stride matches BYTES_PER_BIT so row-buffer behavior mirrors the real channel.
+    """
+    import random
+    print(f"\n{BOLD}2. L1 hit vs DRAM miss calibration (JIT probes){RESET}")
+    n_lines = 64
+    region = n_lines * BYTES_PER_BIT
     base, buf = _open_shared_mmap(shared_path, region)
 
-    clflush, rdtsc, _ = _get_primitives()
+    clflush, rdtsc, just_probe, preload_probe, flush_probe, _ = _get_primitives()
 
-    # Measure L3 hits: load line, time it while still in cache
+    indices = list(range(n_lines))
+    random.shuffle(indices)
+    half = n_lines // 2
+
     hit_samples = []
-    for i in range(n_bits):
+    for i in indices[:half]:
         addr = base + i * BYTES_PER_BIT
-        ctypes.c_uint8.from_address(addr)          # bring into L3
-        t0 = rdtsc()
-        ctypes.c_uint8.from_address(addr)          # should hit L3
-        t1 = rdtsc()
-        hit_samples.append(t1 - t0)
-        clflush(ctypes.c_void_p(addr))
+        hit_samples.append(preload_probe(ctypes.c_void_p(addr)))
 
-    # Measure DRAM misses: flush line, time cold access
     miss_samples = []
-    for i in range(n_bits):
+    random.shuffle(indices)
+    for i in indices[:half]:
         addr = base + i * BYTES_PER_BIT
-        clflush(ctypes.c_void_p(addr))
-        t0 = rdtsc()
-        ctypes.c_uint8.from_address(addr)          # cold DRAM access
-        t1 = rdtsc()
-        miss_samples.append(t1 - t0)
-        clflush(ctypes.c_void_p(addr))
+        miss_samples.append(flush_probe(ctypes.c_void_p(addr)))
 
-    avg_hit  = sum(hit_samples)  // len(hit_samples)
-    avg_miss = sum(miss_samples) // len(miss_samples)
+    # Trim outliers (top/bottom 10%)
+    trim = max(1, len(hit_samples) // 10)
+    hit_sorted  = sorted(hit_samples)
+    miss_sorted = sorted(miss_samples)
+    avg_hit  = sum(hit_sorted [trim:-trim]) // (len(hit_sorted)  - 2 * trim)
+    avg_miss = sum(miss_sorted[trim:-trim]) // (len(miss_sorted) - 2 * trim)
     threshold = (avg_hit + avg_miss) // 2
     separation = avg_miss - avg_hit
 
-    info(f"L3 hit avg:  {avg_hit:5} cycles")
-    info(f"DRAM miss avg: {avg_miss:5} cycles")
-    info(f"Separation:  {separation:5} cycles")
-    info(f"Threshold:   {threshold:5} cycles")
+    info(f"L1 hit avg:    {avg_hit:5} cycles  (min {hit_sorted[0]}, max {hit_sorted[-1]})")
+    info(f"DRAM miss avg: {avg_miss:5} cycles  (min {miss_sorted[0]}, max {miss_sorted[-1]})")
+    info(f"Separation:    {separation:5} cycles")
+    info(f"Threshold:     {threshold:5} cycles")
 
     buf.close()
 
     if separation < 30:
         return fail(
-            f"Hit/miss separation only {separation} cycles -- too noisy for reliable encoding. "
-            "Try on idle hardware or a bare-metal machine (not inside a hypervisor)."
+            f"Hit/miss separation only {separation} cycles -- too noisy for reliable "
+            "encoding. Try on idle bare-metal hardware or check CPUID for CLFLUSH support."
         ), threshold
 
     ok(f"Clear hit/miss separation: {separation} cycles")
@@ -188,65 +193,132 @@ async def test_single_process(shared_path: str, threshold: int):
 # =============================================================================
 
 _READER_SCRIPT = """\
-import sys, json, asyncio, os
+import sys, json, asyncio, os, ctypes
 sys.path.insert(0, sys.argv[1])
-from picard.adapters.cpu_cache_adapter import CpuCacheAdapter
+from picard.adapters.cpu_cache_adapter import (
+    CpuCacheAdapter, _get_primitives, BYTES_PER_BIT,
+)
 
 async def main():
-    loc_json = sys.argv[2]
-    threshold = int(sys.argv[3])
-    mmap_path = sys.argv[4]
+    project_root    = sys.argv[1]
+    mmap_path       = sys.argv[2]
+    threshold       = int(sys.argv[3])
+    max_chunk_bytes = int(sys.argv[4])
+    import random
+
+    # Open the adapter and force _ensure_mmap so self._base is set and the
+    # mmap file handle stays open for the full duration.
+    a = CpuCacheAdapter(mmap_path=mmap_path, threshold=threshold,
+                        max_chunk_bytes=max_chunk_bytes)
+    base, buf = a._ensure_mmap()
+    region_size = a._region_size
+    total_slots = region_size // BYTES_PER_BIT
+
+    # TLB + L3 pre-warm: load every slot page with just_probe BEFORE the writer
+    # encodes any bits.  just_probe executes a real CPU load (mov rax,[rdi]) so
+    # it fills the TLB entry for each page and brings the line into L3 cache.
+    # max_chunk_bytes is chosen so that total_slots < STLB capacity (2048
+    # entries on Alder Lake), keeping all TLB entries live until the probe.
+    # After this sweep, the writer's flush passes (passes 2-5) will evict the
+    # 0-bit pages to DRAM.  The 1-bit pages remain in L3 (the writer's preload
+    # pass re-loads them).  The reader's TLB entries survive undisturbed.
+    _, _, just_probe, *_ = _get_primitives()
+    slot_order = list(range(total_slots))
+    random.shuffle(slot_order)
+    for s in slot_order:
+        just_probe(ctypes.c_void_p(base + s * BYTES_PER_BIT))
+
+    # Signal ready: writer may now encode bits into cache state.
+    sys.stdout.write("READY\\n")
+    sys.stdout.flush()
+
+    # Receive the chunk ref from the writer via stdin.
+    loc_json = sys.stdin.readline().strip()
     ref_dict = json.loads(loc_json)
 
     from picard.adapters.base import StoredChunkRef
     ref = StoredChunkRef(adapter_name="cpu-cache", location=json.dumps(ref_dict))
 
-    a = CpuCacheAdapter(mmap_path=mmap_path, threshold=threshold, max_chunk_bytes=64)
     result = await a.read_chunk(ref)
     print(result)
+    sys.stdout.flush()
 
 asyncio.run(main())
 """
 
 async def test_cross_process(shared_path: str, threshold: int):
     print(f"\n{BOLD}4. Cross-process covert channel{RESET}")
-    info("Writer process encodes 'throwhammer' into L3 cache residency ...")
+    info("Starting reader subprocess for TLB + L3 pre-warm (reader-first protocol) ...")
 
-    writer = CpuCacheAdapter(
-        mmap_path=shared_path,
-        threshold=threshold,
-        max_chunk_bytes=64,
-    )
-    secret = "throwhammer"
-    ref = await writer.write_chunk(secret)
-
-    # Spawn a completely separate Python process as the reader
     import tempfile as tf
+    import json as _json
+
+    # 16 bytes keeps total_slots = 16*8*5 = 640, safely below STLB capacity
+    # (2048 entries on Alder Lake / Ice Lake), so all TLB entries survive the
+    # warmup sweep intact when the reader begins probing.
+    max_chunk_bytes = 16
+    secret = "throwhammer"
+
     script_file = tf.NamedTemporaryFile(mode="w", suffix=".py", delete=False)
     script_file.write(_READER_SCRIPT)
     script_file.close()
 
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    ref_payload = json.loads(ref.location)
 
-    import json as _json
-    proc = subprocess.run(
-        [sys.executable, script_file.name,
-         project_root,
-         _json.dumps(ref_payload),
-         str(threshold),
-         shared_path],
-        capture_output=True, text=True, timeout=10,
+    # Start the reader first.  It opens the mmap, pre-warms TLB + L3 for all
+    # slot pages, then signals READY.  Only after that does the writer encode
+    # bits into cache state, so the reader's TLB entries pre-exist the write.
+    #
+    # Pin the reader to CPU 1 so the OS scheduler cannot migrate it to a
+    # different core between the TLB-warmup sweep and the probe loop.  TLBs
+    # are per-core; migration resets them to empty.
+    reader_cmd = [sys.executable, script_file.name,
+                  project_root, shared_path, str(threshold), str(max_chunk_bytes)]
+    import shutil as _shutil
+    if _shutil.which("taskset"):
+        reader_cmd = ["taskset", "-c", "1"] + reader_cmd
+    proc = subprocess.Popen(
+        reader_cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    os.unlink(script_file.name)
+
+    # Block until the reader's warmup sweep is complete.
+    ready_line = proc.stdout.readline()
+    if ready_line.strip() != "READY":
+        proc.kill()
+        os.unlink(script_file.name)
+        fail(f"Reader did not signal READY (got: {ready_line.strip()!r})")
+        return False
+
+    info("Reader TLB warm -- writer now encodes 'throwhammer' into L3 ...")
+
+    writer = CpuCacheAdapter(
+        mmap_path=shared_path,
+        threshold=threshold,
+        max_chunk_bytes=max_chunk_bytes,
+    )
+    ref = await writer.write_chunk(secret)
     await writer.close()
 
-    got = proc.stdout.strip()
+    # Send the chunk ref to the reader.
+    ref_payload = _json.loads(ref.location)
+    proc.stdin.write(_json.dumps(ref_payload) + "\n")
+    proc.stdin.flush()
+    proc.stdin.close()
+
+    got = proc.stdout.readline().strip()
+    stderr = proc.stderr.read()
+    proc.wait(timeout=10)
+    os.unlink(script_file.name)
+
     if got == secret:
         ok(f"Reader subprocess decoded '{got}' from cache residency alone")
         return True
     else:
-        fail(f"Expected '{secret}', got '{got}' (stderr: {proc.stderr.strip()[:200]})")
+        fail(f"Expected '{secret}', got '{got}' (stderr: {stderr.strip()[:200]})")
         return False
 
 

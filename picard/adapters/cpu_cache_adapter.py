@@ -72,29 +72,40 @@ _X86 = _LINUX_X86 or _DARWIN_X86
 
 # Cache line size: 64 bytes on all modern x86-64 processors.
 CACHE_LINE_BYTES: int = 64
-# Timing threshold in CPU cycles: below = cache hit (L3), above = DRAM miss.
+# Timing threshold in CPU cycles: below = cache hit (L1/L3), above = DRAM miss.
 # Calibrate with _calibrate_threshold() for your hardware.
-# 100-120 cycles: typical L3 hit on modern Intel/AMD.
-# 180-250 cycles: typical DRAM miss.
+# 20-50 cycles: typical L1/L3 hit on modern Intel/AMD.
+# 180-280 cycles: typical DRAM miss.
 DEFAULT_THRESHOLD: int = 150
-# Bytes of shared memory per bit (one cache line per bit).
-BYTES_PER_BIT: int = CACHE_LINE_BYTES
+# Bytes of shared memory allocated per bit.
+# Each bit occupies a 128-byte (two-cache-line) slot, aligned to a 128-byte
+# boundary. This is intentional: Intel's adjacent cache line prefetcher fires
+# on L2 misses and unconditionally fetches the OTHER 64-byte line in the same
+# 128-byte aligned pair. With 64-byte-per-bit layout, a miss on bit N would
+# also warm bit N+1 (breaking 0-bit detection). With 128-byte slots, the
+# prefetched "adjacent" line is the second cache line of the SAME slot --
+# harmless, since we only probe the first line of each slot.
+BYTES_PER_BIT: int = 4096  # one OS page per bit -- isolates each bit in its own 4K SMS region
+# Repetitions per logical bit for majority-vote noise reduction.
+# Each logical bit is encoded at N_REPS independent physical slots; on read the
+# majority of those N_REPS probes decides the bit value.  BER with N_REPS=5 and
+# raw BER ≈ 0.7% drops to ~3.5e-6 per bit, giving >99.9% probability of a
+# correct 272-bit decode.  Region size scales by N_REPS (5×).
+N_REPS: int = 5
 
 
 # ---------------------------------------------------------------------------
-# x86-64 JIT primitives: CLFLUSH and RDTSC
+# x86-64 JIT primitives
 # ---------------------------------------------------------------------------
 
-# clflushopt [rdi]: flush + evict cache line at address in rdi
-# mfence: serialise
-# ret
+# clflushopt [rdi]: flush + evict cache line at address in rdi; mfence; ret
 _CLFLUSH_CODE = bytes([
     0x66, 0x0f, 0xae, 0x3f,   # clflushopt [rdi]
     0x0f, 0xae, 0xf0,          # mfence
     0xc3,
 ])
 
-# rdtsc; shl rdx,32; or rax,rdx; ret  -- returns TSC in rax
+# rdtsc -> edx:eax; combine into rax; ret
 _RDTSC_CODE = bytes([
     0x0f, 0x31,
     0x48, 0xc1, 0xe2, 0x20,
@@ -102,12 +113,75 @@ _RDTSC_CODE = bytes([
     0xc3,
 ])
 
+# just_probe(addr) -> cycles: time a single load with no prior flush.
+# Used for reading bits (hot line = bit 1, cold line = bit 0).
+# All timing happens in machine code; no Python overhead in the critical path.
+_JUST_PROBE_CODE = bytes([
+    0x0f, 0xae, 0xf0,          # mfence
+    0x0f, 0x31,                 # rdtsc -> t0 in edx:eax
+    0x48, 0xc1, 0xe2, 0x20,    # shl rdx, 32
+    0x48, 0x09, 0xd0,           # or rax, rdx   -> t0 in rax
+    0x49, 0x89, 0xc0,           # mov r8, rax   (save t0)
+    0x48, 0x8b, 0x07,           # mov rax, [rdi] (probe load)
+    0x0f, 0xae, 0xe8,           # lfence
+    0x0f, 0x31,                 # rdtsc -> t1 in edx:eax
+    0x48, 0xc1, 0xe2, 0x20,    # shl rdx, 32
+    0x48, 0x09, 0xd0,           # or rax, rdx   -> t1 in rax
+    0x4c, 0x29, 0xc0,           # sub rax, r8   (delta = t1 - t0)
+    0xc3,
+])
+
+# preload_probe(addr) -> cycles: warm the line, then time the L1 hit.
+# Used for calibrating the hot (cache-hit) latency baseline.
+_PRELOAD_PROBE_CODE = bytes([
+    0x48, 0x8b, 0x07,           # mov rax, [rdi]  (preload into L1)
+    0x0f, 0xae, 0xf0,           # mfence
+    0x0f, 0x31,                  # rdtsc -> t0
+    0x48, 0xc1, 0xe2, 0x20,     # shl rdx, 32
+    0x48, 0x09, 0xd0,            # or rax, rdx
+    0x49, 0x89, 0xc0,            # mov r8, rax  (save t0)
+    0x48, 0x8b, 0x07,            # mov rax, [rdi]  (timed L1 hit)
+    0x0f, 0xae, 0xe8,            # lfence
+    0x0f, 0x31,                  # rdtsc -> t1
+    0x48, 0xc1, 0xe2, 0x20,     # shl rdx, 32
+    0x48, 0x09, 0xd0,            # or rax, rdx
+    0x4c, 0x29, 0xc0,            # sub rax, r8
+    0xc3,
+])
+
+# flush_probe(addr) -> cycles: evict the line, then time the cold DRAM miss.
+# Used for calibrating the cold (DRAM-miss) latency baseline.
+# Uses plain CLFLUSH (not CLFLUSHOPT) so it works on all x86-64 CPUs.
+_FLUSH_PROBE_CODE = bytes([
+    0x0f, 0xae, 0x3f,           # clflush [rdi]
+    0x0f, 0xae, 0xf0,           # mfence
+    0x0f, 0x31,                  # rdtsc -> t0
+    0x48, 0xc1, 0xe2, 0x20,     # shl rdx, 32
+    0x48, 0x09, 0xd0,            # or rax, rdx
+    0x49, 0x89, 0xc0,            # mov r8, rax  (save t0)
+    0x48, 0x8b, 0x07,            # mov rax, [rdi]  (cold DRAM load)
+    0x0f, 0xae, 0xe8,            # lfence
+    0x0f, 0x31,                  # rdtsc -> t1
+    0x48, 0xc1, 0xe2, 0x20,     # shl rdx, 32
+    0x48, 0x09, 0xd0,            # or rax, rdx
+    0x4c, 0x29, 0xc0,            # sub rax, r8
+    0xc3,
+])
+
 _primitives_cache: dict = {}
 
 
 def _get_primitives():
-    """Return (clflush_fn, rdtsc_fn, _buf) with JIT-compiled x86 code.
-    Cached globally so we only allocate the RWX page once.
+    """Return (clflush, rdtsc, just_probe, preload_probe, flush_probe, buf).
+
+    All five are JIT-compiled x86-64 machine code functions backed by a single
+    shared RWX mmap page. Cached globally so the page is allocated once.
+
+    - clflush(addr):          evict a cache line
+    - rdtsc() -> int:         read the TSC
+    - just_probe(addr) -> int:        time a single load (hot or cold depending on state)
+    - preload_probe(addr) -> int:     preload then time the second load (always L1 hit)
+    - flush_probe(addr) -> int:       flush then time the cold load (always DRAM miss)
     """
     if "primitives" in _primitives_cache:
         return _primitives_cache["primitives"]
@@ -115,16 +189,36 @@ def _get_primitives():
     if not _X86:
         raise RuntimeError("CpuCacheAdapter requires x86-64 (Linux or macOS)")
 
-    code = _CLFLUSH_CODE + _RDTSC_CODE
+    _P = ctypes.c_void_p
+    _U = ctypes.c_uint64
+
+    code = (
+        _CLFLUSH_CODE
+        + _RDTSC_CODE
+        + _JUST_PROBE_CODE
+        + _PRELOAD_PROBE_CODE
+        + _FLUSH_PROBE_CODE
+    )
     buf = _mmap.mmap(
         -1, max(len(code), 4096),
         prot=_mmap.PROT_READ | _mmap.PROT_WRITE | _mmap.PROT_EXEC,
     )
     buf.write(code)
-    base = ctypes.addressof(ctypes.c_char.from_buffer(buf))
-    clflush = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(base)
-    rdtsc = ctypes.CFUNCTYPE(ctypes.c_uint64)(base + len(_CLFLUSH_CODE))
-    result = (clflush, rdtsc, buf)
+    b = ctypes.addressof(ctypes.c_char.from_buffer(buf))
+
+    off0 = 0
+    off1 = len(_CLFLUSH_CODE)
+    off2 = off1 + len(_RDTSC_CODE)
+    off3 = off2 + len(_JUST_PROBE_CODE)
+    off4 = off3 + len(_PRELOAD_PROBE_CODE)
+
+    clflush      = ctypes.CFUNCTYPE(None, _P)(b + off0)
+    rdtsc        = ctypes.CFUNCTYPE(_U)      (b + off1)
+    just_probe   = ctypes.CFUNCTYPE(_U, _P)  (b + off2)
+    preload_probe = ctypes.CFUNCTYPE(_U, _P) (b + off3)
+    flush_probe  = ctypes.CFUNCTYPE(_U, _P)  (b + off4)
+
+    result = (clflush, rdtsc, just_probe, preload_probe, flush_probe, buf)
     _primitives_cache["primitives"] = result
     return result
 
@@ -157,56 +251,52 @@ def _open_shared_mmap(path: str, size: int) -> tuple[int, _mmap.mmap]:
 # Timing oracle: measure cache line residency
 # ---------------------------------------------------------------------------
 
-def _probe_cache_line(addr: int, rdtsc_fn, clflush_fn) -> tuple[bool, int]:
+def _probe_cache_line(addr: int, just_probe_fn, clflush_fn) -> tuple[bool, int]:
     """Time access to a cache line and return (is_cached, cycles).
 
-    Issues a volatile load followed by CLFLUSH to restore the line to
-    evicted state for the next probe. The CLFLUSH is needed so repeated
-    reads do not stay in cache and produce false positives.
+    The timing is done entirely in JIT machine code (just_probe_fn) so that
+    Python interpreter overhead does not obscure the sub-100-cycle L3 signal.
+    CLFLUSH after the probe restores the cold state for the next probe.
     """
-    t0 = rdtsc_fn()
-    ctypes.c_uint8.from_address(addr)    # the probe load
-    t1 = rdtsc_fn()
-    clflush_fn(ctypes.c_void_p(addr))    # evict so next probe is fresh
-    cycles = t1 - t0
+    cycles = just_probe_fn(ctypes.c_void_p(addr))
+    clflush_fn(ctypes.c_void_p(addr))
     return cycles < DEFAULT_THRESHOLD, cycles
 
 
-def _calibrate_threshold(shared_base: int, n_lines: int = 128) -> int:
+def _calibrate_threshold(shared_base: int, n_lines: int = 64) -> int:
     """Estimate the cycle threshold between L3 hit and DRAM miss.
 
-    Loads cache lines, measures hit latency, flushes, measures miss latency,
-    returns the midpoint as the threshold.
+    Uses JIT preload_probe and flush_probe with no Python in the timing window.
+    Calibration samples are spaced BYTES_PER_BIT apart (same as real channel)
+    so the DRAM row-buffer behavior matches operational conditions -- if real
+    bit accesses land on the same DRAM row (row buffer hits, fast), calibration
+    sees the same row-buffer hit latency.  Access order is randomised.
     """
+    import random
+
     if not _X86:
         return DEFAULT_THRESHOLD
 
-    clflush, rdtsc, _ = _get_primitives()
+    clflush, rdtsc, just_probe, preload_probe, flush_probe, _ = _get_primitives()
 
-    # Measure L3 hit latency: load then time immediately
+    indices = list(range(n_lines))
+    random.shuffle(indices)
+    half = n_lines // 2
+
     hit_cycles = []
-    for i in range(min(n_lines, 64)):
-        addr = shared_base + i * CACHE_LINE_BYTES
-        ctypes.c_uint8.from_address(addr)   # bring into cache
-        t0 = rdtsc()
-        ctypes.c_uint8.from_address(addr)   # this hits L3 (or L1/L2)
-        t1 = rdtsc()
-        hit_cycles.append(t1 - t0)
-        clflush(ctypes.c_void_p(addr))
+    for i in indices[:half]:
+        addr = shared_base + i * BYTES_PER_BIT
+        hit_cycles.append(preload_probe(ctypes.c_void_p(addr)))
 
-    # Measure DRAM miss latency: flush then time
     miss_cycles = []
-    for i in range(min(n_lines, 64)):
-        addr = shared_base + i * CACHE_LINE_BYTES
-        clflush(ctypes.c_void_p(addr))
-        t0 = rdtsc()
-        ctypes.c_uint8.from_address(addr)   # cold DRAM access
-        t1 = rdtsc()
-        miss_cycles.append(t1 - t0)
-        clflush(ctypes.c_void_p(addr))
+    random.shuffle(indices)
+    for i in indices[:half]:
+        addr = shared_base + i * BYTES_PER_BIT
+        miss_cycles.append(flush_probe(ctypes.c_void_p(addr)))
 
-    avg_hit = sum(hit_cycles) // len(hit_cycles)
-    avg_miss = sum(miss_cycles) // len(miss_cycles)
+    trim = max(1, len(hit_cycles) // 10)
+    avg_hit  = sum(sorted(hit_cycles) [trim:-trim]) // (len(hit_cycles)  - 2 * trim)
+    avg_miss = sum(sorted(miss_cycles)[trim:-trim]) // (len(miss_cycles) - 2 * trim)
     return (avg_hit + avg_miss) // 2
 
 
@@ -247,7 +337,7 @@ class CpuCacheAdapter(Adapter):
         self._max = max_chunk_bytes
         self._threshold = threshold
         bits_needed = max_chunk_bytes * 8
-        self._region_size = region_size or (bits_needed * BYTES_PER_BIT)
+        self._region_size = region_size or (bits_needed * N_REPS * BYTES_PER_BIT)
         self._base: int | None = None
         self._buf: _mmap.mmap | None = None
 
@@ -282,33 +372,31 @@ class CpuCacheAdapter(Adapter):
     # ------------------------------------------------------------------
 
     def _write_bit(self, bit_index: int, value: int, base: int) -> None:
-        """Encode one bit by loading or flushing a cache line."""
+        """Encode one bit by loading (1) or flushing (0) a cache line."""
         addr = base + bit_index * BYTES_PER_BIT
         if _X86:
-            clflush, rdtsc, _ = _get_primitives()
+            clflush, rdtsc, just_probe, preload_probe, flush_probe, _ = _get_primitives()
             if value:
-                # Bit = 1: bring cache line into L3
-                ctypes.c_uint8.from_address(addr)
+                preload_probe(ctypes.c_void_p(addr))    # Bit = 1: warm the line (actual CPU load)
             else:
-                # Bit = 0: evict cache line from all caches
-                clflush(ctypes.c_void_p(addr))
+                clflush(ctypes.c_void_p(addr))          # Bit = 0: evict the line
         else:
-            # Non-x86 fallback: write a sentinel byte (less stealthy but functional)
             ctypes.c_uint8.from_address(addr).value = 0xFF if value else 0x00
 
     def _read_bit(self, bit_index: int, base: int) -> int:
-        """Decode one bit by timing access to its cache line."""
+        """Decode one bit by timing access to its cache line.
+
+        just_probe does the entire RDTSC-load-RDTSC sequence in JIT machine
+        code so Python overhead does not swamp the ~40-cycle L3 signal.
+        """
         addr = base + bit_index * BYTES_PER_BIT
         if _X86:
-            clflush, rdtsc, _ = _get_primitives()
+            clflush, rdtsc, just_probe, preload_probe, flush_probe, _ = _get_primitives()
             threshold = self._threshold or DEFAULT_THRESHOLD
-            t0 = rdtsc()
-            ctypes.c_uint8.from_address(addr)
-            t1 = rdtsc()
-            clflush(ctypes.c_void_p(addr))
-            return 1 if (t1 - t0) < threshold else 0
+            cycles = just_probe(ctypes.c_void_p(addr))
+            clflush(ctypes.c_void_p(addr))              # restore cold state
+            return 1 if cycles < threshold else 0
         else:
-            # Non-x86 fallback: read the sentinel byte
             val = ctypes.c_uint8.from_address(addr).value
             return 1 if val == 0xFF else 0
 
@@ -317,33 +405,77 @@ class CpuCacheAdapter(Adapter):
     # ------------------------------------------------------------------
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        import random
+
         data = encoded_chunk.encode()
         if len(data) > self._max:
             raise ValueError(f"chunk too large: {len(data)} > {self._max}")
 
         base, _ = self._ensure_mmap()
-        bits_needed = len(data) * 8
+        n_bits = len(data) * 8
 
-        if bits_needed * BYTES_PER_BIT > self._region_size:
+        if n_bits * N_REPS * BYTES_PER_BIT > self._region_size:
             raise RuntimeError(
-                f"shared region too small: need {bits_needed * BYTES_PER_BIT} bytes"
+                f"shared region too small: need {n_bits * N_REPS * BYTES_PER_BIT} bytes"
             )
 
+        # Assign each logical bit N_REPS independent physical slots.
+        # slot_map[logical_bit] = list of N_REPS physical slot indices.
+        # A random permutation across all physical slots ensures that
+        # no two replicas of any bit are adjacent, defeating stride prefetchers.
+        total_slots = n_bits * N_REPS
+        all_slots = list(range(total_slots))
+        random.shuffle(all_slots)
+        slot_map = [all_slots[i * N_REPS:(i + 1) * N_REPS] for i in range(n_bits)]
+
+        # Build bit value list
+        bit_vals = []
         for byte_idx, byte_val in enumerate(data):
             for bit_idx in range(8):
-                linear_bit = byte_idx * 8 + bit_idx
-                bit_val = (byte_val >> bit_idx) & 1
-                self._write_bit(linear_bit, bit_val, base)
+                bit_vals.append((byte_val >> bit_idx) & 1)
+
+        # Collect all physical slots by value across all replicas.
+        one_slots  = [s for i, v in enumerate(bit_vals) if v for s in slot_map[i]]
+        zero_slots = [s for i, v in enumerate(bit_vals) if not v for s in slot_map[i]]
+        random.shuffle(one_slots)
+        random.shuffle(zero_slots)
+
+        # Warmup pass: load ALL data slots (1-bit and 0-bit replicas) into L3
+        # immediately before pass 1.  With all slots already in L3, pass 1's
+        # preload_probe calls are L3 hits rather than DRAM misses.  L3 hits do
+        # not trigger the IP prefetcher (which fires only on L2 misses), so 0-bit
+        # slots are not accidentally prefetched during the 1-bit warmup.
+        if _X86:
+            clflush_fn, rdtsc_fn, just_probe_fn, preload_probe_fn, flush_probe_fn, _ = _get_primitives()
+            all_slots = one_slots + zero_slots
+            random.shuffle(all_slots)
+            for slot in all_slots:
+                preload_probe_fn(ctypes.c_void_p(base + slot * BYTES_PER_BIT))
+
+        # Pass 1: load all 1-bit replicas (random physical order).
+        for slot in one_slots:
+            self._write_bit(slot, 1, base)
+
+        # Passes 2-5: four flush sweeps for 0-bit replicas in changing random
+        # orders.  Hardware prefetch requests from pass 1 may complete AFTER the
+        # first flush; subsequent sweeps catch progressively later arrivals.
+        for _ in range(4):
+            random.shuffle(zero_slots)
+            for slot in zero_slots:
+                self._write_bit(slot, 0, base)
 
         location = json.dumps({
             "mmap_path": self._mmap_path,
             "n_bytes": len(data),
             "threshold": self._threshold,
+            "slot_map": slot_map,
             "written_at": time.time(),
         })
         return StoredChunkRef(adapter_name="cpu-cache", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
+        import random
+
         payload = json.loads(ref.location)
         n_bytes = payload["n_bytes"]
         mmap_path = payload.get("mmap_path", self._mmap_path)
@@ -353,13 +485,30 @@ class CpuCacheAdapter(Adapter):
             self._base, self._buf = _open_shared_mmap(mmap_path, self._region_size)
 
         base, _ = self._ensure_mmap()
-        result = bytearray(n_bytes)
+        n_bits = n_bytes * 8
+        raw_map = payload.get("slot_map", list(range(n_bits)))
+        # slot_map may be a list-of-lists (N_REPS replicas) or a flat list
+        # (legacy single-replica format written before N_REPS was added).
+        if raw_map and isinstance(raw_map[0], list):
+            slot_map = raw_map  # [[slot, ...], ...]
+        else:
+            slot_map = [[s] for s in raw_map]  # legacy: wrap each slot
 
+        bit_values = [0] * n_bits
+
+        # Probe logical bits in random order using their randomised physical
+        # slots.  Each logical bit has N_REPS independent slots; take the
+        # majority vote across all replicas for noise immunity.
+        order = list(range(n_bits))
+        random.shuffle(order)
+        for logical_bit in order:
+            votes = sum(self._read_bit(s, base) for s in slot_map[logical_bit])
+            bit_values[logical_bit] = 1 if votes * 2 >= len(slot_map[logical_bit]) else 0
+
+        result = bytearray(n_bytes)
         for byte_idx in range(n_bytes):
             for bit_idx in range(8):
-                linear_bit = byte_idx * 8 + bit_idx
-                bit_val = self._read_bit(linear_bit, base)
-                if bit_val:
+                if bit_values[byte_idx * 8 + bit_idx]:
                     result[byte_idx] |= (1 << bit_idx)
 
         return result.decode()
@@ -370,8 +519,8 @@ class CpuCacheAdapter(Adapter):
             n_bytes = payload["n_bytes"]
             base, _ = self._ensure_mmap()
             if _X86:
-                clflush, _, _ = _get_primitives()
-                for i in range(n_bytes * 8):
+                clflush, *_ = _get_primitives()
+                for i in range(n_bytes * 8 * N_REPS):
                     addr = base + i * BYTES_PER_BIT
                     clflush(ctypes.c_void_p(addr))
             return True
@@ -383,9 +532,9 @@ class CpuCacheAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            base, _ = self._ensure_mmap()
+            self._ensure_mmap()
             if _X86:
-                clflush, rdtsc, _ = _get_primitives()
+                _get_primitives()
             return True
         except Exception:
             return False
