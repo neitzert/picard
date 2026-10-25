@@ -696,6 +696,7 @@ _CATEGORY_MAP = {
              "toml", "yaml", "browser-bookmark", "at-jobs", "minecraft",
              "calendar", "pastebin", "dpaste", "ix", "nullpointer",
              "usenet", "whois", "cloudflare-dns"},
+    "hardware-vulnerability": {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"},
 }
 
 _TYPE_TO_CATEGORY: dict[str, str] = {}

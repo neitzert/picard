@@ -42,6 +42,11 @@ Platform: Linux or macOS, x86-64 (uses CLFLUSH + RDTSC via JIT-compiled code).
 Shared memory: two processes on the same host must both map the same file to
 communicate. The writer and reader must use the same mmap_path.
 
+EXPERIMENTAL: Run at your own risk. Cache residency timing thresholds
+differ across CPU generations, NUMA topologies, and background workload
+levels. Auto-calibration helps but a busy system may produce false reads.
+Cross-VM applicability depends on hypervisor KSM configuration.
+
 Requires: pip install picard-store[cpu-cache]   (stdlib only; ctypes, mmap)
 
 Reference: "FLUSH+RELOAD: A High Resolution, Low Noise, L3 Cache Side-Channel

@@ -17,6 +17,9 @@ Not efficient. Protocol-agnostic.
 
 ## New in 0.3.0: Hardware Vulnerability Storage
 
+> [!WARNING]
+> **Experimental: Run at your own risk.** These adapters use hardware vulnerabilities as storage primitives. Results are hardware-specific, non-deterministic across machines, and irreversible in the case of DRAM bit flips. Use only on hardware you own and control. Running against shared or cloud infrastructure is unauthorized access in most jurisdictions.
+
 PICARD can now store chunks in **DRAM bit states and CPU cache residency** -- entirely outside the operating system's view.
 
 | Adapter | What it does |

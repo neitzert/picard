@@ -39,6 +39,11 @@ Platform: Linux with RDMA-capable NIC (Mellanox/NVIDIA ConnectX series
           recommended). Requires rdma-core and pyverbs.
 Volatile: ephemeral (DRAM, power cycle erases). persistent=False.
 
+EXPERIMENTAL: Run at your own risk. RDMA fabric configuration, QP
+parameters, and memory registration vary significantly across vendors
+and kernel versions. pyverbs API compatibility changes across rdma-core
+releases. Test against a dedicated lab machine before any production use.
+
 WARNING: issuing RDMA operations against a remote host without explicit
 authorisation constitutes unauthorised access. The rkey from a registered
 memory region must be obtained legitimately (shared-key exchange or mutual
