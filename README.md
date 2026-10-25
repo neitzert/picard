@@ -15,6 +15,26 @@ Not efficient. Protocol-agnostic.
 
 ---
 
+## New in 0.4.0: Unconventional Substrates
+
+> [!WARNING]
+> **Experimental.** These adapters store data in places that were never designed for storage: the Ethereum mempool, Linux kernel traffic shaping rules, circulating network packets, process address space, CPU temperature, and HDD calibration tables. Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
+
+Six new adapters push storage into substrates with no at-rest ciphertext:
+
+| Adapter | Where the data lives |
+|---------|---------------------|
+| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum queued tx pool. Nonce gap prevents mining. Configurable lifetime up to 50 years via geth flags. 128 KB per tx. |
+| [`latency`](picard/adapters/latency_adapter.py) | Linux `tc netem` delay rules on loopback IPs. Bits encoded as RTT. Data is kernel traffic-shaping state, not a file. |
+| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP echo payloads kept circulating by a relay thread. No at-rest state of any kind. ~87 KB capacity. |
+| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Anonymous memfd held open by a companion daemon. No filesystem path, no name, no socket. |
+| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel (demonstration only -- heat dissipates). |
+| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. Power-cycle persistent. Unverified hypothesis -- run the characterization script first. |
+
+270 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+
+---
+
 ## New in 0.3.0: Hardware Vulnerability Storage
 
 > [!WARNING]
@@ -73,7 +93,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 *Storage surface by category, adapter health, and encryption details at a glance.*
 
 ![PICARD adapter registry](docs/img/ui-adapters.png)
-*259 adapters browsable by category, with required parameters and one-click add.*
+*270 adapters browsable by category, with required parameters and one-click add.*
 
 ---
 
