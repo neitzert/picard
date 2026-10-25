@@ -28,6 +28,11 @@ recovers write capability on DDR4 devices that were considered safe.
 Inheritance: this adapter inherits all profile, encoding, and chunk I/O
 logic from RowhammerAdapter. Only the hammer method is overridden.
 
+EXPERIMENTAL: Run at your own risk. Half-double flippability is highly
+chip-specific. Many DDR4 modules are not vulnerable. Profiling on a
+non-vulnerable machine will find zero flippable bits; write_chunk will
+raise RuntimeError rather than silently corrupt memory.
+
 Platform: Linux x86-64 (same requirements as RowhammerAdapter).
 Volatile: all data lost on power cycle or page reclaim.
 

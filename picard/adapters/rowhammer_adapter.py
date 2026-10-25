@@ -35,6 +35,11 @@ Persistence: NONE. Data lives in DRAM charge state. Power cycle, OS page
 reclaim, or a competing workload with large memory footprint will lose it.
 persistent=False is set in the adapter profile.
 
+EXPERIMENTAL: Run at your own risk. This adapter has not been tested against
+every DRAM vendor and chipset combination. Results vary by hardware. Physical
+bit flips are irreversible without a rewrite and can corrupt adjacent memory
+if the target region overlaps live process state.
+
 WARNING: use only on hardware you own. Rowhammer on shared infrastructure
 (cloud VMs, co-located servers, shared RDMA fabric) constitutes unauthorized
 access and is illegal in most jurisdictions.

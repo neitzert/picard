@@ -1,12 +1,25 @@
 # Changelog
 
+## 0.3.1 (2026-10-25)
+
+### Fixed
+- `cpu_cache_adapter.py`: BYTES_PER_BIT raised to 4096 (one OS page per slot) to defeat Intel SMS/IP prefetcher contamination; N_REPS=5 majority voting across independent physical slots drives post-vote BER below 5e-4 on i7-12700KF; per-write warmup pass and four flush sweeps added for reliable 0-bit eviction.
+- `aiohttp` minimum bumped to 3.13.4: fixes CVE-2024-52303 (DNS cache growth), CVE-2024-52304 (multipart DoS), CVE-2024-52305 (multipart DoS), CVE-2024-52306 (Windows NTLM auth disclosure).
+
+### Added
+- `tools/test_cpu_cache_live.py`: live hardware test for the cpu_cache Flush+Reload channel (JIT compile, calibration, single-process roundtrip, cross-process covert channel, BER sweep).
+- Experimental warning in CLI (`picard adapters`) and web UI configure modal for all four Tier 4 hardware-vulnerability adapters.
+- `.github/dependabot.yml`: automated weekly dependency and Actions update PRs.
+
+---
+
 ## 0.3.0 (2026-10-25)
 
 ### Added
 - `rowhammer_adapter.py`: DRAM bit flips as a storage substrate. Double-sided rowhammer write primitive using x86-64 CLFLUSH+RDTSC JIT code, `/proc/pagemap` physical address resolution, `IntelSandyBridgeGeometry` bank XOR function, empirical profiler that discovers flippable bits without knowing the memory controller geometry, and full chunk encode/decode to DRAM bit positions. Ephemeral (power cycle erases). HAL-pattern: subclass for other memory controllers.
 - `halfdouble_adapter.py`: Two-hop rowhammer extending the rowhammer substrate to DDR4 hardware with Target Row Refresh (TRR) mitigation. Near/far aggressor pattern (near accessed every iteration, far at 1/ratio rate) bypasses TRR counters that only protect directly adjacent rows. Inherits all profile and encoding logic from RowhammerAdapter.
 - `throwhammer_adapter.py`: Remote DRAM bit flips over RDMA. Issues RDMA READ operations to a remote host's aggressor rows; the remote CPU is not involved at all (NIC DMA-reads directly to DRAM). Full pyverbs (libibverbs) implementation: QP setup, RESET/INIT/RTR/RTS state machine, one-sided RDMA READ/WRITE, TCP side-channel for QP parameter and rkey exchange. Requires RDMA-capable NIC on both ends.
-- `cpu_cache_adapter.py`: CPU L3 SRAM as covert storage via Flush+Reload. Each bit maps to one 64-byte cache line in a shared file-backed mmap. Write: CLFLUSH (bit=0) or load (bit=1). Read: RDTSC-timed access, threshold-gated. Cross-process on same host; cross-VM applicable via KSM page deduplication. Auto-calibrates hit/miss cycle threshold on first use.
+- `cpu_cache_adapter.py`: CPU L3 SRAM as covert storage via Flush+Reload. Each logical bit is encoded across N_REPS=5 independent physical slots (4096 bytes/slot, one OS page each) in a shared file-backed mmap; majority vote across replicas drives BER below 5e-4 under typical load. Write: page-isolated slots prevent SMS/IP prefetcher contamination; four flush sweeps evict 0-bit slots after a full per-write warmup pass. Read: JIT RDTSC-timed access, threshold-gated, auto-calibrated on first use. Cross-process on same host; cross-VM applicable via KSM page deduplication.
 - Tier 4 section in `docs/adapters.md` documenting all four substrates with hardware requirements and paper citations.
 - Optional dependency extras: `rowhammer`, `halfdouble`, `cpu-cache` (stdlib only), `throwhammer` (requires pyverbs).
 

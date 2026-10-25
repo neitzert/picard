@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    groups:
+      cryptography:
+        patterns: ["cryptography", "argon2-cffi"]
+      http:
+        patterns: ["aiohttp", "httpx", "httpx-socks"]
+      aws:
+        patterns: ["boto3"]
+      web:
+        patterns: ["fastapi", "uvicorn", "wsgidav", "cheroot"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
