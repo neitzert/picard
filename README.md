@@ -222,7 +222,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-259 adapters in three tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+264 adapters in four tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
 ### Tier 1: Your own infrastructure
 
@@ -258,6 +258,20 @@ Authorization requirements vary by jurisdiction, frequency, and device type. Rea
 | Radio | LoRa/LoRaWAN, SDR (receive-only without license), WiFi beacons, AX.25/amateur radio |
 | Short-range | Bluetooth LE, NFC, ZigBee |
 | Hardware buses | CAN bus (own hardware only), USB-HID, serial |
+
+### Tier 4: Hardware vulnerability substrates (Experimental)
+
+> [!WARNING]
+> Run only on hardware you own and control. Results are hardware-specific and non-deterministic across machines. DRAM bit flips are irreversible without a power cycle. Running against shared or cloud infrastructure is unauthorized access in most jurisdictions.
+
+| Adapter | Technique | Requirements |
+|---------|-----------|--------------|
+| [`rowhammer`](picard/adapters/rowhammer_adapter.py) | DRAM bit flips via repeated row reads. Adjacent-row charge disturbance encodes bits into victim cells. | Linux x86-64, non-ECC DDR3/DDR4, root or CAP_SYS_PTRACE, huge pages |
+| [`halfdouble`](picard/adapters/halfdouble_adapter.py) | Two-hop rowhammer. Near/far aggressor ratio bypasses DDR4 Target Row Refresh (TRR). | Same as rowhammer; effective on DDR4 that defeats classic rowhammer |
+| [`throwhammer`](picard/adapters/throwhammer_adapter.py) | Remote DRAM bit flips over RDMA. The remote CPU is not involved -- the NIC DMA-reads directly to DRAM. | Linux, RDMA NIC (Mellanox/ConnectX), libibverbs, pyverbs |
+| [`cpu-cache`](picard/adapters/cpu_cache_adapter.py) | CPU L3 SRAM via Flush+Reload. N_REPS=5 majority-vote encoding across page-isolated slots. BER below 5e-4 on i7-12700KF. | Linux or macOS x86-64, shared mmap file, same physical host |
+
+All four are ephemeral: a power cycle erases everything. See [docs/adapters.md](docs/adapters.md#tier-4-dram-and-cpu-hardware-vulnerability-substrates) for hardware requirements and paper citations.
 
 Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
 
