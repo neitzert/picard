@@ -91,7 +91,7 @@ These adapters store chunks using hardware vulnerabilities as the write primitiv
 | rowhammer | DRAM bit flips via repeated DRAM row reads. Adjacent-row disturbance encodes bits. | Linux x86-64, non-ECC DDR3/DDR4, root or CAP_SYS_PTRACE for pagemap, huge pages |
 | halfdouble | Two-hop rowhammer. Near/far aggressor pattern bypasses DDR4 Target Row Refresh (TRR). | Same as rowhammer; effective on DDR4 that defeats classic rowhammer |
 | throwhammer | Remote DRAM bit flips via RDMA READs. Remote CPU is not involved at all. | Linux, RDMA NIC (Mellanox/ConnectX), libibverbs, pyverbs, target with RDMA access |
-| cpu-cache | CPU L3 SRAM as covert channel. Flush+Reload encodes bits as cache line residency. Cross-VM capable via KSM page deduplication. | Linux or macOS x86-64, shared mmap file, same physical host |
+| cpu-cache | CPU L3 SRAM as covert channel. Flush+Reload with N_REPS=5 majority-vote encoding and page-isolated slots (4096 bytes/slot) for prefetcher isolation. BER below 5e-4 on i7-12700KF. Cross-VM capable via KSM page deduplication. | Linux or macOS x86-64, shared mmap file, same physical host |
 
 Reference papers: Kim et al. ISCA 2014 (rowhammer), Google Project Zero 2021 (half-double), Tatar et al. USENIX Security 2018 (throwhammer), Yarom and Falkner USENIX Security 2014 (Flush+Reload).
 
