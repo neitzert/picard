@@ -529,6 +529,9 @@ def du(
                 typer.echo(line)
 
 
+_HARDWARE_VULNERABILITY_ADAPTERS = {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"}
+
+
 @app.command()
 def adapters(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show constructor params."),
@@ -544,21 +547,23 @@ def adapters(
         box=box.SIMPLE,
     )
     table.add_column("Name", style="bold")
+    table.add_column("Notes", style="dim")
     if verbose:
         table.add_column("Class")
         table.add_column("Params")
     for t in sorted(types):
+        note = "[red]EXPERIMENTAL: hardware vulnerability[/red]" if t in _HARDWARE_VULNERABILITY_ADAPTERS else ""
         if verbose:
             try:
                 cls = get_adapter_class(t)
                 import inspect
                 sig = inspect.signature(cls.__init__)
                 params = [p for p in sig.parameters if p != "self"]
-                table.add_row(t, cls.__name__, ", ".join(params))
+                table.add_row(t, note, cls.__name__, ", ".join(params))
             except Exception:
-                table.add_row(t, "?", "")
+                table.add_row(t, note, "?", "")
         else:
-            table.add_row(t)
+            table.add_row(t, note)
     console.print(table)
 
 
