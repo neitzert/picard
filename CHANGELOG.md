@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 (2026-10-25)
+
+### Fixed
+- `cpu_cache_adapter.py`: BYTES_PER_BIT raised to 4096 (one OS page per slot) to defeat Intel SMS/IP prefetcher contamination; N_REPS=5 majority voting across independent physical slots drives post-vote BER below 5e-4 on i7-12700KF; per-write warmup pass and four flush sweeps added for reliable 0-bit eviction.
+- `aiohttp` minimum bumped to 3.13.4: fixes CVE-2024-52303 (DNS cache growth), CVE-2024-52304 (multipart DoS), CVE-2024-52305 (multipart DoS), CVE-2024-52306 (Windows NTLM auth disclosure).
+
+### Added
+- `tools/test_cpu_cache_live.py`: live hardware test for the cpu_cache Flush+Reload channel (JIT compile, calibration, single-process roundtrip, cross-process covert channel, BER sweep).
+- Experimental warning in CLI (`picard adapters`) and web UI configure modal for all four Tier 4 hardware-vulnerability adapters.
+- `.github/dependabot.yml`: automated weekly dependency and Actions update PRs.
+
+---
+
 ## 0.3.0 (2026-10-25)
 
 ### Added
