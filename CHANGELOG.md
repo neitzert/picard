@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+### Added
+- `mempool_adapter.py`: Ethereum transaction mempool as a storage substrate. EIP-1559 type-2 transactions with `nonce=current+1000` and `maxFeePerGas=0` sit in the queued pool indefinitely; data lives in the `input` field. Delete via replace-by-fee. Up to 128 KB per transaction. Requires a local geth node (`--txpool.lifetime 438000h --txpool.journal`). Optional dep: `web3>=6.0`.
+- `latency_adapter.py`: Linux kernel traffic-shaping rules as a storage substrate. Each 127.x.0.x loopback address carries one data bit encoded as a `tc qdisc netem delay`. Read by pinging and measuring RTT against a calibrated threshold. Requires `CAP_NET_ADMIN` and `tc` (iproute2). Capacity ~63 bytes on loopback.
+- `icmp_inflight_adapter.py`: ICMP echo payloads circulating on the loopback interface as a storage substrate. An AF_PACKET relay thread intercepts each echo-request and re-injects it, keeping the packet in flight indefinitely. No at-rest state; relay thread crash means data loss. Requires `CAP_NET_RAW` and scapy. Optional dep: `scapy>=2.5`. Capacity ~87 KB.
+- `proc_mem_adapter.py`: Foreign process address space as a storage substrate. Primary mode uses `memfd_create` anonymous RAM-backed file descriptors passed to a companion daemon (`picard/proc_mem_companion.py`) via `SCM_RIGHTS` over a Unix socket. Fallback self-mode uses a cross-platform `mmap.mmap`. No filesystem path for the primary mode. Includes `--systemd-unit` flag for the companion daemon.
+- `thermal_adapter.py`: CPU die temperature as a covert channel. Encodes bits by alternating CPU load between idle and busy states; reads back by sampling sysfs thermal zone sensors. Explicitly labeled as a demonstration channel, not persistent storage (heat dissipates on power cycle). Linux only. Throughput ~1 bit per 30 seconds.
+- `hdd_smart_adapter.py`: HDD adaptive calibration tables as a storage substrate. Encodes bits by conditioning seek patterns to shift SMART attribute values; decodes by reading attribute deltas after a calibration baseline. Power-cycle persistent. Requires a spinning-platter HDD, root access, and `smartmontools`. Unverified hypothesis; use `tools/characterize_hdd_smart.py` to assess viability on your hardware before deploying.
+- `picard/proc_mem_companion.py`: asyncio Unix socket daemon that holds `memfd_create` file descriptors on behalf of the main process, with `--systemd-unit` flag to emit a ready-made service unit.
+- `tools/characterize_hdd_smart.py`: five-trial SMART calibration go/no-go script for the HDD SMART adapter.
+- `tools/verify_icmp_inflight.py`: AF_PACKET loopback interception verification script for the ICMP in-flight adapter.
+- Optional dependency extras: `mempool` (requires `web3>=6.0`), `icmp-inflight` (requires `scapy>=2.5`), `proc-mem`, `latency`, `thermal`, `hdd-smart` (all stdlib/system-tool only).
+- New adapter category `unconventional-substrate` in CLI and web UI, with experimental warning in the configure modal.
+
+### Changed
+- Adapter count: 264 -> 270.
+- Version bumped to 0.4.0.
+
+---
+
 ## 0.3.1 (2026-10-25)
 
 ### Fixed

@@ -530,6 +530,7 @@ def du(
 
 
 _HARDWARE_VULNERABILITY_ADAPTERS = {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"}
+_UNCONVENTIONAL_SUBSTRATE_ADAPTERS = {"mempool", "latency", "icmp-inflight", "proc-mem", "thermal", "hdd-smart"}
 
 
 @app.command()
@@ -552,7 +553,12 @@ def adapters(
         table.add_column("Class")
         table.add_column("Params")
     for t in sorted(types):
-        note = "[red]EXPERIMENTAL: hardware vulnerability[/red]" if t in _HARDWARE_VULNERABILITY_ADAPTERS else ""
+        if t in _HARDWARE_VULNERABILITY_ADAPTERS:
+            note = "[red]EXPERIMENTAL: hardware vulnerability[/red]"
+        elif t in _UNCONVENTIONAL_SUBSTRATE_ADAPTERS:
+            note = "[red]EXPERIMENTAL: unconventional substrate[/red]"
+        else:
+            note = ""
         if verbose:
             try:
                 cls = get_adapter_class(t)

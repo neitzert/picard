@@ -222,7 +222,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-264 adapters in four tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+270 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
 ### Tier 1: Your own infrastructure
 
@@ -272,6 +272,22 @@ Authorization requirements vary by jurisdiction, frequency, and device type. Rea
 | [`cpu-cache`](picard/adapters/cpu_cache_adapter.py) | CPU L3 SRAM via Flush+Reload. N_REPS=5 majority-vote encoding across page-isolated slots. BER below 5e-4 on i7-12700KF. | Linux or macOS x86-64, shared mmap file, same physical host |
 
 All four are ephemeral: a power cycle erases everything. See [docs/adapters.md](docs/adapters.md#tier-4-dram-and-cpu-hardware-vulnerability-substrates) for hardware requirements and paper citations.
+
+### Tier 5: Unconventional substrates (Experimental)
+
+> [!WARNING]
+> These adapters use non-standard or ephemeral substrates: network state, process memory, hardware telemetry. Behavior is platform-specific, may require elevated privileges, and storage is not guaranteed to persist across reboots or process restarts. Use only on hardware and systems you own and control.
+
+| Adapter | Technique | Requirements |
+|---------|-----------|--------------|
+| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum transaction mempool. EIP-1559 tx with nonce=current+1000 and maxFeePerGas=0 sits in the queued pool until RBF-deleted. Data in the `input` field. Up to 128 KB per tx. | Local geth node (`--txpool.lifetime 438000h`), `web3>=6.0` |
+| [`latency`](picard/adapters/latency_adapter.py) | tc netem delay rules on 127.x.0.x loopback IPs as bit storage. Read by pinging and measuring RTT. ~63 bytes capacity. | Linux, `CAP_NET_ADMIN`, iproute2 `tc` |
+| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP echo payloads circulating on the loopback interface. AF_PACKET relay thread keeps each packet in flight. No at-rest state. ~87 KB capacity. | Linux, `CAP_NET_RAW`, `scapy>=2.5` |
+| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Foreign process address space via `memfd_create` + SCM_RIGHTS. Companion daemon holds anonymous RAM-backed fds. No filesystem path. | Linux (primary mode), Unix socket, companion daemon |
+| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel. Encodes bits via CPU load; reads sysfs thermal zone sensors. Demo channel only -- not persistent storage. | Linux, sysfs thermal zones |
+| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. SMART attribute deltas encode bits. Power-cycle persistent. Unverified hypothesis. | Spinning-platter HDD, root, `smartmontools` |
+
+See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for detail on each substrate.
 
 Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
 

@@ -246,6 +246,7 @@ tr:hover td { background: rgba(0, 216, 255, 0.03); }
 .badge-misc { background: #37474f; color: #b0bec5; }
 .badge-other { background: #37474f; color: #b0bec5; }
 .badge-hardware-vulnerability { background: #7f1d1d; color: #fca5a5; }
+.badge-unconventional-substrate { background: #4a1d96; color: #c4b5fd; }
 .badge-experimental { background: rgba(239,68,68,0.15); color: #f87171; font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
 .badge-enabled { background: rgba(34,197,94,0.15); color: var(--green); }
 .badge-disabled { background: rgba(239,68,68,0.15); color: var(--red); }
@@ -1387,7 +1388,7 @@ function renderAdapters() {
               `<span style="color:${p.is_credential ? 'var(--orange)' : p.required ? 'var(--text)' : 'var(--text2)'}">${escapeHtml(p.name)}${p.required ? '*' : ''}</span>`
             ).join(', ')}
         </td>
-        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}${a.category === 'hardware-vulnerability' ? ' <span class="badge badge-experimental">experimental</span>' : ''}${ce && ce.tor_proxy ? ' <span class="badge badge-tor">TOR</span>' : ''}${ce && ce.browser_mode === 'headless' ? ' <span class="badge badge-browser">HEADLESS</span>' : ''}${ce && ce.browser_mode === 'headed' ? ' <span class="badge badge-headed">HEADED</span>' : ''}</td>
+        <td>${isConfigured ? '<span class="badge badge-enabled">configured</span>' : ''}${(a.category === 'hardware-vulnerability' || a.category === 'unconventional-substrate') ? ' <span class="badge badge-experimental">experimental</span>' : ''}${ce && ce.tor_proxy ? ' <span class="badge badge-tor">TOR</span>' : ''}${ce && ce.browser_mode === 'headless' ? ' <span class="badge badge-browser">HEADLESS</span>' : ''}${ce && ce.browser_mode === 'headed' ? ' <span class="badge badge-headed">HEADED</span>' : ''}</td>
         <td style="text-align:right">
           <button class="btn btn-sm" onclick='openConfigure(${JSON.stringify(a).replace(/'/g, "&#39;").replace(/</g, "\\x3c").replace(/>/g, "\\x3e")})'>${isConfigured ? 'Edit' : 'Add'}</button>
         </td>
@@ -1421,6 +1422,11 @@ function openConfigure(adapter) {
     <div style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:6px;padding:12px 14px;margin-bottom:16px">
       <div style="font-size:12px;font-weight:700;color:#f87171;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Experimental: Hardware Vulnerability Adapter</div>
       <div style="font-size:12px;color:var(--text2);line-height:1.5">This adapter uses a hardware vulnerability as a storage primitive. Results are hardware-specific and non-deterministic across machines. Use only on hardware you own and control. Running against shared or cloud infrastructure is unauthorized access in most jurisdictions.</div>
+    </div>` : ''}
+    ${adapter.category === 'unconventional-substrate' ? `
+    <div style="background:rgba(167,139,250,0.08);border:1px solid rgba(167,139,250,0.35);border-radius:6px;padding:12px 14px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:#c4b5fd;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">Experimental: Unconventional Substrate Adapter</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.5">This adapter uses a non-standard or ephemeral substrate (network state, process memory, hardware telemetry). Behavior is platform-specific, may require elevated privileges, and storage is not guaranteed to persist. Use only on hardware and systems you own and control.</div>
     </div>` : ''}
     <div class="form-group">
       <label>Instance Name</label>

@@ -697,6 +697,8 @@ _CATEGORY_MAP = {
              "calendar", "pastebin", "dpaste", "ix", "nullpointer",
              "usenet", "whois", "cloudflare-dns"},
     "hardware-vulnerability": {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"},
+    "unconventional-substrate": {"mempool", "latency", "icmp-inflight",
+                                  "proc-mem", "thermal", "hdd-smart"},
 }
 
 _TYPE_TO_CATEGORY: dict[str, str] = {}

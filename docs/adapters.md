@@ -95,7 +95,20 @@ These adapters store chunks using hardware vulnerabilities as the write primitiv
 
 Reference papers: Kim et al. ISCA 2014 (rowhammer), Google Project Zero 2021 (half-double), Tatar et al. USENIX Security 2018 (throwhammer), Yarom and Falkner USENIX Security 2014 (Flush+Reload).
 
-Total: **264 adapter implementations** (267 files including base.py, __init__.py, remote.py).
+### Tier 5: Unconventional substrates
+
+These adapters use substrates that are not memory, not storage, and not network sockets. Data lives in network state, process address space, hardware telemetry, or kernel configuration. Behavior is platform-specific, may require elevated privileges, and persistence is not guaranteed across reboots or process restarts. Use only on hardware and systems you own and control.
+
+| Adapter | Technique | Persistence | Requirements |
+|---------|-----------|-------------|--------------|
+| mempool | Ethereum nonce-gap mempool. EIP-1559 tx with `nonce=current+1000`, `maxFeePerGas=0` parks in the queued pool. Data in `input` field. Delete via RBF. Up to 128 KB/tx. | Until mined or RBF-deleted | Local geth node (`--txpool.lifetime 438000h --txpool.journal`), `web3>=6.0` |
+| latency | tc netem delay rules on 127.x.0.x loopback IPs. Each IP encodes one bit as RTT delta. Calibrated threshold distinguishes 0 from 1. ~63 bytes capacity. | Until `tc qdisc del` or reboot | Linux, `CAP_NET_ADMIN`, iproute2 |
+| icmp-inflight | ICMP echo payloads circulating on loopback via AF_PACKET relay thread. No at-rest state. ~87 KB capacity. Relay crash means immediate data loss. | While relay thread is alive | Linux, `CAP_NET_RAW`, scapy `>=2.5` |
+| proc-mem | `memfd_create` anonymous fds held by companion daemon (`picard/proc_mem_companion.py`) via SCM_RIGHTS. No filesystem path. Fallback self-mode uses cross-platform `mmap.mmap`. | While companion process is alive | Linux (primary mode), Unix socket |
+| thermal | CPU die temperature covert channel. Load/idle cycles encode bits; sysfs thermal zones decode them. Labeled as a channel, not storage. ~1 bit per 30 seconds. | Not persistent (heat dissipates) | Linux, sysfs thermal zones |
+| hdd-smart | Seek pattern conditioning shifts HDD firmware SMART attribute values. Bits encoded as attribute deltas from a calibration baseline. Unverified hypothesis. Use `tools/characterize_hdd_smart.py` to assess viability. | Power-cycle persistent (SMART flash) | Spinning-platter HDD, root, `smartmontools` |
+
+Total: **270 adapter implementations** (273 files including base.py, __init__.py, remote.py).
 
 ---
 
