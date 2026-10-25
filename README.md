@@ -15,6 +15,21 @@ Not efficient. Protocol-agnostic.
 
 ---
 
+## New in 0.3.0: Hardware Vulnerability Storage
+
+PICARD can now store chunks in **DRAM bit states and CPU cache residency** -- entirely outside the operating system's view.
+
+| Adapter | What it does |
+|---------|-------------|
+| [`rowhammer`](picard/adapters/rowhammer_adapter.py) | Writes bits by hammering adjacent DRAM rows until charge leakage flips target bits. Reads by examining the victim row directly. Local, ephemeral, non-ECC DDR3/4. |
+| [`halfdouble`](picard/adapters/halfdouble_adapter.py) | Two-hop variant. Near/far aggressor ratio bypasses DDR4 Target Row Refresh (TRR). Reaches hardware that classic rowhammer no longer affects. |
+| [`throwhammer`](picard/adapters/throwhammer_adapter.py) | Hammers a **remote** host's DRAM over RDMA. The remote CPU is not involved at all -- the NIC DMA-reads directly to DRAM. Requires RDMA fabric. |
+| [`cpu-cache`](picard/adapters/cpu_cache_adapter.py) | Stores bits in CPU L3 SRAM cache residency via Flush+Reload. Cross-process on the same host; cross-VM where page deduplication is active. |
+
+All four are ephemeral (power cycle erases). See [docs/adapters.md](docs/adapters.md#tier-4-dram-and-cpu-hardware-vulnerability-substrates) for hardware requirements and threat model.
+
+---
+
 ## How It Works
 
 ```
