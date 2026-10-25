@@ -82,7 +82,20 @@ These adapters involve radio frequency transmission or hardware buses with physi
 | ax25 | Requires an amateur radio license in most jurisdictions |
 | serial, usb-hid | Own hardware |
 
-Total: **260 adapter implementations** (263 files including base.py, __init__.py, remote.py).
+### Tier 4: DRAM and CPU hardware vulnerability substrates
+
+These adapters store chunks using hardware vulnerabilities as the write primitive. Data lives in DRAM charge states or CPU cache residency, outside any filesystem, block device, or process-visible memory allocation. All four are ephemeral (power cycle loses data). Use only on hardware you own and control. Running these against shared infrastructure (cloud VMs, HPC clusters, shared RDMA fabric) is unauthorized access in most jurisdictions.
+
+| Adapter | Technique | Requirements |
+|---------|-----------|--------------|
+| rowhammer | DRAM bit flips via repeated DRAM row reads. Adjacent-row disturbance encodes bits. | Linux x86-64, non-ECC DDR3/DDR4, root or CAP_SYS_PTRACE for pagemap, huge pages |
+| halfdouble | Two-hop rowhammer. Near/far aggressor pattern bypasses DDR4 Target Row Refresh (TRR). | Same as rowhammer; effective on DDR4 that defeats classic rowhammer |
+| throwhammer | Remote DRAM bit flips via RDMA READs. Remote CPU is not involved at all. | Linux, RDMA NIC (Mellanox/ConnectX), libibverbs, pyverbs, target with RDMA access |
+| cpu-cache | CPU L3 SRAM as covert channel. Flush+Reload encodes bits as cache line residency. Cross-VM capable via KSM page deduplication. | Linux or macOS x86-64, shared mmap file, same physical host |
+
+Reference papers: Kim et al. ISCA 2014 (rowhammer), Google Project Zero 2021 (half-double), Tatar et al. USENIX Security 2018 (throwhammer), Yarom and Falkner USENIX Security 2014 (Flush+Reload).
+
+Total: **264 adapter implementations** (267 files including base.py, __init__.py, remote.py).
 
 ---
 

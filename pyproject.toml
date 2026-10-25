@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "picard-store"
-version = "0.2.0"
+version = "0.3.0"
 description = "Protocol-Introspecting Chunk Adapter for Resilient Data: encrypt, chunk, and scatter data across protocol gaps."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -84,6 +84,10 @@ tor = ["stem>=1.8", "httpx-socks[asyncio]>=0.9"]
 sqlite = ["aiosqlite>=0.20"]
 web = ["fastapi>=0.115", "uvicorn>=0.30"]
 browser = ["playwright>=1.40"]
+rowhammer = []
+halfdouble = []
+throwhammer = ["pyverbs>=41.0"]
+cpu-cache = []
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "pytest-timeout>=2.3"]
 
 [project.scripts]
