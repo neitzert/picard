@@ -7,7 +7,6 @@ RDMA hardware is mocked. We test:
   - QP parameter packing/unpacking roundtrip
 """
 
-import asyncio
 import json
 import struct
 import sys
@@ -110,7 +109,7 @@ class TestThrowhammerAdapterIO:
             max_chunk_bytes=4,
         )
 
-    def test_write_chunk_returns_throwhammer_location(self):
+    async def test_write_chunk_returns_throwhammer_location(self):
         a = self._make_adapter()
         # Pre-load a profile so we skip the remote profiling call
         remote_mem = RdmaRemoteMemory(
@@ -136,9 +135,7 @@ class TestThrowhammerAdapterIO:
         a._close_rdma_connection = AsyncMock()
         a._hammer_remote_rows = AsyncMock()
 
-        ref = asyncio.get_event_loop().run_until_complete(
-            a.write_chunk("AB")
-        )
+        ref = await a.write_chunk("AB")
         assert ref.adapter_name == "throwhammer"
         assert ref.location.startswith("throwhammer://")
         payload = json.loads(ref.location.removeprefix("throwhammer://"))
@@ -146,19 +143,19 @@ class TestThrowhammerAdapterIO:
         assert payload["n_bytes"] == 2
         assert len(payload["bits"]) == 16   # 2 bytes * 8 bits
 
-    def test_health_check_fails_on_non_linux(self, monkeypatch):
+    async def test_health_check_fails_on_non_linux(self, monkeypatch):
         monkeypatch.setattr("picard.adapters.throwhammer_adapter._LINUX", False)
         a = self._make_adapter()
-        result = asyncio.get_event_loop().run_until_complete(a.health_check())
+        result = await a.health_check()
         assert result is False
 
-    def test_health_check_fails_when_host_unreachable(self):
+    async def test_health_check_fails_when_host_unreachable(self):
         a = ThrowhammerAdapter(
             target_host="192.0.2.255",   # documentation range, unreachable
             hammer_iterations=1,
             max_chunk_bytes=4,
         )
-        result = asyncio.get_event_loop().run_until_complete(a.health_check())
+        result = await a.health_check()
         assert result is False
 
     def test_profile_name_is_throwhammer(self):

@@ -8,12 +8,10 @@ Hardware JIT code is mocked for portability. We test:
   - Health check
 """
 
-import asyncio
 import json
 import os
 import sys
 import tempfile
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -65,60 +63,50 @@ class TestCpuCacheAdapterIO:
     should produce a correct roundtrip.
     """
 
-    def test_write_returns_valid_location(self, tmp_path):
+    async def test_write_returns_valid_location(self, tmp_path):
         path = str(tmp_path / "ch.mmap")
         a = _make_adapter(path, max_bytes=8)
-        ref = asyncio.get_event_loop().run_until_complete(
-            a.write_chunk("Hi")
-        )
+        ref = await a.write_chunk("Hi")
         assert ref.adapter_name == "cpu-cache"
         payload = json.loads(ref.location)
         assert payload["n_bytes"] == 2
         assert payload["mmap_path"] == path
 
-    def test_write_read_roundtrip_fallback(self, tmp_path, monkeypatch):
+    async def test_write_read_roundtrip_fallback(self, tmp_path, monkeypatch):
         # Force non-x86 fallback so this test runs everywhere
         monkeypatch.setattr("picard.adapters.cpu_cache_adapter._X86", False)
         path = str(tmp_path / "rr.mmap")
         a = _make_adapter(path, max_bytes=16)
         original = "Hello"
-        ref = asyncio.get_event_loop().run_until_complete(
-            a.write_chunk(original)
-        )
-        recovered = asyncio.get_event_loop().run_until_complete(
-            a.read_chunk(ref)
-        )
+        ref = await a.write_chunk(original)
+        recovered = await a.read_chunk(ref)
         assert recovered == original
 
-    def test_chunk_too_large_raises(self, tmp_path):
+    async def test_chunk_too_large_raises(self, tmp_path):
         path = str(tmp_path / "big.mmap")
         a = _make_adapter(path, max_bytes=4)
         with pytest.raises(ValueError, match="too large"):
-            asyncio.get_event_loop().run_until_complete(
-                a.write_chunk("ABCDE")   # 5 bytes > 4
-            )
+            await a.write_chunk("ABCDE")   # 5 bytes > 4
 
-    def test_delete_chunk_returns_true(self, tmp_path, monkeypatch):
+    async def test_delete_chunk_returns_true(self, tmp_path, monkeypatch):
         monkeypatch.setattr("picard.adapters.cpu_cache_adapter._X86", False)
         path = str(tmp_path / "del.mmap")
         a = _make_adapter(path, max_bytes=8)
-        ref = asyncio.get_event_loop().run_until_complete(a.write_chunk("ok"))
-        ok = asyncio.get_event_loop().run_until_complete(a.delete_chunk(ref))
+        ref = await a.write_chunk("ok")
+        ok = await a.delete_chunk(ref)
         assert ok is True
 
-    def test_health_check_succeeds_with_valid_mmap(self, tmp_path, monkeypatch):
+    async def test_health_check_succeeds_with_valid_mmap(self, tmp_path, monkeypatch):
         monkeypatch.setattr("picard.adapters.cpu_cache_adapter._X86", False)
         path = str(tmp_path / "hc.mmap")
         a = _make_adapter(path)
-        ok = asyncio.get_event_loop().run_until_complete(a.health_check())
+        ok = await a.health_check()
         assert ok is True
 
-    def test_list_chunks_returns_empty(self, tmp_path):
+    async def test_list_chunks_returns_empty(self, tmp_path):
         path = str(tmp_path / "ls.mmap")
         a = _make_adapter(path)
-        result = asyncio.get_event_loop().run_until_complete(
-            a.list_chunks("any-manifest")
-        )
+        result = await a.list_chunks("any-manifest")
         assert list(result) == []
 
 
@@ -150,21 +138,21 @@ class TestRegionSizing:
 # ---------------------------------------------------------------------------
 
 class TestLocationRef:
-    def test_location_contains_mmap_path(self, tmp_path, monkeypatch):
+    async def test_location_contains_mmap_path(self, tmp_path, monkeypatch):
         monkeypatch.setattr("picard.adapters.cpu_cache_adapter._X86", False)
         path = str(tmp_path / "loc.mmap")
         a = _make_adapter(path, max_bytes=8)
-        ref = asyncio.get_event_loop().run_until_complete(a.write_chunk("XY"))
+        ref = await a.write_chunk("XY")
         payload = json.loads(ref.location)
         assert payload["mmap_path"] == path
 
-    def test_read_from_different_adapter_instance(self, tmp_path, monkeypatch):
+    async def test_read_from_different_adapter_instance(self, tmp_path, monkeypatch):
         """Reader creates its own adapter pointing at the same mmap file."""
         monkeypatch.setattr("picard.adapters.cpu_cache_adapter._X86", False)
         path = str(tmp_path / "shared.mmap")
         writer = _make_adapter(path, max_bytes=8)
-        ref = asyncio.get_event_loop().run_until_complete(writer.write_chunk("ZZ"))
+        ref = await writer.write_chunk("ZZ")
 
         reader = _make_adapter(path, max_bytes=8)
-        result = asyncio.get_event_loop().run_until_complete(reader.read_chunk(ref))
+        result = await reader.read_chunk(ref)
         assert result == "ZZ"

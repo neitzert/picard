@@ -205,19 +205,14 @@ class TestRowhammerAdapterIO:
 
     @patch("picard.adapters.rowhammer_adapter._virt_to_phys", return_value=0x1000)
     @patch("picard.adapters.rowhammer_adapter._alloc_huge_pages")
-    def test_write_chunk_location_format(self, mock_alloc, mock_v2p):
+    async def test_write_chunk_location_format(self, mock_alloc, mock_v2p):
         import ctypes
         a = self._make_adapter()
         profile = self._make_profile(a, n_bits=64)
         a._hw = MagicMock()
-
-        # Suppress actual hammering
         a._hammer = MagicMock()
 
-        import asyncio
-        ref = asyncio.get_event_loop().run_until_complete(
-            a.write_chunk("ABCD")
-        )
+        ref = await a.write_chunk("ABCD")
         assert ref.adapter_name == "rowhammer"
         assert ref.location.startswith("hammer://")
         payload = json.loads(ref.location.removeprefix("hammer://"))
@@ -227,33 +222,24 @@ class TestRowhammerAdapterIO:
 
     @patch("picard.adapters.rowhammer_adapter._virt_to_phys", return_value=0x1000)
     @patch("picard.adapters.rowhammer_adapter._alloc_huge_pages")
-    def test_write_read_roundtrip(self, mock_alloc, mock_v2p):
+    async def test_write_read_roundtrip(self, mock_alloc, mock_v2p):
         import ctypes
         a = self._make_adapter()
         profile = self._make_profile(a, n_bits=64)
         a._hw = MagicMock()
         a._hammer = MagicMock()
 
-        import asyncio
         original = "AB"
-        ref = asyncio.get_event_loop().run_until_complete(
-            a.write_chunk(original)
-        )
-        recovered = asyncio.get_event_loop().run_until_complete(
-            a.read_chunk(ref)
-        )
+        ref = await a.write_chunk(original)
+        recovered = await a.read_chunk(ref)
         assert recovered == original
 
-    def test_chunk_too_large_raises(self):
+    async def test_chunk_too_large_raises(self):
         a = self._make_adapter()   # max_chunk_bytes=4
-        import asyncio
         with pytest.raises(ValueError, match="too large"):
-            asyncio.get_event_loop().run_until_complete(
-                a.write_chunk("ABCDE")   # 5 bytes > 4
-            )
+            await a.write_chunk("ABCDE")   # 5 bytes > 4
 
-    def test_health_check_fails_on_non_linux(self, monkeypatch):
+    async def test_health_check_fails_on_non_linux(self, monkeypatch):
         monkeypatch.setattr("picard.adapters.rowhammer_adapter._LINUX_X86", False)
         a = self._make_adapter()
-        import asyncio
-        assert asyncio.get_event_loop().run_until_complete(a.health_check()) is False
+        assert await a.health_check() is False
