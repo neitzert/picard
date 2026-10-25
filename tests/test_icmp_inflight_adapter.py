@@ -58,7 +58,11 @@ def adapter(mock_platform_and_scapy):
     from picard.adapters.icmp_inflight_adapter import IcmpInflightAdapter
     a = IcmpInflightAdapter(interface="lo", icmp_id_base=1000)
     yield a
-    asyncio.get_event_loop().run_until_complete(a.close())
+    loop = asyncio.new_event_loop()
+    try:
+        loop.run_until_complete(a.close())
+    finally:
+        loop.close()
 
 
 # ---------------------------------------------------------------------------
@@ -66,7 +70,11 @@ def adapter(mock_platform_and_scapy):
 # ---------------------------------------------------------------------------
 
 def run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 SMALL_CHUNK = "hello-world-chunk"
