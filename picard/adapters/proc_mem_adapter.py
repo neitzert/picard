@@ -279,7 +279,8 @@ class ProcMemAdapter(Adapter):
                 f"Chunk {len(data)} bytes exceeds max {self._max_chunk_bytes}"
             )
         token = secrets.token_hex(16)
-        manifest_id = ""
+        parts = encoded_chunk.split(":", 3)
+        manifest_id = parts[2] if len(parts) >= 4 and parts[0] == "PCHK" else ""
 
         if self._mode == "self":
             assert self._store is not None
