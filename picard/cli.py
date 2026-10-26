@@ -165,7 +165,13 @@ def _adapters_from_config(store_dir: Path) -> list:
             if len(pool_adapters) < 2:
                 continue
             level = RaidLevel(raid_entry.level)
-            pool = RaidPool(pool_adapters, level, mirror_count=raid_entry.mirror_count)
+            pool = RaidPool(
+                pool_adapters,
+                level,
+                mirror_count=raid_entry.mirror_count,
+                erasure_k=raid_entry.erasure_k,
+                erasure_m=raid_entry.erasure_m,
+            )
             pools.append(pool)
             pooled_names.update(raid_entry.adapters)
         remaining = [a for a in adapters if not any(
@@ -602,6 +608,8 @@ def scatter_profiles_cmd(
     table.add_column("Description")
     for p in profiles:
         raid = p.raid_level.upper().replace("RAID", "RAID ")
+        if p.raid_level == "erasure":
+            raid = f"Erasure RS({p.erasure_k},{p.erasure_m})"
         table.add_row(p.name, raid, p.description)
     console.print(table)
     console.print(f"\nUse: picard put --profile <name> <file>")

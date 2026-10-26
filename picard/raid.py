@@ -29,6 +29,7 @@ class RaidLevel(str, Enum):
     RAID1 = "raid1"
     RAID5 = "raid5"
     RAID10 = "raid10"
+    ERASURE = "erasure"
 
 
 def _xor_bytes(a: bytes, b: bytes) -> bytes:
@@ -46,9 +47,10 @@ class RaidRef:
     refs: tuple[StoredChunkRef, ...]
     parity_refs: tuple[StoredChunkRef, ...] = ()
     stripe_id: int = -1
+    shard_indices: tuple[int, ...] = ()
 
     def pack(self) -> str:
-        data = {
+        data: dict = {
             "refs": [
                 {"adapter_name": r.adapter_name, "location": r.location}
                 for r in self.refs
@@ -61,6 +63,8 @@ class RaidRef:
             ]
         if self.stripe_id >= 0:
             data["stripe_id"] = self.stripe_id
+        if self.shard_indices:
+            data["shard_indices"] = list(self.shard_indices)
         return json.dumps(data, separators=(",", ":"))
 
     @classmethod
@@ -75,7 +79,13 @@ class RaidRef:
             for r in data.get("parity_refs", [])
         )
         stripe_id = data.get("stripe_id", -1)
-        return cls(refs=refs, parity_refs=parity_refs, stripe_id=stripe_id)
+        shard_indices = tuple(data.get("shard_indices", []))
+        return cls(
+            refs=refs,
+            parity_refs=parity_refs,
+            stripe_id=stripe_id,
+            shard_indices=shard_indices,
+        )
 
 
 @dataclass
@@ -96,6 +106,8 @@ class RaidPool(Adapter):
         level: RaidLevel = RaidLevel.RAID0,
         *,
         mirror_count: int = 2,
+        erasure_k: int = 4,
+        erasure_m: int = 6,
     ) -> None:
         if len(adapters) < 2:
             raise ValueError("RaidPool requires at least 2 adapters")
@@ -106,6 +118,19 @@ class RaidPool(Adapter):
                 raise ValueError("RAID 10 requires at least 4 adapters")
             if len(adapters) % 2 != 0:
                 raise ValueError("RAID 10 requires an even number of adapters")
+        if level == RaidLevel.ERASURE:
+            if not (1 <= erasure_k < erasure_m):
+                raise ValueError(
+                    f"erasure requires 1 <= erasure_k < erasure_m, "
+                    f"got erasure_k={erasure_k} erasure_m={erasure_m}"
+                )
+            if len(adapters) < erasure_m:
+                raise ValueError(
+                    f"erasure RS({erasure_k},{erasure_m}) needs at least "
+                    f"{erasure_m} adapters, got {len(adapters)}"
+                )
+        self._erasure_k = erasure_k
+        self._erasure_m = erasure_m
 
         self._adapters = list(adapters)
         self._adapter_map: dict[str, Adapter] = {
@@ -144,10 +169,15 @@ class RaidPool(Adapter):
             return await self._write_raid5(encoded_chunk)
         elif self._level == RaidLevel.RAID10:
             return await self._write_raid10(encoded_chunk)
+        elif self._level == RaidLevel.ERASURE:
+            return await self._write_erasure(encoded_chunk)
         raise ValueError(f"unsupported RAID level: {self._level}")
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         raid_ref = RaidRef.unpack(ref.location)
+
+        if self._level == RaidLevel.ERASURE:
+            return await self._read_erasure(raid_ref)
 
         if self._level == RaidLevel.RAID0:
             return await self._read_single(raid_ref.refs[0])
@@ -198,6 +228,8 @@ class RaidPool(Adapter):
             return len(healthy) >= 1
         elif self._level == RaidLevel.RAID5:
             return len(healthy) >= len(self._adapters) - 1
+        elif self._level == RaidLevel.ERASURE:
+            return len(healthy) >= self._erasure_k
         elif self._level == RaidLevel.RAID10:
             groups = self._mirror_groups()
             for group in groups:
@@ -209,6 +241,50 @@ class RaidPool(Adapter):
                     return False
             return True
         return False
+
+    # --- Erasure coding (Reed-Solomon via zfec) -----------------------------
+
+    async def _write_erasure(self, encoded_chunk: str) -> StoredChunkRef:
+        from picard.erasure import encode as rs_encode
+
+        data = encoded_chunk.encode("utf-8")
+        shards = rs_encode(data, self._erasure_k, self._erasure_m)
+
+        # Store each shard as a base64 string -- adapters accept arbitrary strings.
+        shard_strs = [base64.b64encode(s).decode() for s in shards]
+
+        results = await asyncio.gather(
+            *(self._adapters[i].write_chunk(shard_strs[i]) for i in range(self._erasure_m))
+        )
+        raid_ref = RaidRef(
+            refs=tuple(results),
+            shard_indices=tuple(range(self._erasure_m)),
+        )
+        return StoredChunkRef(
+            adapter_name=self.profile().name,
+            location=raid_ref.pack(),
+        )
+
+    async def _read_erasure(self, raid_ref: RaidRef) -> str:
+        from picard.erasure import decode as rs_decode
+
+        async def _try_read(ref: StoredChunkRef, idx: int) -> tuple[int, bytes | None]:
+            try:
+                chunk_str = await self._read_single(ref)
+                return idx, base64.b64decode(chunk_str)
+            except Exception:
+                return idx, None
+
+        results = await asyncio.gather(
+            *(_try_read(ref, idx) for ref, idx in zip(raid_ref.refs, raid_ref.shard_indices))
+        )
+
+        shards: list[bytes | None] = [None] * self._erasure_m
+        for idx, payload in results:
+            shards[idx] = payload
+
+        data = rs_decode(shards, self._erasure_k, self._erasure_m)
+        return data.decode("utf-8")
 
     # --- RAID 5 flush -------------------------------------------------------
 

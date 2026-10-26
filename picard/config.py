@@ -26,7 +26,7 @@ DEFAULT_BLOCK_SIZE = 65536
 
 
 VALID_BROWSER_MODES = frozenset({"api", "headless", "headed"})
-VALID_RAID_LEVELS = frozenset({"raid0", "raid1", "raid5", "raid10"})
+VALID_RAID_LEVELS = frozenset({"raid0", "raid1", "raid5", "raid10", "erasure"})
 _MAX_ADAPTER_NAME_LEN = 128
 _ADAPTER_NAME_BAD = frozenset("/\\\x00..")
 
@@ -55,6 +55,8 @@ class RaidEntry:
     level: str = "raid0"
     adapters: list[str] = field(default_factory=list)
     mirror_count: int = 2
+    erasure_k: int = 4
+    erasure_m: int = 6
 
 
 @dataclass
@@ -68,6 +70,8 @@ class ScatterProfile:
     adapter_names: list[str] = field(default_factory=list)
     min_adapters: int = 2
     description: str = ""
+    erasure_k: int = 4
+    erasure_m: int = 6
 
 
 @dataclass
@@ -133,12 +137,28 @@ def load_config(path: Path | None = None) -> PicardConfig:
                 raise ValueError(
                     f"invalid RAID level {level!r}, must be one of {sorted(VALID_RAID_LEVELS)}"
                 )
+            ek = entry.get("erasure_k", 4)
+            em = entry.get("erasure_m", 6)
+            if level == "erasure":
+                if not (1 <= ek < em):
+                    raise ValueError(
+                        f"erasure pool requires 1 <= erasure_k < erasure_m, "
+                        f"got erasure_k={ek} erasure_m={em}"
+                    )
+                adapters_list = entry.get("adapters", [])
+                if adapters_list and len(adapters_list) < em:
+                    raise ValueError(
+                        f"erasure pool with erasure_m={em} needs at least {em} adapters, "
+                        f"got {len(adapters_list)}"
+                    )
             cfg.raid.append(
                 RaidEntry(
                     name=entry.get("name", f"pool-{i}"),
                     level=level,
                     adapters=entry.get("adapters", []),
                     mirror_count=entry.get("mirror_count", 2),
+                    erasure_k=ek,
+                    erasure_m=em,
                 )
             )
 
