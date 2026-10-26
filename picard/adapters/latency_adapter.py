@@ -335,18 +335,23 @@ class LatencyAdapter(Adapter):
         return ref
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
+        if ref.location not in self._registry:
+            raise KeyError(f"latency chunk not found (deleted or never written): {ref.location[:60]}")
+
         loc = json.loads(ref.location)
         ips: list[str] = loc["ips"]
         threshold: float = loc["threshold_ms"]
-        baseline: dict[str, float] = loc["baseline_ms"]
         n_bits: int = loc["n_bits"]
         samples: int = loc.get("samples", self._samples)
+
+        # Re-measure baseline at read time against the loopback host, not stored
+        # per-IP values -- stored baselines can be stale if system load changed.
+        live_base = await self._measure_rtt("127.0.0.1", n=samples)
 
         bits: list[int] = []
         for ip in ips:
             rtt = await self._measure_rtt(ip, n=samples)
-            base = baseline.get(ip, 0.0)
-            bits.append(1 if (rtt - base) > threshold / 2 else 0)
+            bits.append(1 if (rtt - live_base) > threshold / 2 else 0)
 
         raw = self._bits_to_bytes(bits[:n_bits])
         return raw.decode(errors="replace")
