@@ -107,8 +107,12 @@ These adapters use substrates that are not memory, not storage, and not network 
 | proc-mem | `memfd_create` anonymous fds held by companion daemon (`picard/proc_mem_companion.py`) via SCM_RIGHTS. No filesystem path. Fallback self-mode uses cross-platform `mmap.mmap`. | While companion process is alive | Linux (primary mode), Unix socket |
 | thermal | CPU die temperature covert channel. Load/idle cycles encode bits; sysfs thermal zones decode them. Labeled as a channel, not storage. ~1 bit per 30 seconds. | Not persistent (heat dissipates) | Linux, sysfs thermal zones |
 | hdd-smart | Seek pattern conditioning shifts HDD firmware SMART attribute values. Bits encoded as attribute deltas from a calibration baseline. Unverified hypothesis. Use `tools/characterize_hdd_smart.py` to assess viability. | Power-cycle persistent (SMART flash) | Spinning-platter HDD, root, `smartmontools` |
+| sip-registrar | SIP REGISTER state in a registrar's location database. Contact header carries base64 payload in a `+picard` parameter. Digest MD5 auth (RFC 3261). Raw UDP SIP, no external deps. | Until `Expires` lapses or deregistration | Any RFC 3261 SIP registrar (Kamailio, OpenSIPS, Asterisk) |
+| sip-presence | PIDF+XML presence documents published to a SIP presence server via PUBLISH (RFC 3903). Payload in a `<picard:data>` element. ETag tracking for conditional updates. | Until `Expires` lapses | SIP presence server with RFC 3903 support |
+| turn | STUN/TURN relay allocation (RFC 5766). Long-term HMAC-SHA1 credential exchange. Channel binding keyed by chunk hash. Background Refresh loop maintains the allocation. No at-rest state: relay table is in server RAM. | While allocation is live (configurable lifetime) | TURN server, stdlib only |
+| rtp-inflight | RTP packet payloads (RFC 3550) circulating on UDP loopback port pairs. SSRC-keyed relay thread re-injects each packet after receipt. Fragment ordering via 16-bit sequence number. No at-rest state. Cross-platform, no elevated privs. | While relay thread is alive | stdlib only, any platform |
 
-Total: **270 adapter implementations** (273 files including base.py, __init__.py, remote.py).
+Total: **274 adapter implementations** (277 files including base.py, __init__.py, remote.py).
 
 ---
 

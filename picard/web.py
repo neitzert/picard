@@ -698,7 +698,8 @@ _CATEGORY_MAP = {
              "usenet", "whois", "cloudflare-dns"},
     "hardware-vulnerability": {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"},
     "unconventional-substrate": {"mempool", "latency", "icmp-inflight",
-                                  "proc-mem", "thermal", "hdd-smart"},
+                                  "proc-mem", "thermal", "hdd-smart",
+                                  "sip-registrar", "sip-presence", "turn", "rtp-inflight"},
 }
 
 _TYPE_TO_CATEGORY: dict[str, str] = {}

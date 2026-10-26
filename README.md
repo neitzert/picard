@@ -20,7 +20,7 @@ Not efficient. Protocol-agnostic.
 > [!WARNING]
 > **Experimental.** These adapters store data in places that were never designed for storage: the Ethereum mempool, Linux kernel traffic shaping rules, circulating network packets, process address space, CPU temperature, and HDD calibration tables. Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
 
-Six new adapters push storage into substrates with no at-rest ciphertext:
+Ten new adapters push storage into substrates with no at-rest ciphertext:
 
 | Adapter | Where the data lives |
 |---------|---------------------|
@@ -30,8 +30,12 @@ Six new adapters push storage into substrates with no at-rest ciphertext:
 | [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Anonymous memfd held open by a companion daemon. No filesystem path, no name, no socket. |
 | [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel (demonstration only -- heat dissipates). |
 | [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. Power-cycle persistent. Unverified hypothesis -- run the characterization script first. |
+| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | SIP REGISTER state in a registrar's location database. Data lives as telephony routing bindings until `Expires` lapses. |
+| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | PIDF+XML presence documents on a SIP presence server. Data lives as subscription state. |
+| [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. |
+| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state, stdlib only. |
 
-270 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+274 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
 
 ---
 
@@ -93,7 +97,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 *Storage surface by category, adapter health, and encryption details at a glance.*
 
 ![PICARD adapter registry](docs/img/ui-adapters.png)
-*270 adapters browsable by category, with required parameters and one-click add.*
+*274 adapters browsable by category, with required parameters and one-click add.*
 
 ---
 
@@ -242,7 +246,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-270 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+274 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
 ### Tier 1: Your own infrastructure
 
@@ -306,6 +310,10 @@ All four are ephemeral: a power cycle erases everything. See [docs/adapters.md](
 | [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Foreign process address space via `memfd_create` + SCM_RIGHTS. Companion daemon holds anonymous RAM-backed fds. No filesystem path. | Linux (primary mode), Unix socket, companion daemon |
 | [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel. Encodes bits via CPU load; reads sysfs thermal zone sensors. Demo channel only -- not persistent storage. | Linux, sysfs thermal zones |
 | [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. SMART attribute deltas encode bits. Power-cycle persistent. Unverified hypothesis. | Spinning-platter HDD, root, `smartmontools` |
+| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | SIP REGISTER state in a SIP registrar's location database. Data lives as telephony routing bindings until `Expires` lapses. Raw UDP SIP, Digest MD5 auth. | Self-hosted Kamailio/OpenSIPS or any RFC 3261 registrar |
+| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | PIDF+XML presence documents published to a SIP presence server. Data lives in subscription state until `Expires` lapses. | SIP presence server (RFC 3903 PUBLISH) |
+| [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Data lives as relay routing state; background Refresh keeps the allocation alive. No at-rest state. | TURN server (RFC 5766), stdlib only |
+| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP packet payloads circulating on a UDP loopback call leg. Background relay thread keeps each SSRC-keyed packet in motion. No at-rest state. | stdlib only, any platform |
 
 See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for detail on each substrate.
 

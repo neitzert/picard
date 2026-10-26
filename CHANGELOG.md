@@ -14,9 +14,14 @@
 - `tools/verify_icmp_inflight.py`: AF_PACKET loopback interception verification script for the ICMP in-flight adapter.
 - Optional dependency extras: `mempool` (requires `web3>=6.0`), `icmp-inflight` (requires `scapy>=2.5`), `proc-mem`, `latency`, `thermal`, `hdd-smart` (all stdlib/system-tool only).
 - New adapter category `unconventional-substrate` in CLI and web UI, with experimental warning in the configure modal.
+- `sip_registrar_adapter.py`: SIP REGISTER state as a storage substrate. Encodes chunks in Contact header `+picard` parameters of synthetic AOR bindings. Raw UDP SIP, Digest MD5 auth (RFC 3261). No external deps. Data lives as telephony routing state until `Expires` lapses.
+- `sip_presence_adapter.py`: SIP PUBLISH presence documents as a storage substrate. Chunks embedded in PIDF+XML `<picard:data>` elements published to synthetic AORs. ETag-tracked conditional updates. No external deps.
+- `turn_adapter.py`: STUN/TURN relay allocation state as a storage substrate. Long-term HMAC-SHA1 credential, channel binding, background Refresh loop. Data lives in the relay server's RAM as routing state. No at-rest state; deallocation on delete. No external deps.
+- `rtp_inflight_adapter.py`: RTP packet payloads circulating on UDP loopback port pairs as a storage substrate. SSRC-keyed relay thread re-injects each packet. No at-rest state. Cross-platform, no elevated privileges. No external deps.
+- Optional dependency extras: `sip-registrar`, `sip-presence`, `turn`, `rtp-inflight` (all stdlib only).
 
 ### Changed
-- Adapter count: 264 -> 270.
+- Adapter count: 264 -> 274.
 - Version bumped to 0.4.0.
 
 ---

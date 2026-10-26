@@ -530,7 +530,7 @@ def du(
 
 
 _HARDWARE_VULNERABILITY_ADAPTERS = {"rowhammer", "halfdouble", "throwhammer", "cpu-cache"}
-_UNCONVENTIONAL_SUBSTRATE_ADAPTERS = {"mempool", "latency", "icmp-inflight", "proc-mem", "thermal", "hdd-smart"}
+_UNCONVENTIONAL_SUBSTRATE_ADAPTERS = {"mempool", "latency", "icmp-inflight", "proc-mem", "thermal", "hdd-smart", "sip-registrar", "sip-presence", "turn", "rtp-inflight"}
 
 
 @app.command()
