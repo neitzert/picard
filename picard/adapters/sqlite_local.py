@@ -46,9 +46,14 @@ class SQLiteLocalAdapter(Adapter):
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         chunk_id = uuid.uuid4().hex[:12]
         location = f"sqlite://{self._db_path}/{chunk_id}"
+        try:
+            from picard.chunker import Chunk
+            manifest_id = Chunk.decode(encoded_chunk).manifest_id
+        except Exception:
+            manifest_id = ""
         self._conn.execute(
             "INSERT INTO chunks (id, manifest_id, data) VALUES (?, ?, ?)",
-            (chunk_id, "", encoded_chunk),
+            (chunk_id, manifest_id, encoded_chunk),
         )
         self._conn.commit()
         return StoredChunkRef(adapter_name="sqlite_local", location=location)
