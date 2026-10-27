@@ -32,7 +32,7 @@ _ADAPTER_NAME = "ntp-inflight"
 _NTP_EPOCH_DELTA = 2208988800  # seconds between 1900 and 1970
 
 # NTP packet: LI=0, VN=4, Mode=3 (client), 48 bytes total
-_NTP_HEADER = struct.pack("!BBBb11I", 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+_NTP_HEADER = struct.pack("!BBBb11I", 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 
 def _build_ntp_with_payload(chunk_bytes: bytes) -> bytes:
@@ -61,7 +61,7 @@ class NtpInflightAdapter(Adapter):
         server_host: str = "127.0.0.1",
         server_port: int = 12323,
         *,
-        max_chunk_bytes: int = 16,
+        max_chunk_bytes: int = 65536,
         timeout: float = 1.0,
     ) -> None:
         self._host = server_host

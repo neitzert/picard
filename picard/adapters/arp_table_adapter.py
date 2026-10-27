@@ -91,23 +91,17 @@ class ArpTableAdapter(Adapter):
         except Exception:
             manifest_id = ""
 
-        # Flush existing entries first so a second write is idempotent.
-        subprocess.run(
-            ["ip", "neigh", "flush", "dev", self._iface],
-            capture_output=True,
-        )
-
         for i, v in enumerate(data):
             ip = self._ip_for(i)
             mac = self._mac_for(i, v)
             result = subprocess.run(
-                ["ip", "neigh", "add", ip, "lladdr", mac,
+                ["ip", "neigh", "replace", ip, "lladdr", mac,
                  "dev", self._iface, "nud", "permanent"],
                 capture_output=True,
             )
             if result.returncode != 0:
                 raise PermissionError(
-                    f"ip neigh add failed: {result.stderr.decode().strip()}"
+                    f"ip neigh replace failed: {result.stderr.decode().strip()}"
                 )
 
         loc = json.dumps({
@@ -176,10 +170,12 @@ class ArpTableAdapter(Adapter):
             return False
         loc = json.loads(ref.location)
         iface = loc.get("iface", self._iface)
-        subprocess.run(
-            ["ip", "neigh", "flush", "dev", iface],
-            capture_output=True,
-        )
+        n_bytes: int = loc.get("n_bytes", 0)
+        for i in range(n_bytes):
+            subprocess.run(
+                ["ip", "neigh", "del", self._ip_for(i), "dev", iface],
+                capture_output=True,
+            )
         del self._registry[ref.location]
         return True
 
