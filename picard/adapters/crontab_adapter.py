@@ -157,11 +157,8 @@ class CrontabAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        try:
-            await self._run_crontab("-l")
-            return True
-        except Exception:
-            return False
+        import shutil
+        return shutil.which("crontab") is not None
 
     async def capacity(self) -> dict[str, int | None]:
         used = sum(len(v.encode()) for v in self._cache.values())

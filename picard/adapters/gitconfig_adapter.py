@@ -116,11 +116,10 @@ class GitConfigAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            cmd = ["git", "config", *self._scope_args(), "--list"]
             proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                "git", "--version",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
             await proc.communicate()
             return proc.returncode == 0
