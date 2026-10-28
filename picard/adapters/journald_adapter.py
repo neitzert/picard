@@ -104,10 +104,12 @@ class JournaldAdapter(Adapter):
         token = ref.location.removeprefix("journald://")
         if token in self._registry:
             return self._registry[token][0]
-        # Fallback: scan journalctl output
+        # Fallback: query journalctl by the exact PICARD_TOKEN field value.
+        # -t picard would filter by SYSLOG_IDENTIFIER which we don't set.
         try:
             proc = await asyncio.create_subprocess_exec(
-                "journalctl", "--output=json", "-t", "picard", "--no-pager",
+                "journalctl", "--output=json", "--no-pager",
+                f"PICARD_TOKEN={token}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
