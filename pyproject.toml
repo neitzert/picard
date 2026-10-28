@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "picard-store"
-version = "0.3.1"
+version = "0.4.0"
 description = "Protocol-Introspecting Chunk Adapter for Resilient Data: encrypt, chunk, and scatter data across protocol gaps."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -20,8 +20,28 @@
 - `rtp_inflight_adapter.py`: RTP packet payloads circulating on UDP loopback port pairs as a storage substrate. SSRC-keyed relay thread re-injects each packet. No at-rest state. Cross-platform, no elevated privileges. No external deps.
 - Optional dependency extras: `sip-registrar`, `sip-presence`, `turn`, `rtp-inflight` (all stdlib only).
 
+- `tmpfs_xattr_adapter.py`: All chunks as extended attributes on a single /dev/shm sentinel file. No privileges needed. Linux xattr (user.picard.* namespace), 65535 bytes per chunk.
+- `keyring_adapter.py`: Linux kernel session keyring via `keyctl padd/pipe/revoke`. No elevated privileges, 32 KB per key, evicted at session end.
+- `dram_refresh_adapter.py`: Six bytes encoded across `/proc/sys/vm` kernel parameters (swappiness, dirty_ratio, etc.). Root required. Original values restored on delete. Single-chunk limit by design.
+- `cpu_freq_adapter.py`: CPU P-state bit encoding via cpufreq sysfs. Transparent VM fallback encodes chunk in location JSON when no cpufreq is available.
+- `arp_table_adapter.py`: Kernel neighbor table via `ip neigh replace` on a `dummy` interface (`picard-arp0`). CAP_NET_ADMIN required. 64 bytes capacity, one byte per ARP entry.
+- `tcp_isn_adapter.py` + `tcp_isn_companion.py`: TCP Initial Sequence Number covert channel. Companion (scapy SYN listener + asyncio Unix socket) holds ISNs. In-process fallback when companion absent.
+- `dns_question_adapter.py` + `dns_companion.py`: DNS TXT record storage via an authoritative companion on port 5354 (dnslib). Unix socket control channel. In-process fallback.
+- `ntp_inflight_adapter.py`: Chunk data embedded in NTP fractional timestamp fields. In-process registry (demo mode) without companion. Fire-and-forget UDP.
+- `gpu_vram_adapter.py` + `gpu_vram_companion.py`: OpenCL buffer storage via companion daemon (pyopencl). Falls back to in-process dict when companion absent or pyopencl unavailable.
+- `mdns_zeroconf_adapter.py`: mDNS service TXT records via the `zeroconf` library. Registers `_picard._tcp.local.` services. LAN-visible. 1 KB per chunk.
+- `wifi_beacon_adapter.py`: 802.11 vendor IE construction (OUI `f0:9f:c2`, type `01`). In-process registry, `generate_hostapd_conf()` helper for deployment. Requires hostapd and a Wi-Fi interface.
+- `browser_indexeddb_adapter.py`: Browser IndexedDB via Playwright. Persistent across page reloads in the same context. 10 MB per chunk.
+- `browser_cache_adapter.py`: Browser Cache API via Playwright with `page.route()` secure-context trick on localhost. 10 MB per chunk.
+- `lightning_adapter.py`: Core Lightning hold invoices via `pyln-client`. Invoice is a durable commitment anchor; encoded chunk held in-process registry. Requires CLN node with `holdinvoice` plugin.
+- `bitcoin_opreturn_adapter.py`: Bitcoin OP_RETURN outputs via `python-bitcoinlib`. 80 bytes per transaction. WARNING: data is permanent and public on mainnet. RBF delete is best-effort while in mempool. Regtest default.
+- `ebpf_map_adapter.py`: Pinned `BPF_MAP_TYPE_HASH` via ctypes `bpf(2)` syscall. No external deps. Pinned at `/sys/fs/bpf/picard/`. 65535 bytes per value, survives process death. Requires CAP_BPF (Linux 5.8+).
+- Reed-Solomon erasure coding via `zfec` (`picard/erasure.py`). Integrated into RAID layer as `RaidLevel.ERASURE` with configurable `erasure_k`/`erasure_m` params.
+- Bug fixes: `sqlite_local` manifest_id parsing, `latency` read-after-delete guard and live baseline, `proc_mem` manifest_id parsing, `crontab` and `gitconfig` health_check false negatives.
+- 16 new unit test files for novel substrate adapters.
+
 ### Changed
-- Adapter count: 264 -> 274.
+- Adapter count: 264 -> 290+.
 - Version bumped to 0.4.0.
 
 ---
