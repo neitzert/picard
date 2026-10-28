@@ -74,7 +74,8 @@ class GitNotesAdapter(Adapter):
         except Exception:
             manifest_id = ""
 
-        blob_sha = await self._git("hash-object", "-w", "--stdin", stdin=b"")
+        token = uuid.uuid4().hex
+        blob_sha = await self._git("hash-object", "-w", "--stdin", stdin=token.encode())
         await self._git(
             "notes", f"--ref={self._ref}", "add",
             "-m", encoded_chunk, blob_sha,

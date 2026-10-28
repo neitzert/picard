@@ -1,8 +1,9 @@
 """cgroup v2 adapter -- stores chunks in cgroup memory.max parameter files.
 
-Each chunk is base64url-encoded, split into 8-character segments, and each
-segment is written as a 64-bit integer to the memory.max file of a numbered
-sub-cgroup. Data persists until the cgroup hierarchy is removed.
+Each chunk is base64url-encoded and split into 8-character segments. Each
+segment is written as a 64-bit integer to the memory.max file of a sibling
+cgroup named picard/<token>-<idx>. Sibling cgroups avoid the sub-cgroup
+delegation restrictions imposed by systemd on Ubuntu 22.04+.
 
 Requires: Linux, root, cgroup v2 (/sys/fs/cgroup/).
 """
@@ -12,6 +13,7 @@ from __future__ import annotations
 import base64
 import os
 import sys
+import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
@@ -32,8 +34,21 @@ def _int_to_seg(val: int) -> str:
     return val.to_bytes(8, "big").rstrip(b"\x00").decode()
 
 
+def _ensure_memory_controller(cgroup_root: str) -> None:
+    """Best-effort: enable memory controller at the picard cgroup level."""
+    for ctrl_path in (
+        "/sys/fs/cgroup/cgroup.subtree_control",
+        f"{cgroup_root}/../cgroup.subtree_control",
+    ):
+        try:
+            with open(os.path.normpath(ctrl_path), "w") as f:
+                f.write("+memory")
+        except OSError:
+            pass
+
+
 class CgroupLimitsAdapter(Adapter):
-    """Store chunks in cgroup v2 memory.max parameter files."""
+    """Store chunks across sibling cgroup v2 memory.max parameter files."""
 
     def __init__(
         self,
@@ -66,24 +81,24 @@ class CgroupLimitsAdapter(Adapter):
         except Exception:
             manifest_id = ""
 
-        import uuid
         token = uuid.uuid4().hex[:16]
-        token_dir = os.path.join(self._root, token)
 
         # base64url-encode for safe 8-byte segment encoding
         b64 = base64.urlsafe_b64encode(data).decode()
         segments = [b64[i:i + 8] for i in range(0, len(b64), 8)]
 
-        # Write length to parent cgroup memory.max, segments to sub-cgroups
-        os.makedirs(token_dir, exist_ok=True)
-        with open(os.path.join(token_dir, "memory.max"), "w") as f:
-            f.write(str(len(b64)))
+        # Enable memory controller at root -> picard level (best-effort).
+        _ensure_memory_controller(self._root)
+        os.makedirs(self._root, exist_ok=True)
 
-        for i, seg in enumerate(segments):
-            sub_dir = os.path.join(token_dir, str(i))
-            os.makedirs(sub_dir, exist_ok=True)
-            with open(os.path.join(sub_dir, "memory.max"), "w") as f:
-                f.write(str(_seg_to_int(seg)))
+        # Use flat sibling cgroups: picard/<token>-<idx>
+        # This avoids the sub-cgroup delegation ENOMEM on systemd-managed hosts.
+        # <token>-len stores the total b64 length; <token>-<i> stores each segment.
+        for suffix, value in [("len", len(b64))] + [(str(i), _seg_to_int(seg)) for i, seg in enumerate(segments)]:
+            cg_dir = os.path.join(self._root, f"{token}-{suffix}")
+            os.makedirs(cg_dir, exist_ok=True)
+            with open(os.path.join(cg_dir, "memory.max"), "w") as f:
+                f.write(str(value))
 
         self._registry[token] = (encoded_chunk, manifest_id)
         return StoredChunkRef(adapter_name=_ADAPTER_NAME, location=f"cgroup-limits://{token}")
@@ -98,20 +113,13 @@ class CgroupLimitsAdapter(Adapter):
         token = ref.location.removeprefix("cgroup-limits://")
         if token not in self._registry:
             return False
-        token_dir = os.path.join(self._root, token)
-        # Remove sub-cgroups first (numbered dirs), then parent
-        if os.path.isdir(token_dir):
-            for entry in sorted(os.listdir(token_dir)):
-                sub = os.path.join(token_dir, entry)
-                if os.path.isdir(sub):
+        if os.path.isdir(self._root):
+            for entry in os.listdir(self._root):
+                if entry.startswith(f"{token}-"):
                     try:
-                        os.rmdir(sub)
+                        os.rmdir(os.path.join(self._root, entry))
                     except OSError:
                         pass
-            try:
-                os.rmdir(token_dir)
-            except OSError:
-                pass
         del self._registry[token]
         return True
 
@@ -125,7 +133,7 @@ class CgroupLimitsAdapter(Adapter):
     async def health_check(self) -> bool:
         if not os.path.isfile(_CGROUP_CONTROLLERS):
             return False
-        parent = os.path.dirname(self._root)
+        parent = os.path.dirname(self._root) or "/sys/fs/cgroup"
         return os.access(parent, os.W_OK)
 
     async def close(self) -> None:
