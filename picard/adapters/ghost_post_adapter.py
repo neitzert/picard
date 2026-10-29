@@ -1,9 +1,9 @@
-"""Ghost CMS adapter -- stores chunks as Ghost draft post content.
+"""Ghost post adapter -- stores chunks as Ghost CMS posts.
 
-Each write_chunk creates a draft post with the encoded chunk as the
-HTML content. Cold reads fetch via GET /ghost/api/admin/posts/{id}.
+Each write_chunk creates a draft post with the encoded chunk as HTML content
+via the Ghost Admin API.
 
-Requires: aiohttp, a Ghost Admin API key (ID:Secret format) and site URL.
+Requires: aiohttp, Ghost Admin API URL, Staff Access Token (id:secret format).
 """
 from __future__ import annotations
 
@@ -29,28 +29,38 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
     return ""
 
 
-def _ghost_jwt(api_key: str) -> str:
-    key_id, secret = api_key.split(":")
-    iat = int(time.time())
-    header = {"alg": "HS256", "typ": "JWT", "kid": key_id}
-    payload = {"iat": iat, "exp": iat + 300, "aud": "/admin/"}
-    import base64 as _b64
-    def _b64url(data: bytes) -> str:
-        return _b64.urlsafe_b64encode(data).rstrip(b"=").decode()
-    h = _b64url(json.dumps(header).encode())
-    p = _b64url(json.dumps(payload).encode())
-    sig_input = f"{h}.{p}".encode()
-    sig = hmac.new(bytes.fromhex(secret), sig_input, hashlib.sha256).digest()
-    return f"{h}.{p}.{_b64url(sig)}"
+def _make_jwt(key_id: str, secret_hex: str) -> str:
+    import base64
+    header = base64.urlsafe_b64encode(
+        json.dumps({"alg": "HS256", "kid": key_id, "typ": "JWT"}).encode()
+    ).rstrip(b"=").decode()
+    now = int(time.time())
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"iat": now, "exp": now + 300,
+                    "aud": "/admin/"}).encode()
+    ).rstrip(b"=").decode()
+    signing_input = f"{header}.{payload}".encode()
+    secret_bytes = bytes.fromhex(secret_hex)
+    sig = base64.urlsafe_b64encode(
+        hmac.new(secret_bytes, signing_input, hashlib.sha256).digest()
+    ).rstrip(b"=").decode()
+    return f"{header}.{payload}.{sig}"
 
 
 class GhostPostAdapter(Adapter):
 
-    def __init__(self, *, site_url: str = "", admin_api_key: str = "") -> None:
-        self._site_url = site_url.rstrip("/")
-        self._admin_api_key = admin_api_key
-        self._reg: dict[str, str] = {}
+    def __init__(self, *, admin_url: str = "",
+                 admin_key: str = "") -> None:
+        self._base = admin_url.rstrip("/")
+        self._admin_key = admin_key
         self._session = None
+        self._reg: dict[str, str] = {}
+
+    def _jwt(self) -> str:
+        if ":" not in self._admin_key:
+            return self._admin_key
+        key_id, secret = self._admin_key.split(":", 1)
+        return _make_jwt(key_id, secret)
 
     async def _get_session(self):
         if self._session is None:
@@ -58,56 +68,58 @@ class GhostPostAdapter(Adapter):
             self._session = aiohttp.ClientSession()
         return self._session
 
-    def _auth_header(self) -> str:
-        return f"Ghost {_ghost_jwt(self._admin_api_key)}"
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Ghost {self._jwt()}",
+            "Content-Type": "application/json",
+        }
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
             name=_NAME,
-            max_chunk_bytes=1_000_000,
+            max_chunk_bytes=65536,
             persistent=True,
             ordered=False,
             rate_limit_per_min=60,
-            tags={"requires": "aiohttp,ghost-admin-api-key", "substrate": "ghost-draft-post-html"},
+            tags={"requires": "ghost-admin-key,admin-url",
+                  "substrate": "ghost-post-html"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
-        url = f"{self._site_url}/ghost/api/admin/posts/"
-        payload = {
-            "posts": [{
-                "title": f"picard-{token}",
-                "html": encoded_chunk,
-                "status": "draft",
-                "visibility": "internal",
-            }]
-        }
+        payload = {"posts": [{
+            "title": f"picard:{token}",
+            "html": f"<p>{encoded_chunk}</p>",
+            "status": "draft",
+            "tags": [{"name": "picard"}],
+        }]}
         async with session.post(
-                url, json=payload,
-                headers={"Authorization": self._auth_header()}) as resp:
+                f"{self._base}/ghost/api/admin/posts/",
+                headers=self._headers(), json=payload) as resp:
             resp.raise_for_status()
             data = await resp.json()
         post_id = data["posts"][0]["id"]
         self._reg[token] = encoded_chunk
-        return StoredChunkRef(
-            adapter_name=_NAME,
-            location=json.dumps({"token": token, "post_id": post_id,
-                                  "manifest": manifest_id}),
-        )
+        return StoredChunkRef(adapter_name=_NAME,
+                              location=json.dumps({"token": token,
+                                                    "post_id": post_id,
+                                                    "manifest": manifest_id}))
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         loc = json.loads(ref.location)
         if loc["token"] in self._reg:
             return self._reg[loc["token"]]
         session = await self._get_session()
-        url = f"{self._site_url}/ghost/api/admin/posts/{loc['post_id']}"
         async with session.get(
-                url, headers={"Authorization": self._auth_header()}) as resp:
+                f"{self._base}/ghost/api/admin/posts/{loc['post_id']}/",
+                headers=self._headers()) as resp:
             resp.raise_for_status()
             data = await resp.json()
-        chunk = data["posts"][0]["html"]
+        import re
+        chunk = re.sub(r"<[^>]+>", "",
+                       data["posts"][0].get("html", "")).strip()
         self._reg[loc["token"]] = chunk
         return chunk
 
@@ -115,32 +127,26 @@ class GhostPostAdapter(Adapter):
         loc = json.loads(ref.location)
         self._reg.pop(loc["token"], None)
         session = await self._get_session()
-        url = f"{self._site_url}/ghost/api/admin/posts/{loc['post_id']}"
         async with session.delete(
-                url, headers={"Authorization": self._auth_header()}) as resp:
-            resp.raise_for_status()
-        return True
+                f"{self._base}/ghost/api/admin/posts/{loc['post_id']}/",
+                headers=self._headers()) as resp:
+            return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "post_id": "",
-                                          "manifest": manifest_id}),
-                ))
-        return refs
+        return [StoredChunkRef(adapter_name=_NAME,
+                               location=json.dumps({"token": t, "post_id": "",
+                                                     "manifest": manifest_id}))
+                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
 
     async def health_check(self) -> bool:
-        if not self._site_url or not self._admin_api_key or ":" not in self._admin_api_key:
+        if not self._base or not self._admin_key:
             return False
         try:
             session = await self._get_session()
-            url = f"{self._site_url}/ghost/api/admin/site/"
             async with session.get(
-                    url, headers={"Authorization": self._auth_header()}) as resp:
-                return resp.status == 200
+                    f"{self._base}/ghost/api/admin/site/",
+                    headers=self._headers()) as resp:
+                return resp.status in (200, 403)
         except Exception:
             return False
 
