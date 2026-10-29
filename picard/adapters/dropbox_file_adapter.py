@@ -1,9 +1,9 @@
 """Dropbox file adapter -- stores chunks as Dropbox files.
 
-Each write_chunk uploads the encoded chunk as a file to
-/picard/{manifest}/{token} via the Dropbox API v2.
+Each write_chunk uploads the encoded chunk as a text file at
+/picard/{token}.txt. Cold reads download via /files/download.
 
-Requires: aiohttp, Dropbox access token.
+Requires: aiohttp, a Dropbox access token.
 """
 from __future__ import annotations
 
@@ -14,10 +14,8 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 
 _NAME = "dropbox-file"
-_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload"
-_DOWNLOAD_URL = "https://content.dropboxapi.com/2/files/download"
-_DELETE_URL = "https://api.dropboxapi.com/2/files/delete_v2"
-_LIST_URL = "https://api.dropboxapi.com/2/files/list_folder"
+_CONTENT_URL = "https://content.dropboxapi.com/2"
+_API_URL = "https://api.dropboxapi.com/2"
 
 
 def _manifest_id_from_chunk(encoded_chunk: str) -> str:
@@ -33,60 +31,60 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
 class DropboxFileAdapter(Adapter):
 
     def __init__(self, *, access_token: str = "") -> None:
-        self._token = access_token
-        self._session = None
+        self._access_token = access_token
         self._reg: dict[str, str] = {}
-
-    def _auth_header(self) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self._token}"}
+        self._session = None
 
     async def _get_session(self):
         if self._session is None:
             import aiohttp
-            self._session = aiohttp.ClientSession()
+            headers = {}
+            if self._access_token:
+                headers["Authorization"] = f"Bearer {self._access_token}"
+            self._session = aiohttp.ClientSession(headers=headers)
         return self._session
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
             name=_NAME,
-            max_chunk_bytes=10_000_000,
+            max_chunk_bytes=150_000_000,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=1000,
-            tags={"requires": "dropbox-access-token",
-                  "substrate": "dropbox-file"},
+            rate_limit_per_min=60,
+            tags={"requires": "aiohttp,dropbox-access-token", "substrate": "dropbox-file"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
-        path = f"/picard/{manifest_id}/{token}"
         session = await self._get_session()
-        headers = {
-            **self._auth_header(),
-            "Content-Type": "application/octet-stream",
-            "Dropbox-API-Arg": json.dumps({"path": path, "mode": "add"}),
-        }
-        async with session.post(_UPLOAD_URL, headers=headers,
-                                data=encoded_chunk.encode()) as resp:
+        path = f"/picard/{token}.txt"
+        arg = json.dumps({"path": path, "mode": "overwrite"})
+        async with session.post(
+                f"{_CONTENT_URL}/files/upload",
+                data=encoded_chunk.encode(),
+                headers={"Content-Type": "application/octet-stream",
+                         "Dropbox-API-Arg": arg}) as resp:
             resp.raise_for_status()
         self._reg[token] = encoded_chunk
-        return StoredChunkRef(adapter_name=_NAME,
-                              location=json.dumps({"token": token, "path": path,
-                                                    "manifest": manifest_id}))
+        return StoredChunkRef(
+            adapter_name=_NAME,
+            location=json.dumps({"token": token, "path": path,
+                                  "manifest": manifest_id}),
+        )
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         loc = json.loads(ref.location)
         if loc["token"] in self._reg:
             return self._reg[loc["token"]]
         session = await self._get_session()
-        headers = {
-            **self._auth_header(),
-            "Dropbox-API-Arg": json.dumps({"path": loc["path"]}),
-        }
-        async with session.post(_DOWNLOAD_URL, headers=headers) as resp:
+        arg = json.dumps({"path": loc["path"]})
+        async with session.post(
+                f"{_CONTENT_URL}/files/download",
+                headers={"Content-Type": "text/plain",
+                         "Dropbox-API-Arg": arg}) as resp:
             resp.raise_for_status()
-            chunk = (await resp.read()).decode()
+            chunk = await resp.text()
         self._reg[loc["token"]] = chunk
         return chunk
 
@@ -94,28 +92,34 @@ class DropboxFileAdapter(Adapter):
         loc = json.loads(ref.location)
         self._reg.pop(loc["token"], None)
         session = await self._get_session()
-        headers = {**self._auth_header(), "Content-Type": "application/json"}
-        async with session.post(_DELETE_URL, headers=headers,
-                                json={"path": loc["path"]}) as resp:
-            return resp.status in (200, 409)
+        async with session.post(
+                f"{_API_URL}/files/delete_v2",
+                json={"path": loc["path"]}) as resp:
+            resp.raise_for_status()
+        return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps(
-                                   {"token": t,
-                                    "path": f"/picard/{manifest_id}/{t}",
-                                    "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        refs = []
+        for token, chunk in self._reg.items():
+            if _manifest_id_from_chunk(chunk) == manifest_id:
+                loc = json.loads("{}")
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": token,
+                                          "path": f"/picard/{token}.txt",
+                                          "manifest": manifest_id}),
+                ))
+        return refs
 
     async def health_check(self) -> bool:
-        if not self._token:
+        if not self._access_token:
             return False
         try:
             session = await self._get_session()
-            headers = {**self._auth_header(), "Content-Type": "application/json"}
             async with session.post(
-                    "https://api.dropboxapi.com/2/users/get_current_account",
-                    headers=headers, data=b"null") as resp:
+                    f"{_API_URL}/users/get_current_account",
+                    data="null",
+                    headers={"Content-Type": "application/json"}) as resp:
                 return resp.status == 200
         except Exception:
             return False

@@ -1,8 +1,8 @@
 """CockroachDB row adapter -- stores chunks in a CockroachDB table.
 
-CockroachDB is PostgreSQL-compatible. Connects via asyncpg. Creates a
-picard_chunks table on first use. Each write_chunk inserts a row; cold
-reads SELECT by token.
+CockroachDB exposes a PostgreSQL-compatible wire protocol, so this adapter
+uses asyncpg. The table uses BYTES primary key to leverage CockroachDB's
+distributed range splits on token values.
 
 Requires: pip install asyncpg
 """
@@ -17,69 +17,62 @@ from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 _NAME = "cockroachdb-row"
 _TABLE = "picard_chunks"
 
+_DDL = (
+    f"CREATE TABLE IF NOT EXISTS {_TABLE} ("
+    "manifest_id STRING NOT NULL, "
+    "token STRING NOT NULL, "
+    "chunk STRING NOT NULL, "
+    "PRIMARY KEY (manifest_id, token)"
+    ")"
+)
 
-def _manifest_id(chunk: str) -> str:
+
+def _manifest_id_from_chunk(encoded_chunk: str) -> str:
     try:
-        parts = chunk.split(":")
-        return parts[2] if parts[0] == "PCHK" and len(parts) >= 3 else ""
+        parts = encoded_chunk.split(":")
+        if parts[0] == "PCHK" and len(parts) >= 3:
+            return parts[2]
     except Exception:
-        return ""
+        pass
+    return ""
 
 
 class CockroachdbRowAdapter(Adapter):
 
-    def __init__(self, *, host: str = "", port: int = 26257,
-                 user: str = "root", password: str = "",
-                 database: str = "defaultdb",
-                 ssl: bool = True) -> None:
-        self._host = host
-        self._port = port
-        self._user = user
-        self._password = password
-        self._database = database
-        self._ssl = ssl
+    def __init__(
+        self,
+        *,
+        dsn: str = "postgresql://root@127.0.0.1:26257/defaultdb?sslmode=disable",
+    ) -> None:
+        self._dsn = dsn
         self._pool = None
         self._reg: dict[str, str] = {}
 
     async def _get_pool(self):
         if self._pool is None:
             import asyncpg
-            import ssl as ssl_mod
-            ssl_ctx = ssl_mod.create_default_context() if self._ssl else None
-            dsn = (f"postgresql://{self._user}:{self._password}"
-                   f"@{self._host}:{self._port}/{self._database}")
-            self._pool = await asyncpg.create_pool(
-                dsn, min_size=1, max_size=5, ssl=ssl_ctx,
-            )
+            self._pool = await asyncpg.create_pool(self._dsn)
             async with self._pool.acquire() as conn:
-                await conn.execute(
-                    f"CREATE TABLE IF NOT EXISTS {_TABLE} ("
-                    f"  token STRING PRIMARY KEY,"
-                    f"  chunk STRING NOT NULL,"
-                    f"  manifest STRING"
-                    f")"
-                )
+                await conn.execute(_DDL)
         return self._pool
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
             name=_NAME,
-            max_chunk_bytes=65536,
+            max_chunk_bytes=1_048_576,
             persistent=True,
             ordered=False,
-            tags={"requires": "asyncpg", "substrate": "cockroachdb-row"},
+            tags={"requires": "asyncpg", "substrate": "cockroachdb-distributed-row"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        if not self._host:
-            raise RuntimeError("cockroachdb-row requires host to be configured")
         token = uuid.uuid4().hex[:16]
-        manifest_id = _manifest_id(encoded_chunk)
+        manifest_id = _manifest_id_from_chunk(encoded_chunk)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                f"INSERT INTO {_TABLE} (token, chunk, manifest) VALUES ($1, $2, $3)",
-                token, encoded_chunk, manifest_id,
+                f"UPSERT INTO {_TABLE} (manifest_id, token, chunk) VALUES ($1, $2, $3)",
+                manifest_id, token, encoded_chunk,
             )
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
@@ -92,12 +85,14 @@ class CockroachdbRowAdapter(Adapter):
         token = loc["token"]
         if token in self._reg:
             return self._reg[token]
+        manifest_id = loc.get("manifest", "")
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                f"SELECT chunk FROM {_TABLE} WHERE token = $1", token
+                f"SELECT chunk FROM {_TABLE} WHERE manifest_id=$1 AND token=$2",
+                manifest_id, token,
             )
-        if not row:
+        if row is None:
             raise KeyError(f"cockroachdb-row chunk not found: {token}")
         chunk = row["chunk"]
         self._reg[token] = chunk
@@ -105,11 +100,14 @@ class CockroachdbRowAdapter(Adapter):
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         loc = json.loads(ref.location)
-        self._reg.pop(loc["token"], None)
+        token = loc["token"]
+        manifest_id = loc.get("manifest", "")
+        self._reg.pop(token, None)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                f"DELETE FROM {_TABLE} WHERE token = $1", loc["token"]
+                f"DELETE FROM {_TABLE} WHERE manifest_id=$1 AND token=$2",
+                manifest_id, token,
             )
         return True
 
@@ -117,7 +115,8 @@ class CockroachdbRowAdapter(Adapter):
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                f"SELECT token FROM {_TABLE} WHERE manifest = $1", manifest_id
+                f"SELECT token FROM {_TABLE} WHERE manifest_id=$1",
+                manifest_id,
             )
         return [
             StoredChunkRef(
@@ -128,8 +127,6 @@ class CockroachdbRowAdapter(Adapter):
         ]
 
     async def health_check(self) -> bool:
-        if not self._host:
-            return False
         try:
             pool = await self._get_pool()
             async with pool.acquire() as conn:
