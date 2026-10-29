@@ -39,7 +39,7 @@ class LightningAdapter(Adapter):
         self._max = max_chunk_bytes
         self._amount_msat = amount_msat
         self._expiry = expiry_seconds
-        self._registry: dict[str, str] = {}  # location -> encoded_chunk
+        self._registry: dict[str, tuple[str, str]] = {}  # location -> (encoded_chunk, label)
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
@@ -75,35 +75,54 @@ class LightningAdapter(Adapter):
 
         label = f"PICARD:{token}"
         description = f"PICARD chunk mid={manifest_id} tok={token}"
+        # payment_hash = sha256(token), so preimage = token (32 hex chars -> 16 bytes)
+        preimage = token.ljust(64, "0")  # pad to 32-byte hex
 
         def _call():
             rpc = self._rpc()
-            rpc.call("holdinvoice", {
-                "payment_hash": payment_hash,
-                "amount_msat": self._amount_msat,
-                "label": label,
-                "description": description,
-                "expiry": self._expiry,
-            })
+            try:
+                rpc.call("holdinvoice", {
+                    "payment_hash": payment_hash,
+                    "amount_msat": self._amount_msat,
+                    "label": label,
+                    "description": description,
+                    "expiry": self._expiry,
+                })
+            except Exception as hold_err:
+                if "Unknown command" in str(hold_err) or "Method not found" in str(hold_err):
+                    # holdinvoice plugin not loaded; fall back to regular invoice
+                    rpc.call("invoice", {
+                        "amount_msat": self._amount_msat,
+                        "label": label,
+                        "description": description,
+                        "expiry": self._expiry,
+                        "preimage": preimage,
+                    })
+                else:
+                    raise
 
         await asyncio.to_thread(_call)
-        self._registry[location] = encoded_chunk
+        self._registry[location] = (encoded_chunk, label)
         return StoredChunkRef(adapter_name="lightning", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if ref.location not in self._registry:
             raise KeyError(f"chunk not in registry: {ref.location}")
-        return self._registry[ref.location]
+        return self._registry[ref.location][0]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         if ref.location not in self._registry:
             return False
         payment_hash = ref.location.removeprefix("lightning://")
+        _, label = self._registry[ref.location]
 
         def _cancel():
             try:
                 rpc = self._rpc()
-                rpc.call("cancelinvoice", {"payment_hash": payment_hash})
+                try:
+                    rpc.call("cancelinvoice", {"payment_hash": payment_hash})
+                except Exception:
+                    rpc.call("delinvoice", {"label": label, "status": "unpaid"})
             except Exception:
                 pass
 
@@ -115,7 +134,7 @@ class LightningAdapter(Adapter):
         from picard.chunker import Chunk
 
         refs: list[StoredChunkRef] = []
-        for loc, data in self._registry.items():
+        for loc, (data, _label) in self._registry.items():
             try:
                 if Chunk.decode(data).manifest_id == manifest_id:
                     refs.append(StoredChunkRef(adapter_name="lightning", location=loc))

@@ -89,7 +89,7 @@ class BitcoinOpReturnAdapter(Adapter):
             self._select_network()
             proxy = self._proxy()
 
-            utxos = proxy.listunspent(1)
+            utxos = proxy.listunspent(0)
             if not utxos:
                 raise RuntimeError("no spendable UTXOs available")
             utxo = utxos[0]
@@ -105,17 +105,14 @@ class BitcoinOpReturnAdapter(Adapter):
             )
 
             fee_sat = 1000
-            change_sat = int(utxo["amount"] * 1e8) - fee_sat
+            change_sat = int(utxo["amount"] * 100_000_000) - fee_sat
             if change_sat <= 0:
                 raise RuntimeError("insufficient funds for fee")
 
             change_addr = proxy.getrawchangeaddress()
             change_out = bitcoin.core.CTxOut(
                 change_sat,
-                bitcoin.core.script.CScript.from_address(
-                    bitcoin.wallet.CBitcoinAddress(change_addr)
-                ) if hasattr(bitcoin.core.script.CScript, "from_address")
-                else proxy.getnewaddress(),
+                bitcoin.wallet.CBitcoinAddress(change_addr).to_scriptPubKey(),
             )
 
             tx_in = bitcoin.core.CMutableTxIn(
