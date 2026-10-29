@@ -128,7 +128,6 @@ class ConsulKvAdapter(Adapter):
 
     async def health_check(self) -> bool:
         try:
-            import aiohttp
             session = await self._get_session()
             base_url = self._base.replace("/v1/kv", "/v1/status/leader")
             async with session.get(base_url) as resp:

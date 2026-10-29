@@ -36,7 +36,8 @@ class GoogleSheetsAdapter(Adapter):
         self._spreadsheet_id = spreadsheet_id
         self._session = None
         self._reg: dict[str, tuple[str, int]] = {}
-        self._row_counter = 1
+        import random
+        self._row_counter = random.randint(1, 1_000_000) * 1000
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}",

@@ -110,8 +110,6 @@ class ElasticsearchDocAdapter(Adapter):
         return refs
 
     async def health_check(self) -> bool:
-        if not self._url:
-            return False
         try:
             session = await self._get_session()
             async with session.get(f"{self._url}/") as resp:

@@ -30,7 +30,11 @@ def _manifest_id(chunk: str) -> str:
 def _encode_name(chunk: str) -> str:
     hex_chunk = chunk.encode("utf-8").hex()
     if len(hex_chunk) > _MAX_METRIC_NAME - 8:
-        hex_chunk = hex_chunk[:_MAX_METRIC_NAME - 8]
+        raise ValueError(
+            f"chunk too large for metric-name substrate: "
+            f"{len(chunk)} bytes encodes to {len(hex_chunk)} hex chars, "
+            f"max {_MAX_METRIC_NAME - 8}"
+        )
     return f"pcd_{hex_chunk}"
 
 
@@ -50,7 +54,7 @@ class VictoriaMetricsMetricAdapter(Adapter):
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
             name=_NAME,
-            max_chunk_bytes=128,
+            max_chunk_bytes=120,
             persistent=True,
             ordered=False,
             tags={"requires": "aiohttp", "substrate": "victoria-metrics-metric-name"},

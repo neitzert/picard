@@ -102,7 +102,6 @@ class DropboxFileAdapter(Adapter):
         refs = []
         for token, chunk in self._reg.items():
             if _manifest_id_from_chunk(chunk) == manifest_id:
-                loc = json.loads("{}")
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
                     location=json.dumps({"token": token,

@@ -48,7 +48,8 @@ class StripePaymentAdapter(Adapter):
             persistent=True,
             ordered=False,
             rate_limit_per_min=100,
-            tags={"requires": "aiohttp,stripe-secret-key", "substrate": "stripe-payment-intent-metadata"},
+            tags={"requires": "aiohttp,stripe-secret-key", "substrate": "stripe-payment-intent-metadata",
+                  "warning": "creates-real-payment-intents"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:

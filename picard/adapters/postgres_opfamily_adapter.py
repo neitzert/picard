@@ -62,10 +62,10 @@ class PostgresOpfamilyAdapter(Adapter):
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                f"CREATE OPERATOR FAMILY {name} USING btree"
+                f'CREATE OPERATOR FAMILY "{name}" USING btree'
             )
             await conn.execute(
-                f"COMMENT ON OPERATOR FAMILY {name} USING btree IS $1",
+                f'COMMENT ON OPERATOR FAMILY "{name}" USING btree IS $1',
                 encoded_chunk,
             )
         self._reg[token] = encoded_chunk
@@ -99,7 +99,7 @@ class PostgresOpfamilyAdapter(Adapter):
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                f"DROP OPERATOR FAMILY IF EXISTS {loc['name']} USING btree"
+                f"DROP OPERATOR FAMILY IF EXISTS \"{loc['name']}\" USING btree"
             )
         return True
 

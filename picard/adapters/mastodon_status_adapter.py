@@ -83,9 +83,11 @@ class MastodonStatusAdapter(Adapter):
                 f"{self._base}/api/v1/statuses/{loc['status_id']}") as resp:
             resp.raise_for_status()
             data = await resp.json()
-        # Strip HTML tags from content
+        import html as _html
         import re
-        chunk = re.sub(r"<[^>]+>", "", data.get("content", "")).strip()
+        chunk = _html.unescape(
+            re.sub(r"<[^>]+>", "", data.get("content", ""))
+        ).strip()
         self._reg[loc["token"]] = chunk
         return chunk
 

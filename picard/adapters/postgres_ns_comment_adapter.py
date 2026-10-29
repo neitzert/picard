@@ -60,8 +60,8 @@ class PostgresNsCommentAdapter(Adapter):
         schema = f"picard_{token}"
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
-            await conn.execute(f"COMMENT ON SCHEMA {schema} IS $1", encoded_chunk)
+            await conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            await conn.execute(f'COMMENT ON SCHEMA "{schema}" IS $1', encoded_chunk)
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
             adapter_name=_NAME,
@@ -92,7 +92,7 @@ class PostgresNsCommentAdapter(Adapter):
         self._reg.pop(loc["token"], None)
         pool = await self._get_pool()
         async with pool.acquire() as conn:
-            await conn.execute(f"DROP SCHEMA IF EXISTS {loc['schema']} CASCADE")
+            await conn.execute(f"DROP SCHEMA IF EXISTS \"{loc['schema']}\" CASCADE")
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:

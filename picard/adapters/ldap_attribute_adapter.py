@@ -146,10 +146,12 @@ class LdapAttributeAdapter(Adapter):
         import ldap3
 
         def _do_list():
+            from ldap3.utils.conv import escape_filter_chars
             conn = self._connect()
+            safe_mid = escape_filter_chars(manifest_id)
             conn.search(
                 self._ou_dn,
-                f"(&(objectClass=inetOrgPerson)(displayName=picard:{manifest_id}))",
+                f"(&(objectClass=inetOrgPerson)(displayName=picard:{safe_mid}))",
                 attributes=["cn", "description"],
             )
             entries = list(conn.entries)

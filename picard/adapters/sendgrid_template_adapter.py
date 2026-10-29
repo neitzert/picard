@@ -54,6 +54,8 @@ class SendgridTemplateAdapter(Adapter):
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        if not self._api_key:
+            raise RuntimeError("sendgrid-template requires api_key")
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()

@@ -10,6 +10,7 @@ Requires: pip install aiohttp
 from __future__ import annotations
 
 import json
+import urllib.parse
 import uuid
 from typing import Sequence
 
@@ -106,7 +107,7 @@ class ScylladbRowAdapter(Adapter):
         session = await self._get_session()
         url = (
             f"{self._cql_url}/column_family/rows/{self._keyspace}:{self._table}"
-            f"/{manifest_id}/{token}"
+            f"/{urllib.parse.quote(manifest_id, safe='')}/{urllib.parse.quote(token, safe='')}"
         )
         async with session.put(url, json={"chunk": encoded_chunk}) as resp:
             if resp.status not in (200, 201, 204):
@@ -128,7 +129,7 @@ class ScylladbRowAdapter(Adapter):
         session = await self._get_session()
         url = (
             f"{self._cql_url}/column_family/rows/{self._keyspace}:{self._table}"
-            f"/{manifest_id}/{token}"
+            f"/{urllib.parse.quote(manifest_id, safe='')}/{urllib.parse.quote(token, safe='')}"
         )
         async with session.get(url) as resp:
             resp.raise_for_status()
@@ -150,7 +151,7 @@ class ScylladbRowAdapter(Adapter):
             session = await self._get_session()
             url = (
                 f"{self._cql_url}/column_family/rows/{self._keyspace}:{self._table}"
-                f"/{manifest_id}/{token}"
+                f"/{urllib.parse.quote(manifest_id, safe='')}/{urllib.parse.quote(token, safe='')}"
             )
             async with session.delete(url) as resp:
                 return resp.status in (200, 204, 404)
@@ -170,7 +171,7 @@ class ScylladbRowAdapter(Adapter):
             session = await self._get_session()
             url = (
                 f"{self._cql_url}/column_family/rows/{self._keyspace}:{self._table}"
-                f"/{manifest_id}"
+                f"/{urllib.parse.quote(manifest_id, safe='')}"
             )
             async with session.get(url) as resp:
                 if resp.status == 200:

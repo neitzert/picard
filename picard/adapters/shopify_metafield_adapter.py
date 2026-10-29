@@ -30,6 +30,7 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
 class ShopifyMetafieldAdapter(Adapter):
 
     def __init__(self, *, store_domain: str = "", access_token: str = "") -> None:
+        self._store_domain = store_domain
         self._base = f"https://{store_domain}/admin/api/{_API_VER}"
         self._token = access_token
         self._session = None
@@ -103,7 +104,7 @@ class ShopifyMetafieldAdapter(Adapter):
                 for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
 
     async def health_check(self) -> bool:
-        if not self._token or "shopify" not in self._base:
+        if not self._token or not self._store_domain:
             return False
         try:
             session = await self._get_session()

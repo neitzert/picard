@@ -52,7 +52,8 @@ class TwilioMessageAdapter(Adapter):
             persistent=True,
             ordered=False,
             rate_limit_per_min=30,
-            tags={"requires": "aiohttp,twilio-credentials", "substrate": "twilio-sms-body"},
+            tags={"requires": "aiohttp,twilio-credentials", "substrate": "twilio-sms-body",
+                  "warning": "sends-real-sms"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:

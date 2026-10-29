@@ -60,11 +60,14 @@ class ClickhouseRowAdapter(Adapter):
             self._session = aiohttp.ClientSession(auth=auth)
         return self._session
 
-    async def _query(self, sql: str) -> dict:
+    async def _query(self, sql: str, params: dict | None = None) -> dict:
         session = await self._get_session()
+        url_params: dict = {"default_format": "JSON"}
+        if params:
+            url_params.update(params)
         async with session.post(
             self._base_url,
-            params={"query": sql, "default_format": "JSON"},
+            params={"query": sql, **url_params},
         ) as resp:
             resp.raise_for_status()
             return await resp.json(content_type=None)
@@ -90,10 +93,12 @@ class ClickhouseRowAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
 
-        escaped = encoded_chunk.replace("'", "''")
         await self._query(
             f"INSERT INTO {_DB}.{_TABLE} VALUES "
-            f"('{manifest_id}', '{token}', '{escaped}')"
+            "({manifest_id:String}, {token:String}, {chunk:String})",
+            params={"param_manifest_id": manifest_id,
+                    "param_token": token,
+                    "param_chunk": encoded_chunk},
         )
 
         self._reg[token] = encoded_chunk
@@ -110,7 +115,8 @@ class ClickhouseRowAdapter(Adapter):
 
         await self._ensure_schema()
         result = await self._query(
-            f"SELECT chunk FROM {_DB}.{_TABLE} WHERE token='{token}' LIMIT 1"
+            f"SELECT chunk FROM {_DB}.{_TABLE} WHERE token={{token:String}} LIMIT 1",
+            params={"param_token": token},
         )
         rows = result.get("data", [])
         if not rows:
@@ -127,7 +133,8 @@ class ClickhouseRowAdapter(Adapter):
         try:
             await self._query(
                 f"ALTER TABLE {_DB}.{_TABLE} DELETE "
-                f"WHERE token='{token}' AND manifest_id='{manifest_id}'"
+                "WHERE token={token:String} AND manifest_id={manifest_id:String}",
+                params={"param_token": token, "param_manifest_id": manifest_id},
             )
         except Exception:
             pass
@@ -144,7 +151,8 @@ class ClickhouseRowAdapter(Adapter):
         try:
             await self._ensure_schema()
             result = await self._query(
-                f"SELECT token FROM {_DB}.{_TABLE} WHERE manifest_id='{manifest_id}'"
+                f"SELECT token FROM {_DB}.{_TABLE} WHERE manifest_id={{manifest_id:String}}",
+                params={"param_manifest_id": manifest_id},
             )
             tokens_seen = {json.loads(r.location)["token"] for r in refs}
             for row in result.get("data", []):

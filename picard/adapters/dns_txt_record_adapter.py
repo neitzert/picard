@@ -66,7 +66,7 @@ class DnsTxtRecordAdapter(Adapter):
             keyring = dns.tsigkeyring.from_text({self._tsig_keyname: self._tsig_secret})
             update.use_tsig(keyring=keyring, keyname=self._tsig_keyname)
         if action == "add":
-            update.add(name, self._ttl, "TXT", f'"{encoded_chunk}"')
+            update.add(name, self._ttl, "TXT", encoded_chunk)
         elif action == "delete":
             update.delete(name, "TXT")
         return update

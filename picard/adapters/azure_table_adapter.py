@@ -117,8 +117,9 @@ class AzureTableAdapter(Adapter):
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         session = await self._get_session()
-        filt = f"PartitionKey eq '{manifest_id or 'default'}'"
         import urllib.parse
+        safe_mid = (manifest_id or "default").replace("'", "''")
+        filt = f"PartitionKey eq '{safe_mid}'"
         url = (f"{self._base_url()}/{self._table_name}()"
                f"?{self._sas_token}&$filter={urllib.parse.quote(filt)}")
         async with session.get(url) as resp:
