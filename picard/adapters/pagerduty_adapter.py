@@ -55,6 +55,22 @@ class PagerDutyAdapter(Adapter):
             ttl_seconds=None,
         )
 
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Token token={self._api_key}",
+            "Content-Type": "application/json",
+            "From": self._from_email,
+        }
+
+    def _manifest_id_from_chunk(self, chunk: str) -> str:
+        try:
+            parts = chunk.split(":")
+            if parts[0] == "PCHK" and len(parts) >= 3:
+                return parts[2]
+        except Exception:
+            pass
+        return ""
+
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         chunk_id = uuid.uuid4().hex[:12]
         payload = {
@@ -71,17 +87,12 @@ class PagerDutyAdapter(Adapter):
                 },
             }
         }
-        headers = {
-            "Authorization": f"Token token={self._api_key}",
-            "Content-Type": "application/json",
-            "From": self._from_email,
-        }
 
         session = await self._get_session()
         async with session.post(
             f"{_API_URL}/incidents",
             json=payload,
-            headers=headers,
+            headers=self._headers(),
         ) as resp:
             resp.raise_for_status()
             data = await resp.json()
@@ -94,15 +105,39 @@ class PagerDutyAdapter(Adapter):
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if ref.location in self._cache:
             return self._cache[ref.location]
-        raise KeyError(f"chunk not found: {ref.location}")
+        incident_id = ref.location.rsplit("/", 1)[-1]
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_URL}/incidents/{incident_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        chunk = data.get("incident", {}).get("body", {}).get("details", "")
+        if not chunk:
+            raise KeyError(f"pagerduty incident {incident_id} has no body details")
+        self._cache[ref.location] = chunk
+        return chunk
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        return self._cache.pop(ref.location, None) is not None
+        self._cache.pop(ref.location, None)
+        incident_id = ref.location.rsplit("/", 1)[-1]
+        try:
+            session = await self._get_session()
+            async with session.put(
+                f"{_API_URL}/incidents/{incident_id}",
+                json={"incident": {"type": "incident", "status": "resolved"}},
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 404)
+        except Exception:
+            return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         return [
             StoredChunkRef(adapter_name="pagerduty", location=loc)
-            for loc in self._cache
+            for loc, chunk in self._cache.items()
+            if self._manifest_id_from_chunk(chunk) == manifest_id
         ]
 
     async def health_check(self) -> bool:

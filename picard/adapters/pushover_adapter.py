@@ -49,11 +49,21 @@ class PushoverAdapter(Adapter):
         return AdapterProfile(
             name="pushover",
             max_chunk_bytes=self._max,
-            persistent=True,
-            ordered=True,
+            persistent=False,
+            ordered=False,
             rate_limit_per_min=30,
-            ttl_seconds=30 * 86400,
+            ttl_seconds=None,
+            tags={"note": "write-only; Pushover has no message retrieval API"},
         )
+
+    def _manifest_id_from_chunk(self, chunk: str) -> str:
+        try:
+            parts = chunk.split(":")
+            if parts[0] == "PCHK" and len(parts) >= 3:
+                return parts[2]
+        except Exception:
+            pass
+        return ""
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         chunk_id = uuid.uuid4().hex[:12]
@@ -83,15 +93,17 @@ class PushoverAdapter(Adapter):
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if ref.location in self._cache:
             return self._cache[ref.location]
-        raise KeyError(f"chunk not found: {ref.location}")
+        raise NotImplementedError("pushover has no message retrieval API; data is push-only")
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        return self._cache.pop(ref.location, None) is not None
+        self._cache.pop(ref.location, None)
+        return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         return [
             StoredChunkRef(adapter_name="pushover", location=loc)
-            for loc in self._cache
+            for loc, chunk in self._cache.items()
+            if self._manifest_id_from_chunk(chunk) == manifest_id
         ]
 
     async def health_check(self) -> bool:
