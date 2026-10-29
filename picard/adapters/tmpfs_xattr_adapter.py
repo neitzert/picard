@@ -1,117 +1,103 @@
-"""tmpfs xattr adapter -- stores chunks as xattrs on a single sentinel file.
+"""tmpfs xattr adapter -- stores chunks as extended attributes on /dev/shm files.
 
-All chunks share one sentinel file in /dev/shm. Each chunk occupies a
-distinct extended attribute named ``user.picard.<token>``. The sentinel
-file itself holds no payload data; the xattrs are the storage medium.
+Each write_chunk creates an empty file in /dev/shm/ and sets
+user.picard.chunk = encoded_chunk via os.setxattr(). Cold reads use
+os.getxattr(). Visible via 'getfattr -d /dev/shm/<token>'.
 
-tmpfs on Linux supports xattrs with no additional mount options. The
-xattr namespace limit is 65535 bytes per value, matching the chunk cap.
-
-Requires: Linux (os.setxattr / os.getxattr are Linux-only).
+Linux 3.5+. No root required (tmpfs xattr enabled by default on Ubuntu).
 """
-
 from __future__ import annotations
 
-import os
 import sys
+if sys.platform != "linux":
+    raise ImportError("tmpfs_xattr adapter requires Linux")
+
+import asyncio
+import json
+import os
 import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
-from picard.chunker import Chunk
 
-if sys.platform != "linux":
-    raise NotImplementedError("tmpfs_xattr requires Linux")
-
-_PREFIX = "user.picard."
+_NAME = "tmpfs_xattr"
+_XATTR_KEY = b"user.picard.chunk"
 
 
 class TmpfsXattrAdapter(Adapter):
-    """Scatter chunks as xattrs on a single tmpfs sentinel file."""
 
-    def __init__(
-        self,
-        *,
-        sentinel_file: str = "/dev/shm/.picard_xattr_store",
-        max_chunk_bytes: int = 65535,
-    ) -> None:
-        self._sentinel = sentinel_file
-        self._max = max_chunk_bytes
-        open(self._sentinel, "a").close()
+    def __init__(self, *, store_dir: str = "/dev/shm") -> None:
+        self._dir = store_dir
+        self._reg: dict[str, tuple[str, str]] = {}
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
-            name="tmpfs-xattr",
-            max_chunk_bytes=self._max,
+            name=_NAME,
+            max_chunk_bytes=65536,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=2000,
-            tags={
-                "substrate": "tmpfs-xattr",
-                "requires": "Linux,tmpfs",
-            },
+            tags={"requires": "Linux", "substrate": "tmpfs-extended-attribute"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        token = uuid.uuid4().hex[:16]
-        os.setxattr(self._sentinel, f"{_PREFIX}{token}", encoded_chunk.encode())
-        return StoredChunkRef(adapter_name="tmpfs-xattr", location=token)
+        def _write():
+            token = uuid.uuid4().hex
+            path = os.path.join(self._dir, f"picard.{token}")
+            with open(path, "wb"):
+                pass
+            os.setxattr(path, _XATTR_KEY, encoded_chunk.encode("utf-8"))
+            return token, path
+
+        token, path = await asyncio.to_thread(_write)
+        self._reg[token] = (path, encoded_chunk)
+        return StoredChunkRef(adapter_name=_NAME,
+                              location=json.dumps({"token": token, "path": path}))
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        try:
-            return os.getxattr(self._sentinel, f"{_PREFIX}{ref.location}").decode()
-        except OSError as exc:
-            raise KeyError(f"chunk not found: {ref.location}") from exc
+        loc = json.loads(ref.location)
+        token = loc["token"]
+        if token in self._reg:
+            return self._reg[token][1]
+
+        def _read():
+            return os.getxattr(loc["path"], _XATTR_KEY).decode("utf-8")
+
+        return await asyncio.to_thread(_read)
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        try:
-            os.removexattr(self._sentinel, f"{_PREFIX}{ref.location}")
-            return True
-        except OSError:
-            return False
+        loc = json.loads(ref.location)
+        token = loc["token"]
+        self._reg.pop(token, None)
+        def _del():
+            if os.path.exists(loc["path"]):
+                os.unlink(loc["path"])
+        await asyncio.to_thread(_del)
+        return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        refs: list[StoredChunkRef] = []
-        try:
-            keys = os.listxattr(self._sentinel)
-        except OSError:
-            return refs
-        for key in keys:
-            if not key.startswith(_PREFIX):
-                continue
-            token = key[len(_PREFIX):]
+        from picard.chunker import Chunk
+        refs = []
+        for token, (path, data) in self._reg.items():
             try:
-                raw = os.getxattr(self._sentinel, key).decode()
-                if Chunk.decode(raw).manifest_id == manifest_id:
-                    refs.append(StoredChunkRef(adapter_name="tmpfs-xattr", location=token))
+                if Chunk.decode(data).manifest_id == manifest_id:
+                    refs.append(StoredChunkRef(adapter_name=_NAME,
+                                               location=json.dumps({"token": token,
+                                                "path": path})))
             except Exception:
                 continue
         return refs
 
     async def health_check(self) -> bool:
-        test_key = f"{_PREFIX}_health_probe_{uuid.uuid4().hex[:8]}"
         try:
-            os.setxattr(self._sentinel, test_key, b"1")
-            os.getxattr(self._sentinel, test_key)
-            os.removexattr(self._sentinel, test_key)
-            return True
+            test_path = os.path.join(self._dir, f"picard.hc.{uuid.uuid4().hex[:8]}")
+            with open(test_path, "wb"):
+                pass
+            os.setxattr(test_path, _XATTR_KEY, b"test")
+            val = os.getxattr(test_path, _XATTR_KEY)
+            os.unlink(test_path)
+            return val == b"test"
         except Exception:
             return False
 
     async def close(self) -> None:
         pass
-
-    async def capacity(self) -> dict[str, int | None]:
-        try:
-            keys = [k for k in os.listxattr(self._sentinel) if k.startswith(_PREFIX)]
-            used = sum(
-                len(os.getxattr(self._sentinel, k)) for k in keys
-            )
-            return {
-                "used_bytes": used,
-                "free_bytes": None,
-                "total_bytes": None,
-                "chunk_count": len(keys),
-            }
-        except Exception:
-            return {"used_bytes": None, "free_bytes": None, "total_bytes": None, "chunk_count": None}
