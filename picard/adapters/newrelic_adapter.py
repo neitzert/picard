@@ -47,10 +47,11 @@ class NewRelicAdapter(Adapter):
         return AdapterProfile(
             name="newrelic",
             max_chunk_bytes=self._max,
-            persistent=True,
-            ordered=True,
+            persistent=False,
+            ordered=False,
             rate_limit_per_min=60,
             ttl_seconds=None,
+            tags={"note": "write-only; NR Insights events cannot be deleted and cold reads require a separate query key"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
@@ -74,9 +75,7 @@ class NewRelicAdapter(Adapter):
             headers=headers,
         ) as resp:
             resp.raise_for_status()
-            data = await resp.json()
 
-        success = data.get("success", False)
         location = f"newrelic://{self._account_id}/events/{chunk_id}"
         self._cache[location] = encoded_chunk
         return StoredChunkRef(adapter_name="newrelic", location=location)
@@ -84,15 +83,28 @@ class NewRelicAdapter(Adapter):
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if ref.location in self._cache:
             return self._cache[ref.location]
-        raise KeyError(f"chunk not found: {ref.location}")
+        raise NotImplementedError(
+            "newrelic cold read requires a query key; configure query_key to enable"
+        )
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        return self._cache.pop(ref.location, None) is not None
+        self._cache.pop(ref.location, None)
+        return False
+
+    def _manifest_id_from_chunk(self, chunk: str) -> str:
+        try:
+            parts = chunk.split(":")
+            if parts[0] == "PCHK" and len(parts) >= 3:
+                return parts[2]
+        except Exception:
+            pass
+        return ""
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         return [
             StoredChunkRef(adapter_name="newrelic", location=loc)
-            for loc in self._cache
+            for loc, chunk in self._cache.items()
+            if self._manifest_id_from_chunk(chunk) == manifest_id
         ]
 
     async def health_check(self) -> bool:

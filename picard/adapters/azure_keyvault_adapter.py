@@ -99,11 +99,31 @@ class AzureKeyvaultAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t,
-                                                     "name": f"picard-{t}",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._vault or not self._token:
+            return []
+        session = await self._get_session()
+        refs = []
+        url = f"{self._vault}/secrets"
+        while url:
+            async with session.get(url,
+                                    params={"api-version": _API_VER,
+                                            "maxresults": "25"},
+                                    headers=self._headers()) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for item in data.get("value", []):
+                if (item.get("tags") or {}).get("manifest") == manifest_id:
+                    sec_id = item.get("id", "")
+                    name = sec_id.rstrip("/").split("/secrets/")[-1] if "/secrets/" in sec_id else ""
+                    token = name.removeprefix("picard-")
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token, "name": name,
+                                              "manifest": manifest_id}),
+                    ))
+            url = data.get("nextLink")
+        return refs
 
     async def health_check(self) -> bool:
         if not self._vault or not self._token:

@@ -63,8 +63,9 @@ class BitbucketSnippetAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         filename = f"picard-{token}.txt"
+        title = f"picard-{manifest_id[:16]}-{token}"
         data = aiohttp.FormData()
-        data.add_field("title", f"picard-{token}")
+        data.add_field("title", title)
         data.add_field("is_private", "true")
         data.add_field("file", encoded_chunk,
                        filename=filename, content_type="text/plain")
@@ -106,15 +107,29 @@ class BitbucketSnippetAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._workspace:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "snippet_id": "",
-                                          "filename": f"picard-{token}.txt",
-                                          "manifest": manifest_id}),
-                ))
+        url = f"{_BASE_URL}/snippets/{self._workspace}?role=owner"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for snippet in data.get("values", []):
+                title = snippet.get("title", "")
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "snippet_id": snippet["id"],
+                                              "filename": f"picard-{token}.txt",
+                                              "manifest": manifest_id}),
+                    ))
+            url = (data.get("next") or "")
         return refs
 
     async def health_check(self) -> bool:

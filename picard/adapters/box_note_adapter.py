@@ -61,14 +61,15 @@ class BoxNoteAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
+        filename = f"picard-{manifest_id[:16]}-{token}.txt"
         attributes = json.dumps({
-            "name": f"picard-{token}.txt",
+            "name": filename,
             "parent": {"id": self._folder_id},
         })
         form = _aio.FormData()
         form.add_field("attributes", attributes, content_type="application/json")
         form.add_field("file", encoded_chunk.encode(),
-                       filename=f"picard-{token}.txt",
+                       filename=filename,
                        content_type="text/plain")
         async with session.post(
                 f"{_UPLOAD_URL}/files/content", data=form) as resp:
@@ -105,14 +106,35 @@ class BoxNoteAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "file_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        marker = None
+        while True:
+            params: dict = {"limit": "1000", "fields": "id,name"}
+            if marker:
+                params["marker"] = marker
+            async with session.get(
+                    f"{_API_URL}/folders/{self._folder_id}/items",
+                    params=params) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for item in data.get("entries", []):
+                name = item.get("name", "")
+                if name.startswith(prefix) and name.endswith(".txt"):
+                    token = name[len(prefix):-4]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "file_id": item["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            marker = data.get("next_marker")
+            if not marker:
+                break
         return refs
 
     async def health_check(self) -> bool:

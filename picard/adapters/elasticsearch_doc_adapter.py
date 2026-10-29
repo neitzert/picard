@@ -100,8 +100,32 @@ class ElasticsearchDocAdapter(Adapter):
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         refs = []
+        seen: set[str] = set()
+        try:
+            session = await self._get_session()
+            query = {"query": {"term": {"manifest": manifest_id}},
+                     "_source": False, "size": 10000}
+            async with session.post(
+                f"{self._url}/{self._index}/_search",
+                json=query,
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for hit in data.get("hits", {}).get("hits", []):
+                        tok = hit["_id"]
+                        if tok not in seen:
+                            seen.add(tok)
+                            refs.append(StoredChunkRef(
+                                adapter_name=_NAME,
+                                location=json.dumps({"token": tok,
+                                                      "index": self._index,
+                                                      "manifest": manifest_id}),
+                            ))
+        except Exception:
+            pass
         for token, chunk in self._reg.items():
-            if _manifest_id(chunk) == manifest_id:
+            if _manifest_id(chunk) == manifest_id and token not in seen:
+                seen.add(token)
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
                     location=json.dumps({"token": token, "index": self._index,

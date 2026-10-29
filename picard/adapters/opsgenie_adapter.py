@@ -46,10 +46,42 @@ class OpsGenieAdapter(Adapter):
             name="opsgenie",
             max_chunk_bytes=self._max,
             persistent=True,
-            ordered=True,
+            ordered=False,
             rate_limit_per_min=60,
             ttl_seconds=None,
         )
+
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"GenieKey {self._api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _manifest_id_from_chunk(self, chunk: str) -> str:
+        try:
+            parts = chunk.split(":")
+            if parts[0] == "PCHK" and len(parts) >= 3:
+                return parts[2]
+        except Exception:
+            pass
+        return ""
+
+    async def _resolve_alert_id(self, request_id: str) -> str:
+        """Resolve an async OpsGenie requestId to the actual alert ID."""
+        import asyncio
+        session = await self._get_session()
+        for _ in range(5):
+            async with session.get(
+                f"{_API_URL}/requests/{request_id}",
+                headers=self._headers(),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    alert_id = data.get("data", {}).get("alertId", "")
+                    if alert_id:
+                        return alert_id
+            await asyncio.sleep(0.5)
+        raise RuntimeError(f"opsgenie requestId {request_id} did not resolve to an alert")
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         chunk_id = uuid.uuid4().hex[:12]
@@ -59,37 +91,58 @@ class OpsGenieAdapter(Adapter):
             "priority": "P5",
             "tags": ["picard", "store"],
         }
-        headers = {
-            "Authorization": f"GenieKey {self._api_key}",
-            "Content-Type": "application/json",
-        }
 
         session = await self._get_session()
         async with session.post(
             f"{_API_URL}/alerts",
             json=payload,
-            headers=headers,
+            headers=self._headers(),
         ) as resp:
             resp.raise_for_status()
             data = await resp.json()
 
         request_id = data.get("requestId", chunk_id)
-        location = f"opsgenie://alerts/{request_id}"
+        alert_id = await self._resolve_alert_id(request_id)
+        location = f"opsgenie://alerts/{alert_id}"
         self._cache[location] = encoded_chunk
         return StoredChunkRef(adapter_name="opsgenie", location=location)
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         if ref.location in self._cache:
             return self._cache[ref.location]
-        raise KeyError(f"chunk not found: {ref.location}")
+        alert_id = ref.location.rsplit("/", 1)[-1]
+        session = await self._get_session()
+        async with session.get(
+            f"{_API_URL}/alerts/{alert_id}",
+            headers=self._headers(),
+        ) as resp:
+            resp.raise_for_status()
+            data = await resp.json()
+        chunk = data.get("data", {}).get("description", "")
+        if not chunk:
+            raise KeyError(f"opsgenie alert {alert_id} has no description")
+        self._cache[ref.location] = chunk
+        return chunk
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        return self._cache.pop(ref.location, None) is not None
+        self._cache.pop(ref.location, None)
+        alert_id = ref.location.rsplit("/", 1)[-1]
+        try:
+            session = await self._get_session()
+            async with session.post(
+                f"{_API_URL}/alerts/{alert_id}/close",
+                json={"note": "deleted by picard"},
+                headers=self._headers(),
+            ) as resp:
+                return resp.status in (200, 202, 404)
+        except Exception:
+            return False
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         return [
             StoredChunkRef(adapter_name="opsgenie", location=loc)
-            for loc in self._cache
+            for loc, chunk in self._cache.items()
+            if self._manifest_id_from_chunk(chunk) == manifest_id
         ]
 
     async def health_check(self) -> bool:
