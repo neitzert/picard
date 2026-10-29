@@ -61,7 +61,8 @@ class SendgridTemplateAdapter(Adapter):
         session = await self._get_session()
         async with session.post(
                 f"{_BASE_URL}/v3/templates",
-                json={"name": f"picard-{token}", "generation": "dynamic"}) as resp:
+                json={"name": f"picard-{manifest_id[:16]}-{token}",
+                      "generation": "dynamic"}) as resp:
             resp.raise_for_status()
             tmpl = await resp.json()
         tmpl_id = tmpl["id"]
@@ -100,14 +101,36 @@ class SendgridTemplateAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._api_key:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "tmpl_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        page_size = 200
+        page_token = None
+        while True:
+            params: dict = {"generations": "dynamic", "page_size": str(page_size)}
+            if page_token:
+                params["page_token"] = page_token
+            async with session.get(f"{_BASE_URL}/v3/templates",
+                                    params=params) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for tmpl in data.get("templates", []):
+                name = tmpl.get("name", "")
+                if name.startswith(prefix):
+                    token = name[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "tmpl_id": tmpl["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            meta = data.get("_metadata", {})
+            page_token = meta.get("next", "")
+            if not page_token:
+                break
         return refs
 
     async def health_check(self) -> bool:

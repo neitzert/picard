@@ -62,8 +62,9 @@ class IntercomNoteAdapter(Adapter):
         session = await self._get_session()
         contact_resp = await session.post(
             f"{_BASE_URL}/contacts",
-            json={"role": "user", "name": f"picard-{token}",
-                  "external_id": token},
+            json={"role": "user",
+                  "name": f"picard-{manifest_id[:16]}-{token}",
+                  "external_id": f"{manifest_id[:16]}-{token}"},
         )
         contact_resp.raise_for_status()
         contact = await contact_resp.json()
@@ -106,15 +107,44 @@ class IntercomNoteAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "note_id": "",
-                                          "contact_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        page = 1
+        while True:
+            async with session.post(
+                    f"{_BASE_URL}/contacts/search",
+                    json={"query": {"field": "name", "operator": "=~",
+                                    "value": prefix},
+                          "pagination": {"per_page": 150, "page": page}}) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for contact in data.get("data", []):
+                name = contact.get("name", "")
+                if name.startswith(prefix):
+                    token = name[len(prefix):]
+                    contact_id = contact["id"]
+                    async with session.get(
+                            f"{_BASE_URL}/contacts/{contact_id}/notes") as nr:
+                        if nr.status == 200:
+                            notes_data = await nr.json()
+                            note_id = (notes_data.get("data") or [{}])[0].get("id", "")
+                        else:
+                            note_id = ""
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "note_id": note_id,
+                                              "contact_id": contact_id,
+                                              "manifest": manifest_id}),
+                    ))
+            total = data.get("total_count", 0)
+            if page * 150 >= total:
+                break
+            page += 1
         return refs
 
     async def health_check(self) -> bool:

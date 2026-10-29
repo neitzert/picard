@@ -114,14 +114,35 @@ class ContentfulEntryAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._mgmt_token or not self._space_id:
+            return []
+        session = await self._get_session()
+        import urllib.parse
+        q = urllib.parse.urlencode({
+            "content_type": self._content_type_id,
+            f"fields.manifest[match]": manifest_id,
+            "limit": "1000",
+        })
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "entry_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        try:
+            async with session.get(f"{self._entries_url()}?{q}") as resp:
+                if resp.status != 200:
+                    return []
+                data = await resp.json()
+            for item in data.get("items", []):
+                entry_id = item.get("sys", {}).get("id", "")
+                title = (item.get("fields", {}).get("title") or {}).get(
+                    self._locale, "")
+                token = title.removeprefix("picard-")
+                if entry_id:
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "entry_id": entry_id,
+                                              "manifest": manifest_id}),
+                    ))
+        except Exception:
+            pass
         return refs
 
     async def health_check(self) -> bool:

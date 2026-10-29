@@ -64,7 +64,7 @@ class FreshdeskTicketAdapter(Adapter):
             "email": "picard@example.com",
             "priority": 1,
             "status": 2,
-            "tags": [f"picard", f"manifest-{manifest_id[:8]}"],
+            "tags": ["picard", f"manifest-{manifest_id[:16]}"],
         }
         async with session.post(
                 f"{self._base_url()}/tickets",
@@ -102,14 +102,33 @@ class FreshdeskTicketAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._domain or not self._api_key:
+            return []
+        session = await self._get_session()
+        import urllib.parse
+        tag = f"manifest-{manifest_id[:16]}"
+        query = urllib.parse.quote(f'"tag:{tag}"')
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
+        page = 1
+        while True:
+            async with session.get(
+                    f"{self._base_url()}/search/tickets",
+                    params={"query": query, "page": str(page)}) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for ticket in data.get("results", []):
+                subject = ticket.get("subject", "")
+                token = subject.removeprefix("picard-")
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
-                    location=json.dumps({"token": token, "ticket_id": "",
+                    location=json.dumps({"token": token,
+                                          "ticket_id": ticket["id"],
                                           "manifest": manifest_id}),
                 ))
+            if len(data.get("results", [])) < 30:
+                break
+            page += 1
         return refs
 
     async def health_check(self) -> bool:

@@ -60,7 +60,7 @@ class GoogleTasksAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "title": f"picard-{token}",
+            "title": f"picard-{manifest_id[:16]}-{token}",
             "notes": encoded_chunk,
         }
         async with session.post(
@@ -99,14 +99,36 @@ class GoogleTasksAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token or not self._tasklist_id:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "task_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        page_token = None
+        while True:
+            params: dict = {"maxResults": "100", "showCompleted": "true",
+                             "showHidden": "true"}
+            if page_token:
+                params["pageToken"] = page_token
+            async with session.get(
+                    f"{_BASE_URL}/lists/{self._tasklist_id}/tasks",
+                    params=params) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for task in data.get("items", []):
+                title = task.get("title", "")
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "task_id": task["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
         return refs
 
     async def health_check(self) -> bool:

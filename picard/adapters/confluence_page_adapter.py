@@ -67,7 +67,7 @@ class ConfluencePageAdapter(Adapter):
         session = await self._get_session()
         payload = {
             "type": "page",
-            "title": f"picard:{token}",
+            "title": f"picard:{manifest_id[:16]}:{token}",
             "space": {"key": self._space_key},
             "body": {"storage": {
                 "value": f"<p>{encoded_chunk}</p>",
@@ -110,10 +110,38 @@ class ConfluencePageAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "page_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._base or not self._email or not self._api_token:
+            return []
+        session = await self._get_session()
+        import urllib.parse
+        prefix = f"picard:{manifest_id[:16]}:"
+        cql = urllib.parse.quote(
+            f'space="{self._space_key}" AND title~"{prefix}" AND type=page')
+        refs = []
+        start = 0
+        while True:
+            async with session.get(
+                    f"{self._base}/wiki/rest/api/content/search",
+                    params={"cql": cql, "limit": "50",
+                            "start": str(start)}) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for page in data.get("results", []):
+                title = page.get("title", "")
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "page_id": page["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            size = data.get("size", 0)
+            if size < 50:
+                break
+            start += size
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._email or not self._api_token:

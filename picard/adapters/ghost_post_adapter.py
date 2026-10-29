@@ -90,7 +90,7 @@ class GhostPostAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {"posts": [{
-            "title": f"picard:{token}",
+            "title": f"picard:{manifest_id[:16]}:{token}",
             "html": f"<p>{encoded_chunk}</p>",
             "status": "draft",
             "tags": [{"name": "picard"}],
@@ -133,10 +133,40 @@ class GhostPostAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "post_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._base or not self._admin_key:
+            return []
+        session = await self._get_session()
+        prefix = f"picard:{manifest_id[:16]}:"
+        import urllib.parse
+        q = urllib.parse.quote(prefix)
+        refs = []
+        page = 1
+        while True:
+            async with session.get(
+                    f"{self._base}/ghost/api/admin/posts/",
+                    headers=self._headers(),
+                    params={"filter": f"title:~'{q}'",
+                            "limit": "100", "page": str(page),
+                            "fields": "id,title"}) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            posts = data.get("posts", [])
+            for post in posts:
+                title = post.get("title", "")
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "post_id": post["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            meta = data.get("meta", {}).get("pagination", {})
+            if page >= meta.get("pages", 1):
+                break
+            page += 1
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._admin_key:

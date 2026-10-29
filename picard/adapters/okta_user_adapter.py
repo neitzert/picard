@@ -108,10 +108,34 @@ class OktaUserAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "user_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._base or not self._token:
+            return []
+        import urllib.parse
+        session = await self._get_session()
+        q = urllib.parse.quote(f'profile.picard_manifest eq "{manifest_id}"')
+        refs = []
+        url = f"{self._base}/api/v1/users?search={q}&limit=200"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                users = await resp.json()
+                link = resp.headers.get("Link", "")
+            for user in users:
+                login = (user.get("profile") or {}).get("login", "")
+                token = login.removeprefix("picard_").removesuffix("@picard.invalid")
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": token,
+                                          "user_id": user["id"],
+                                          "manifest": manifest_id}),
+                ))
+            url = ""
+            for part in link.split(","):
+                if 'rel="next"' in part:
+                    url = part.split(";")[0].strip().strip("<>")
+                    break
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._token:

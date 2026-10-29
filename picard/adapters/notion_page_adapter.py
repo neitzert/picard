@@ -66,7 +66,7 @@ class NotionPageAdapter(Adapter):
         session = await self._get_session()
         payload = {
             "parent": {"page_id": self._parent_page_id},
-            "properties": {"title": {"title": [{"text": {"content": f"picard:{token}"}}]}},
+            "properties": {"title": {"title": [{"text": {"content": f"picard:{manifest_id[:16]}:{token}"}}]}},
             "children": [{"object": "block", "type": "paragraph",
                           "paragraph": {"rich_text": [{"text": {"content": encoded_chunk}}]}}],
         }
@@ -108,10 +108,41 @@ class NotionPageAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "page_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._token or not self._parent_page_id:
+            return []
+        session = await self._get_session()
+        prefix = f"picard:{manifest_id[:16]}:"
+        refs = []
+        cursor = None
+        while True:
+            body: dict = {
+                "query": prefix,
+                "filter": {"value": "page", "property": "object"},
+                "page_size": 100,
+            }
+            if cursor:
+                body["start_cursor"] = cursor
+            async with session.post(f"{_BASE}/search", json=body,
+                                     headers=self._headers()) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for page in data.get("results", []):
+                title_prop = ((page.get("properties") or {}).get("title") or {})
+                titles = title_prop.get("title") or []
+                title = "".join(t.get("plain_text", "") for t in titles)
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "page_id": page["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            if not data.get("has_more"):
+                break
+            cursor = data.get("next_cursor")
+        return refs
 
     async def health_check(self) -> bool:
         if not self._token or not self._parent_page_id:
