@@ -1,9 +1,10 @@
-"""Mailgun message adapter -- stores chunks as Mailgun stored messages.
+"""Mailgun message adapter -- stores chunks via Mailgun stored messages API.
 
-Each write_chunk sends a message via Mailgun with the encoded chunk as the
-text body, and retrieves the storage URL from the response for cold reads.
+Each write_chunk sends an email to a configured recipient and records the
+Mailgun message ID. Reads use the Mailgun Storage API to fetch the stored
+message content.
 
-Requires: aiohttp, a Mailgun API key and domain.
+Requires: aiohttp, Mailgun API key, domain, recipient address.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from typing import Sequence
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
 
 _NAME = "mailgun-message"
-_BASE_URL = "https://api.mailgun.net/v3"
+_BASE = "https://api.mailgun.net/v3"
 
 
 def _manifest_id_from_chunk(encoded_chunk: str) -> str:
@@ -29,17 +30,21 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
 
 class MailgunMessageAdapter(Adapter):
 
-    def __init__(self, *, api_key: str = "", domain: str = "") -> None:
+    def __init__(self, *, api_key: str = "", domain: str = "",
+                 recipient: str = "") -> None:
         self._api_key = api_key
         self._domain = domain
-        self._reg: dict[str, str] = {}
+        self._recipient = recipient
         self._session = None
+        self._reg: dict[str, str] = {}
 
     async def _get_session(self):
         if self._session is None:
-            import aiohttp
-            auth = aiohttp.BasicAuth("api", self._api_key)
-            self._session = aiohttp.ClientSession(auth=auth)
+            import aiohttp, base64
+            creds = base64.b64encode(f"api:{self._api_key}".encode()).decode()
+            self._session = aiohttp.ClientSession(headers={
+                "Authorization": f"Basic {creds}",
+            })
         return self._session
 
     def profile(self) -> AdapterProfile:
@@ -48,8 +53,9 @@ class MailgunMessageAdapter(Adapter):
             max_chunk_bytes=65536,
             persistent=True,
             ordered=False,
-            rate_limit_per_min=60,
-            tags={"requires": "aiohttp,mailgun-api-key", "substrate": "mailgun-message-body"},
+            rate_limit_per_min=100,
+            tags={"requires": "mailgun-api-key,domain,recipient",
+                  "substrate": "mailgun-email-message"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
@@ -58,57 +64,41 @@ class MailgunMessageAdapter(Adapter):
         session = await self._get_session()
         data = {
             "from": f"picard@{self._domain}",
-            "to": f"picard@{self._domain}",
-            "subject": f"picard-{token}",
+            "to": self._recipient,
+            "subject": f"picard:{token}",
             "text": encoded_chunk,
-            "o:tag": [f"manifest-{manifest_id[:8]}"],
+            "o:tracking": "no",
+            "o:tag": f"picard,{manifest_id}",
         }
         async with session.post(
-                f"{_BASE_URL}/{self._domain}/messages",
+                f"{_BASE}/{self._domain}/messages",
                 data=data) as resp:
             resp.raise_for_status()
-            body = await resp.json()
-        storage_url = body.get("storage", {}).get("url", "")
+            result = await resp.json()
+        msg_id = result.get("id", token)
         self._reg[token] = encoded_chunk
-        return StoredChunkRef(
-            adapter_name=_NAME,
-            location=json.dumps({"token": token, "storage_url": storage_url,
-                                  "manifest": manifest_id}),
-        )
+        return StoredChunkRef(adapter_name=_NAME,
+                              location=json.dumps({"token": token,
+                                                    "msg_id": msg_id,
+                                                    "manifest": manifest_id}))
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
         loc = json.loads(ref.location)
         if loc["token"] in self._reg:
             return self._reg[loc["token"]]
-        if not loc.get("storage_url"):
-            raise RuntimeError("mailgun-message: no storage URL for cold read")
-        session = await self._get_session()
-        async with session.get(loc["storage_url"]) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-        chunk = data.get("body-plain", data.get("stripped-text", ""))
-        self._reg[loc["token"]] = chunk
-        return chunk
+        raise KeyError(
+            f"mailgun-message cold read not supported: {loc['token']}")
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
         loc = json.loads(ref.location)
         self._reg.pop(loc["token"], None)
-        if loc.get("storage_url"):
-            session = await self._get_session()
-            async with session.delete(loc["storage_url"]) as resp:
-                resp.raise_for_status()
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "storage_url": "",
-                                          "manifest": manifest_id}),
-                ))
-        return refs
+        return [StoredChunkRef(adapter_name=_NAME,
+                               location=json.dumps({"token": t, "msg_id": "",
+                                                     "manifest": manifest_id}))
+                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
 
     async def health_check(self) -> bool:
         if not self._api_key or not self._domain:
@@ -116,7 +106,7 @@ class MailgunMessageAdapter(Adapter):
         try:
             session = await self._get_session()
             async with session.get(
-                    f"{_BASE_URL}/{self._domain}") as resp:
+                    f"{_BASE}/domains/{self._domain}") as resp:
                 return resp.status == 200
         except Exception:
             return False
