@@ -6,6 +6,10 @@
 
 ---
 
+*This release is dedicated to Sir Patrick Stewart (1940–2026), who spent thirty-five years making a starship captain the most compelling argument for curiosity, decency, and the refusal to accept unnecessary limits. The name was obvious.*
+
+---
+
 PICARD encrypts your data, slices it into chunks, and scatters those chunks across whatever protocol endpoints you configure: DNS TXT records, social media APIs, MQTT brokers, S3 buckets, Bluetooth advertisements, or all of the above at once. Pull it back and it reassembles. With multi-adapter scatter, no single endpoint holds enough ciphertext to reconstruct anything. No central server. No monthly storage fees. It mounts as a regular filesystem.
 
 Not efficient. Protocol-agnostic.
