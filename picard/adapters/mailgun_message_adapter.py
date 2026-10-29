@@ -51,11 +51,12 @@ class MailgunMessageAdapter(Adapter):
         return AdapterProfile(
             name=_NAME,
             max_chunk_bytes=65536,
-            persistent=True,
+            persistent=False,
             ordered=False,
             rate_limit_per_min=100,
             tags={"requires": "mailgun-api-key,domain,recipient",
-                  "substrate": "mailgun-email-message"},
+                  "substrate": "mailgun-email-message",
+                  "note": "write-only; sent emails cannot be retrieved via API"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:

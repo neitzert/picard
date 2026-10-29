@@ -169,9 +169,10 @@ class InfluxdbFieldAdapter(Adapter):
                 ))
 
         try:
+            safe_manifest = manifest_id.replace("\\", "\\\\").replace("'", "\\'")
             q = (
                 f"SELECT token FROM {_MEASUREMENT} "
-                f"WHERE manifest='{manifest_id}'"
+                f"WHERE manifest='{safe_manifest}'"
             )
             session = await self._get_session()
             async with session.get(

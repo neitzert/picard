@@ -101,10 +101,35 @@ class Auth0UserAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "user_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._base or not self._token:
+            return []
+        import urllib.parse
+        session = await self._get_session()
+        query = urllib.parse.quote(f'user_metadata.picard_manifest:"{manifest_id}"')
+        refs = []
+        page = 0
+        while True:
+            params = f"q={query}&search_engine=v3&per_page=100&page={page}"
+            async with session.get(
+                    f"{self._base}/api/v2/users?{params}") as resp:
+                if resp.status != 200:
+                    break
+                users = await resp.json()
+            if not users:
+                break
+            for user in users:
+                meta = user.get("user_metadata") or {}
+                token = user.get("email", "").split("@")[0].removeprefix("picard_")
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": token,
+                                          "user_id": user["user_id"],
+                                          "manifest": manifest_id}),
+                ))
+            if len(users) < 100:
+                break
+            page += 1
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._token:

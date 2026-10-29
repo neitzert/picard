@@ -100,14 +100,34 @@ class AsanaTaskAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._project_id:
+            return []
+        session = await self._get_session()
+        import urllib.parse
+        params = urllib.parse.urlencode({
+            "project": self._project_id,
+            "opt_fields": "gid,name,notes",
+            "limit": 100,
+        })
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "task_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        url = f"{_BASE_URL}/tasks?{params}"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for task in data.get("data", []):
+                notes = task.get("notes", "")
+                if _manifest_id_from_chunk(notes) == manifest_id:
+                    token = task.get("name", "").removeprefix("picard-")
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "task_id": task["gid"],
+                                              "manifest": manifest_id}),
+                    ))
+            next_page = data.get("next_page")
+            url = next_page["uri"] if next_page else None
         return refs
 
     async def health_check(self) -> bool:

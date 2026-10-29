@@ -97,10 +97,45 @@ class GitlabSnippetAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "snippet_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        refs = []
+        seen: set[str] = set()
+        try:
+            session = await self._get_session()
+            page = 1
+            while True:
+                async with session.get(
+                        f"{self._base}/api/v4/snippets",
+                        params={"per_page": "100", "page": str(page)}) as resp:
+                    if resp.status != 200:
+                        break
+                    items = await resp.json()
+                if not items:
+                    break
+                for item in items:
+                    title = item.get("title", "")
+                    if title.startswith("picard:"):
+                        tok = title[len("picard:"):]
+                        snippet_id = item["id"]
+                        if tok not in seen:
+                            seen.add(tok)
+                            refs.append(StoredChunkRef(
+                                adapter_name=_NAME,
+                                location=json.dumps({"token": tok,
+                                                      "snippet_id": snippet_id,
+                                                      "manifest": manifest_id}),
+                            ))
+                page += 1
+        except Exception:
+            pass
+        for tok, chunk in self._reg.items():
+            if _manifest_id_from_chunk(chunk) == manifest_id and tok not in seen:
+                seen.add(tok)
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": tok, "snippet_id": "",
+                                          "manifest": manifest_id}),
+                ))
+        return refs
 
     async def health_check(self) -> bool:
         if not self._token:

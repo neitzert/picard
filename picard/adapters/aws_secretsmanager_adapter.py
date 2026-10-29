@@ -151,11 +151,35 @@ class AwsSecretsmanagerAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t,
-                                                     "name": f"picard/{manifest_id}/{t}",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._access_key or not self._secret_key:
+            return []
+        session = await self._get_session()
+        refs = []
+        next_token = None
+        while True:
+            body: dict = {
+                "Filters": [{"Key": "tag-value", "Values": [manifest_id]}],
+                "MaxResults": 100,
+            }
+            if next_token:
+                body["NextToken"] = next_token
+            url, headers, payload = self._call("secretsmanager.ListSecrets", body)
+            async with session.post(url, headers=headers, data=payload) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for secret in data.get("SecretList", []):
+                name = secret.get("Name", "")
+                token = name.split("/")[-1] if "/" in name else ""
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": token, "name": name,
+                                          "manifest": manifest_id}),
+                ))
+            next_token = data.get("NextToken")
+            if not next_token:
+                break
+        return refs
 
     async def health_check(self) -> bool:
         if not self._access_key or not self._secret_key:

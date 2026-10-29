@@ -112,10 +112,50 @@ class JiraIssueAdapter(Adapter):
             return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "issue_key": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        refs = []
+        seen: set[str] = set()
+        try:
+            session = await self._get_session()
+            jql = f'project = "{self._project_key}" AND summary ~ "picard:"'
+            start = 0
+            while True:
+                async with session.get(
+                        f"{self._base}/rest/api/3/search",
+                        params={"jql": jql, "fields": "summary",
+                                "startAt": str(start), "maxResults": "100"}) as resp:
+                    if resp.status != 200:
+                        break
+                    data = await resp.json()
+                issues = data.get("issues", [])
+                if not issues:
+                    break
+                for issue in issues:
+                    summary = issue.get("fields", {}).get("summary", "")
+                    if summary.startswith("picard:"):
+                        tok = summary[len("picard:"):]
+                        issue_key = issue["key"]
+                        if tok not in seen:
+                            seen.add(tok)
+                            refs.append(StoredChunkRef(
+                                adapter_name=_NAME,
+                                location=json.dumps({"token": tok,
+                                                      "issue_key": issue_key,
+                                                      "manifest": manifest_id}),
+                            ))
+                start += len(issues)
+                if start >= data.get("total", 0):
+                    break
+        except Exception:
+            pass
+        for tok, chunk in self._reg.items():
+            if _manifest_id_from_chunk(chunk) == manifest_id and tok not in seen:
+                seen.add(tok)
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": tok, "issue_key": "",
+                                          "manifest": manifest_id}),
+                ))
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._email or not self._api_token:

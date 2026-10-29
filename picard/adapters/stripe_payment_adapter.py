@@ -98,14 +98,26 @@ class StripePaymentAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._secret_key:
+            return []
+        import urllib.parse
+        session = await self._get_session()
+        query = urllib.parse.quote(f"metadata['manifest']:'{manifest_id}'")
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
+        url = f"{_BASE_URL}/payment_intents/search?query={query}&limit=100"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for pi in data.get("data", []):
+                token = (pi.get("metadata") or {}).get("token", "")
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
-                    location=json.dumps({"token": token, "pi_id": "",
+                    location=json.dumps({"token": token, "pi_id": pi["id"],
                                           "manifest": manifest_id}),
                 ))
+            url = data.get("next_page")
         return refs
 
     async def health_check(self) -> bool:

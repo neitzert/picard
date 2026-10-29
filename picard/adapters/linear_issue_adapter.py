@@ -121,8 +121,40 @@ class LinearIssueAdapter(Adapter):
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         refs = []
+        seen: set[str] = set()
+        try:
+            query = """
+            query SearchIssues($term: String!) {
+              issueSearch(query: $term) {
+                nodes { id title }
+              }
+            }
+            """
+            session = await self._get_session()
+            async with session.post(_API_URL, json={
+                "query": query,
+                "variables": {"term": "picard-"},
+            }) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    for issue in (data.get("data", {}).get("issueSearch", {}).get("nodes") or []):
+                        title = issue.get("title", "")
+                        if title.startswith("picard-"):
+                            tok = title[len("picard-"):]
+                            issue_id = issue["id"]
+                            if tok not in seen:
+                                seen.add(tok)
+                                refs.append(StoredChunkRef(
+                                    adapter_name=_NAME,
+                                    location=json.dumps({"token": tok,
+                                                          "issue_id": issue_id,
+                                                          "manifest": manifest_id}),
+                                ))
+        except Exception:
+            pass
         for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
+            if _manifest_id_from_chunk(chunk) == manifest_id and token not in seen:
+                seen.add(token)
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
                     location=json.dumps({"token": token, "issue_id": "",

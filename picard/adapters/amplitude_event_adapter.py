@@ -97,7 +97,19 @@ class AmplitudeEventAdapter(Adapter):
     async def health_check(self) -> bool:
         if not self._api_key:
             return False
-        return True
+        try:
+            session = await self._get_session()
+            payload = {
+                "api_key": self._api_key,
+                "events": [{
+                    "user_id": "picard-health",
+                    "event_type": "$identify",
+                }],
+            }
+            async with session.post(_URL, json=payload) as resp:
+                return resp.status in (200, 400)
+        except Exception:
+            return False
 
     async def close(self) -> None:
         self._reg.clear()

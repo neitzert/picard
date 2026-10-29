@@ -103,8 +103,26 @@ class FirestoreDocAdapter(Adapter):
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         refs = []
+        seen: set[str] = set()
+        try:
+            db = self._get_db()
+            query = db.collection(self._collection).where("manifest", "==", manifest_id)
+            docs = await asyncio.to_thread(lambda: list(query.stream()))
+            for doc in docs:
+                tok = doc.id
+                if tok not in seen:
+                    seen.add(tok)
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": tok,
+                                              "collection": self._collection,
+                                              "manifest": manifest_id}),
+                    ))
+        except Exception:
+            pass
         for token, chunk in self._reg.items():
-            if _manifest_id(chunk) == manifest_id:
+            if _manifest_id(chunk) == manifest_id and token not in seen:
+                seen.add(token)
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
                     location=json.dumps({"token": token,

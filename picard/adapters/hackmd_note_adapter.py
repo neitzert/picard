@@ -101,8 +101,30 @@ class HackmdNoteAdapter(Adapter):
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         refs = []
+        seen: set[str] = set()
+        try:
+            session = await self._get_session()
+            async with session.get(f"{self._base_url}/notes") as resp:
+                if resp.status == 200:
+                    items = await resp.json()
+                    for item in (items or []):
+                        title = item.get("title", "")
+                        if title.startswith("picard-"):
+                            tok = title[len("picard-"):]
+                            note_id = item.get("id", "")
+                            if note_id and tok not in seen:
+                                seen.add(tok)
+                                refs.append(StoredChunkRef(
+                                    adapter_name=_NAME,
+                                    location=json.dumps({"token": tok,
+                                                          "note_id": note_id,
+                                                          "manifest": manifest_id}),
+                                ))
+        except Exception:
+            pass
         for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
+            if _manifest_id_from_chunk(chunk) == manifest_id and token not in seen:
+                seen.add(token)
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
                     location=json.dumps({"token": token, "note_id": "",

@@ -172,10 +172,37 @@ class AwsDynamodbAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t,
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._access_key or not self._secret_key:
+            return []
+        session = await self._get_session()
+        refs = []
+        last_key = None
+        while True:
+            body: dict = {
+                "TableName": self._table,
+                "FilterExpression": "#m = :mid",
+                "ExpressionAttributeNames": {"#m": "manifest"},
+                "ExpressionAttributeValues": {":mid": {"S": manifest_id}},
+            }
+            if last_key:
+                body["ExclusiveStartKey"] = last_key
+            url, headers, payload = self._call("DynamoDB_20120810.Scan", body)
+            async with session.post(url, headers=headers, data=payload) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for item in data.get("Items", []):
+                token = item.get("pk", {}).get("S", "")
+                if token:
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "manifest": manifest_id}),
+                    ))
+            last_key = data.get("LastEvaluatedKey")
+            if not last_key:
+                break
+        return refs
 
     async def health_check(self) -> bool:
         if not self._access_key or not self._secret_key:

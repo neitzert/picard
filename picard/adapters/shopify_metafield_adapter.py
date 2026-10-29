@@ -98,10 +98,33 @@ class ShopifyMetafieldAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "mf_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._token or not self._store_domain:
+            return []
+        session = await self._get_session()
+        refs = []
+        url = f"{self._base}/metafields.json?namespace=picard&limit=250"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+                link = resp.headers.get("Link", "")
+            for mf in data.get("metafields", []):
+                value = mf.get("value", "")
+                if _manifest_id_from_chunk(value) == manifest_id:
+                    token = mf.get("key", "")
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "mf_id": mf["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            url = None
+            for part in link.split(","):
+                if 'rel="next"' in part:
+                    url = part.split(";")[0].strip().strip("<>")
+                    break
+        return refs
 
     async def health_check(self) -> bool:
         if not self._token or not self._store_domain:

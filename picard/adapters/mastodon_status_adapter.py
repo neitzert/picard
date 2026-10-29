@@ -100,10 +100,53 @@ class MastodonStatusAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "status_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        refs = []
+        seen: set[str] = set()
+        try:
+            session = await self._get_session()
+            async with session.get(
+                    f"{self._base}/api/v1/accounts/verify_credentials") as resp:
+                if resp.status == 200:
+                    acct_id = (await resp.json())["id"]
+                    max_id = None
+                    fetched = 0
+                    while fetched < 500:
+                        params: dict = {"limit": "40", "exclude_reblogs": "true"}
+                        if max_id:
+                            params["max_id"] = max_id
+                        async with session.get(
+                                f"{self._base}/api/v1/accounts/{acct_id}/statuses",
+                                params=params) as sr:
+                            if sr.status != 200:
+                                break
+                            statuses = await sr.json()
+                        if not statuses:
+                            break
+                        for s in statuses:
+                            spoiler = s.get("spoiler_text", "")
+                            if spoiler.startswith("picard:"):
+                                tok = spoiler[len("picard:"):]
+                                if tok not in seen:
+                                    seen.add(tok)
+                                    refs.append(StoredChunkRef(
+                                        adapter_name=_NAME,
+                                        location=json.dumps({"token": tok,
+                                                              "status_id": s["id"],
+                                                              "manifest": manifest_id}),
+                                    ))
+                        max_id = statuses[-1]["id"]
+                        fetched += len(statuses)
+        except Exception:
+            pass
+        for tok, chunk in self._reg.items():
+            if _manifest_id_from_chunk(chunk) == manifest_id and tok not in seen:
+                seen.add(tok)
+                refs.append(StoredChunkRef(
+                    adapter_name=_NAME,
+                    location=json.dumps({"token": tok, "status_id": "",
+                                          "manifest": manifest_id}),
+                ))
+        return refs
 
     async def health_check(self) -> bool:
         if not self._base or not self._access_token:

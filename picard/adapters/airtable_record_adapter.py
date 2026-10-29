@@ -108,8 +108,9 @@ class AirtableRecordAdapter(Adapter):
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         session = await self._get_session()
         import urllib.parse
+        safe_id = manifest_id.replace("\\", "\\\\").replace("'", "\\'")
         params = urllib.parse.urlencode({
-            "filterByFormula": f"{{Manifest}}='{manifest_id}'"
+            "filterByFormula": f"{{Manifest}}='{safe_id}'"
         })
         async with session.get(
                 f"{self._table_url()}?{params}") as resp:

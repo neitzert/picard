@@ -36,6 +36,7 @@ class TwilioMessageAdapter(Adapter):
         self._from_phone = from_phone
         self._to_phone = to_phone
         self._reg: dict[str, str] = {}
+        self._sids: dict[str, str] = {}
         self._session = None
 
     async def _get_session(self):
@@ -49,11 +50,12 @@ class TwilioMessageAdapter(Adapter):
         return AdapterProfile(
             name=_NAME,
             max_chunk_bytes=1600,
-            persistent=True,
+            persistent=False,
             ordered=False,
             rate_limit_per_min=30,
             tags={"requires": "aiohttp,twilio-credentials", "substrate": "twilio-sms-body",
-                  "warning": "sends-real-sms"},
+                  "warning": "sends-real-sms",
+                  "note": "SMS bodies are write-only; list/cold-read not supported"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
@@ -71,6 +73,7 @@ class TwilioMessageAdapter(Adapter):
             body = await resp.json()
         msg_sid = body["sid"]
         self._reg[token] = encoded_chunk
+        self._sids[token] = msg_sid
         return StoredChunkRef(
             adapter_name=_NAME,
             location=json.dumps({"token": token, "msg_sid": msg_sid,
@@ -102,15 +105,12 @@ class TwilioMessageAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "msg_sid": "",
-                                          "manifest": manifest_id}),
-                ))
-        return refs
+        return [StoredChunkRef(adapter_name=_NAME,
+                               location=json.dumps({"token": t,
+                                                     "msg_sid": self._sids.get(t, ""),
+                                                     "manifest": manifest_id}))
+                for t, chunk in self._reg.items()
+                if _manifest_id_from_chunk(chunk) == manifest_id]
 
     async def health_check(self) -> bool:
         if not self._account_sid or not self._auth_token:
@@ -125,6 +125,7 @@ class TwilioMessageAdapter(Adapter):
 
     async def close(self) -> None:
         self._reg.clear()
+        self._sids.clear()
         if self._session is not None:
             await self._session.close()
             self._session = None
