@@ -8,6 +8,7 @@ Requires: pip install aiomysql
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 import uuid
@@ -69,14 +70,14 @@ class MysqlTriggerAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id(encoded_chunk)
         trig_name = f"picard_{token}"
-        escaped = encoded_chunk.replace("\\", "\\\\").replace("'", "\\'")
+        b64 = base64.b64encode(encoded_chunk.encode()).decode()
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     f"CREATE TRIGGER `{trig_name}` BEFORE INSERT "
                     f"ON `{_SCRATCH_TABLE}` FOR EACH ROW "
-                    f"SET @picard_chunk = '{escaped}'"
+                    f"SET @picard_chunk = '{b64}'"
                 )
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
@@ -102,10 +103,10 @@ class MysqlTriggerAdapter(Adapter):
         if not row:
             raise KeyError(f"mysql-trigger chunk not found: {token}")
         stmt = row[0]
-        m = re.search(r"@picard_chunk\s*=\s*'(.*?)'", stmt, re.DOTALL)
+        m = re.search(r"@picard_chunk\s*=\s*'([A-Za-z0-9+/=]+)'", stmt)
         if not m:
             raise KeyError(f"mysql-trigger parse failed: {token}")
-        chunk = m.group(1).replace("\\'", "'").replace("\\\\", "\\")
+        chunk = base64.b64decode(m.group(1)).decode()
         self._reg[token] = chunk
         return chunk
 

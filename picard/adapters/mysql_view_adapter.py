@@ -8,6 +8,7 @@ Requires: pip install aiomysql
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 import uuid
@@ -62,13 +63,13 @@ class MysqlViewAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id(encoded_chunk)
         view_name = f"picard_{token}"
-        escaped = encoded_chunk.replace("\\", "\\\\").replace("'", "\\'")
+        b64 = base64.b64encode(encoded_chunk.encode()).decode()
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     f"CREATE VIEW `{view_name}` AS "
-                    f"SELECT '{escaped}' AS chunk_data"
+                    f"SELECT '{b64}' AS chunk_data"
                 )
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
@@ -90,10 +91,10 @@ class MysqlViewAdapter(Adapter):
         if not row:
             raise KeyError(f"mysql-view chunk not found: {token}")
         create_sql = row[1]
-        m = re.search(r"SELECT '(.*?)' AS `?chunk_data`?", create_sql, re.DOTALL)
+        m = re.search(r"SELECT '([A-Za-z0-9+/=]+)' AS `?chunk_data`?", create_sql)
         if not m:
             raise KeyError(f"mysql-view parse failed: {token}")
-        chunk = m.group(1).replace("\\'", "'").replace("\\\\", "\\")
+        chunk = base64.b64decode(m.group(1)).decode()
         self._reg[token] = chunk
         return chunk
 

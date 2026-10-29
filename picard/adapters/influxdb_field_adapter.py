@@ -30,11 +30,13 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
 
 
 def _escape_tag(value: str) -> str:
-    return value.replace(",", r"\,").replace("=", r"\=").replace(" ", r"\ ")
+    return (value.replace(",", r"\,").replace("=", r"\=")
+            .replace(" ", r"\ ").replace("\n", "\\n").replace("\r", "\\r"))
 
 
 def _escape_field(value: str) -> str:
-    return value.replace('"', '\\"')
+    return (value.replace("\\", "\\\\").replace('"', '\\"')
+            .replace("\n", "\\n").replace("\r", "\\r"))
 
 
 class InfluxdbFieldAdapter(Adapter):

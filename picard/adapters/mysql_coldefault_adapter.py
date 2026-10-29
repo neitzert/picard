@@ -8,6 +8,7 @@ Requires: pip install aiomysql
 """
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 from typing import Sequence
@@ -61,13 +62,13 @@ class MysqlColdefaultAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id(encoded_chunk)
         table = f"picard_cd_{token}"
-        escaped = encoded_chunk.replace("\\", "\\\\").replace("'", "\\'")
+        b64 = base64.b64encode(encoded_chunk.encode()).decode()
         pool = await self._get_pool()
         async with pool.acquire() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
                     f"CREATE TABLE `{table}` "
-                    f"(v VARCHAR(65536) DEFAULT '{escaped}')"
+                    f"(v VARCHAR(65536) DEFAULT '{b64}')"
                 )
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
@@ -92,7 +93,7 @@ class MysqlColdefaultAdapter(Adapter):
                 row = await cur.fetchone()
         if not row or row[0] is None:
             raise KeyError(f"mysql-coldefault chunk not found: {token}")
-        chunk = row[0]
+        chunk = base64.b64decode(row[0]).decode()
         self._reg[token] = chunk
         return chunk
 
@@ -120,7 +121,11 @@ class MysqlColdefaultAdapter(Adapter):
         for (table, default) in rows:
             if not default:
                 continue
-            if _manifest_id(default) == manifest_id:
+            try:
+                decoded = base64.b64decode(default).decode()
+            except Exception:
+                continue
+            if _manifest_id(decoded) == manifest_id:
                 token = table[len("picard_cd_"):]
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,

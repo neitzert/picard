@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import uuid
+import xml.sax.saxutils
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
@@ -37,7 +38,7 @@ def _proppatch_body(encoded_chunk: str) -> str:
         '<?xml version="1.0" encoding="utf-8"?>'
         '<D:propertyupdate xmlns:D="DAV:" xmlns:P="urn:net:picard:chunk:1">'
         "<D:set><D:prop>"
-        f"<P:chunk-data>{encoded_chunk}</P:chunk-data>"
+        f"<P:chunk-data>{xml.sax.saxutils.escape(encoded_chunk)}</P:chunk-data>"
         "</D:prop></D:set>"
         "</D:propertyupdate>"
     )
@@ -136,7 +137,7 @@ class WebdavPropertyAdapter(Adapter):
             raise KeyError(f"webdav-property chunk not found: {token}")
         start += len(tag)
         end = body.find("<", start)
-        chunk = body[start:end].strip()
+        chunk = xml.sax.saxutils.unescape(body[start:end].strip())
         self._reg[token] = chunk
         return chunk
 

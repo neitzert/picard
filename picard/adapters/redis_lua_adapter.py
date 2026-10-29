@@ -9,6 +9,7 @@ Requires: pip install redis[hiredis]
 """
 from __future__ import annotations
 
+import base64
 import json
 import uuid
 from typing import Sequence
@@ -30,10 +31,10 @@ def _manifest_id_from_chunk(encoded_chunk: str) -> str:
 
 
 def _wrap_chunk(token: str, manifest_id: str, encoded_chunk: str) -> str:
-    safe = encoded_chunk.replace("\\", "\\\\").replace('"', '\\"')
+    b64 = base64.b64encode(encoded_chunk.encode()).decode()
     return (
         f'-- picard:{token}:{manifest_id}\n'
-        f'return "{safe}"\n'
+        f'return "{b64}"\n'
     )
 
 
@@ -42,7 +43,10 @@ def _unwrap_chunk(script: str) -> str:
         if line.startswith("return "):
             val = line[len("return "):]
             if val.startswith('"') and val.endswith('"'):
-                return val[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+                try:
+                    return base64.b64decode(val[1:-1]).decode()
+                except Exception:
+                    return ""
     return ""
 
 
