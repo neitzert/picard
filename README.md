@@ -6,7 +6,7 @@
 
 ---
 
-*This release is dedicated to Sir Patrick Stewart (1940–2026), who spent thirty-five years making a starship captain the most compelling argument for curiosity, decency, and the refusal to accept unnecessary limits. The name was obvious.*
+*This release is dedicated to Sir Patrick Stewart (1940–2026), who spent thirty-five years making a starship captain the most compelling argument for curiosity, decency, and the refusal to accept unnecessary limits.*
 
 ---
 
