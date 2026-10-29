@@ -1,0 +1,133 @@
+"""ZooKeeper sequential-node adapter -- stores chunks as ZooKeeper sequential znodes.
+
+Each write_chunk creates a sequential node under /picard_seq using
+kazoo's sequence=True flag, producing paths like /picard_seq/picard_0000000001.
+The node carries the chunk as JSON data.
+
+Distinct from zookeeper_znode_adapter (non-sequential nodes under /picard).
+
+Requires: pip install kazoo
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import uuid
+from typing import Sequence
+
+from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
+
+_NAME = "zookeeper-sequential"
+_ROOT = "/picard_seq"
+_PREFIX = f"{_ROOT}/picard_"
+
+
+def _manifest_id_from_chunk(encoded_chunk: str) -> str:
+    try:
+        parts = encoded_chunk.split(":")
+        if parts[0] == "PCHK" and len(parts) >= 3:
+            return parts[2]
+    except Exception:
+        pass
+    return ""
+
+
+class ZookeeperSequentialAdapter(Adapter):
+
+    def __init__(self, *, hosts: str = "127.0.0.1:2181") -> None:
+        self._hosts = hosts
+        self._client = None
+        self._reg: dict[str, str] = {}
+
+    def _get_client(self):
+        if self._client is None:
+            from kazoo.client import KazooClient
+            self._client = KazooClient(hosts=self._hosts)
+            self._client.start()
+            self._client.ensure_path(_ROOT)
+        return self._client
+
+    def profile(self) -> AdapterProfile:
+        return AdapterProfile(
+            name=_NAME,
+            max_chunk_bytes=1_000_000,
+            persistent=True,
+            ordered=True,
+            tags={"requires": "kazoo", "substrate": "zookeeper-sequential-znode"},
+        )
+
+    async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
+        def _write():
+            client = self._get_client()
+            manifest_id = _manifest_id_from_chunk(encoded_chunk)
+            data = json.dumps({"chunk": encoded_chunk, "manifest": manifest_id}).encode("utf-8")
+            # sequence=True appends a 10-digit monotonic counter to the node name
+            actual_path = client.create(_PREFIX, data, sequence=True)
+            token = actual_path[len(_ROOT) + 1:]  # e.g. "picard_0000000001"
+            return token, actual_path
+
+        token, path = await asyncio.to_thread(_write)
+        self._reg[token] = encoded_chunk
+        return StoredChunkRef(adapter_name=_NAME,
+                              location=json.dumps({"token": token, "path": path}))
+
+    async def read_chunk(self, ref: StoredChunkRef) -> str:
+        loc = json.loads(ref.location)
+        if loc["token"] in self._reg:
+            return self._reg[loc["token"]]
+
+        def _read():
+            client = self._get_client()
+            data, _ = client.get(loc["path"])
+            return json.loads(data.decode("utf-8"))["chunk"]
+
+        chunk = await asyncio.to_thread(_read)
+        self._reg[loc["token"]] = chunk
+        return chunk
+
+    async def delete_chunk(self, ref: StoredChunkRef) -> bool:
+        loc = json.loads(ref.location)
+        self._reg.pop(loc["token"], None)
+
+        def _del():
+            client = self._get_client()
+            client.delete(loc["path"])
+
+        await asyncio.to_thread(_del)
+        return True
+
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        def _list():
+            client = self._get_client()
+            children = client.get_children(_ROOT)
+            refs = []
+            for name in sorted(children):  # sorted preserves sequential order
+                path = f"{_ROOT}/{name}"
+                try:
+                    data, _ = client.get(path)
+                    obj = json.loads(data.decode("utf-8"))
+                    if obj.get("manifest") == manifest_id:
+                        refs.append(StoredChunkRef(
+                            adapter_name=_NAME,
+                            location=json.dumps({"token": name, "path": path}),
+                        ))
+                except Exception:
+                    continue
+            return refs
+
+        return await asyncio.to_thread(_list)
+
+    async def health_check(self) -> bool:
+        try:
+            def _hc():
+                client = self._get_client()
+                return client.state == "CONNECTED"
+
+            return await asyncio.to_thread(_hc)
+        except Exception:
+            return False
+
+    async def close(self) -> None:
+        if self._client is not None:
+            await asyncio.to_thread(self._client.stop)
+            self._client = None
