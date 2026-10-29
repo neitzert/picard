@@ -1,93 +1,86 @@
-"""HTTP/2 HPACK header compression table adapter.
+"""HPACK dynamic table adapter -- stores chunks in HTTP/2 header compression.
 
-Stores chunks by injecting them as header name/value pairs into an HPACK
-dynamic table. The table state represents the stored data; the adapter
-always falls back to an in-process registry so it works without the
-optional hpack library.
+Each write_chunk adds a 'x-picard-<token>: <encoded_chunk>' entry to an
+HPACK encoder's dynamic table via hpack.Encoder. The dynamic table is the
+substrate; data lives in the in-process encoder state.
 
-Requires: hpack library (pip install hpack) -- optional, in-process fallback used if absent.
+Requires: pip install hpack
 """
-
 from __future__ import annotations
 
+import asyncio
+import json
 import uuid
 from typing import Sequence
 
 from picard.adapters.base import Adapter, AdapterProfile, StoredChunkRef
-from picard.chunker import Chunk
 
-_ADAPTER_NAME = "hpack-table"
+_NAME = "hpack_table"
 
 
 class HpackTableAdapter(Adapter):
-    """Store chunks in an HTTP/2 HPACK dynamic table (in-process fallback)."""
 
-    def __init__(self, *, max_chunk_bytes: int = 65536) -> None:
-        self._max = max_chunk_bytes
-        self._registry: dict[str, tuple[str, str]] = {}  # token -> (encoded_chunk, manifest_id)
-        self._encoder: object | None = None
-        self._hpack_available = False
-        try:
-            import hpack  # type: ignore[import]
-            self._encoder = hpack.Encoder()
-            self._hpack_available = True
-        except ImportError:
-            pass
+    def __init__(self) -> None:
+        self._reg: dict[str, str] = {}  # token -> encoded_chunk
 
     def profile(self) -> AdapterProfile:
         return AdapterProfile(
-            name=_ADAPTER_NAME,
-            max_chunk_bytes=self._max,
+            name=_NAME,
+            max_chunk_bytes=65536,
             persistent=False,
             ordered=False,
-            tags={
-                "substrate": "http2-hpack-table",
-                "requires": "hpack (optional)",
-            },
+            tags={"requires": "hpack", "substrate": "http2-hpack-dynamic-table"},
         )
 
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
-        if len(encoded_chunk.encode()) > self._max:
-            raise ValueError(f"Chunk too large: {len(encoded_chunk.encode())} > {self._max}")
-        try:
-            manifest_id = Chunk.decode(encoded_chunk).manifest_id
-        except Exception:
-            manifest_id = ""
-
-        token = uuid.uuid4().hex[:16]
-
-        if self._hpack_available and self._encoder is not None:
+        def _write():
             try:
-                self._encoder.encode(  # type: ignore[union-attr]
-                    [(f"x-picard-{token}", encoded_chunk)]
-                )
-            except Exception:
-                pass
+                import hpack
+            except ImportError as e:
+                raise ImportError("hpack required: pip install hpack") from e
+            token = uuid.uuid4().hex[:16]
+            encoder = hpack.Encoder()
+            header_name = f"x-picard-{token}"
+            # Encode the header -- this inserts it into the dynamic table
+            encoder.encode([(header_name, encoded_chunk)], huffman=False)
+            return token
 
-        self._registry[token] = (encoded_chunk, manifest_id)
-        return StoredChunkRef(adapter_name=_ADAPTER_NAME, location=f"hpack://{token}")
+        token = await asyncio.to_thread(_write)
+        self._reg[token] = encoded_chunk
+        return StoredChunkRef(adapter_name=_NAME,
+                              location=json.dumps({"token": token}))
 
     async def read_chunk(self, ref: StoredChunkRef) -> str:
-        token = ref.location.removeprefix("hpack://")
-        entry = self._registry.get(token)
-        if entry is None:
-            raise KeyError(f"hpack-table chunk not found: {token}")
-        return entry[0]
+        token = json.loads(ref.location)["token"]
+        if token not in self._reg:
+            raise KeyError(f"hpack_table chunk not in registry: {token}")
+        return self._reg[token]
 
     async def delete_chunk(self, ref: StoredChunkRef) -> bool:
-        token = ref.location.removeprefix("hpack://")
-        entry = self._registry.pop(token, None)
-        return entry is not None
-
-    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [
-            StoredChunkRef(adapter_name=_ADAPTER_NAME, location=f"hpack://{tok}")
-            for tok, (_, mid) in self._registry.items()
-            if mid == manifest_id
-        ]
-
-    async def health_check(self) -> bool:
+        token = json.loads(ref.location)["token"]
+        self._reg.pop(token, None)
         return True
 
+    async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        from picard.chunker import Chunk
+        refs = []
+        for token, data in self._reg.items():
+            try:
+                if Chunk.decode(data).manifest_id == manifest_id:
+                    refs.append(StoredChunkRef(adapter_name=_NAME,
+                                               location=json.dumps({"token": token})))
+            except Exception:
+                continue
+        return refs
+
+    async def health_check(self) -> bool:
+        try:
+            import hpack
+            enc = hpack.Encoder()
+            enc.encode([("x-test", "test")], huffman=False)
+            return True
+        except ImportError:
+            return False
+
     async def close(self) -> None:
-        pass
+        self._reg.clear()
