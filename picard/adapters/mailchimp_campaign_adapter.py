@@ -61,13 +61,14 @@ class MailchimpCampaignAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         base = self._base_url()
+        title = f"picard-{manifest_id[:16]}-{token}"
         create_payload = {
             "type": "regular",
             "settings": {
-                "subject_line": f"picard-{token}",
+                "subject_line": title,
                 "from_name": "picard",
                 "reply_to": "picard@example.com",
-                "title": f"picard-{token}",
+                "title": title,
             },
             "recipients": {"list_id": self._list_id},
         }
@@ -110,14 +111,33 @@ class MailchimpCampaignAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._api_key:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
+        base = self._base_url()
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "campaign_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        offset = 0
+        while True:
+            params = f"count=1000&offset={offset}&fields=campaigns.id,campaigns.settings.title"
+            async with session.get(f"{base}/campaigns?{params}") as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            campaigns = data.get("campaigns", [])
+            for c in campaigns:
+                title = (c.get("settings") or {}).get("title", "")
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "campaign_id": c["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            if len(campaigns) < 1000:
+                break
+            offset += len(campaigns)
         return refs
 
     async def health_check(self) -> bool:

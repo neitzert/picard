@@ -57,7 +57,7 @@ class OnedriveFileAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
-        path = f"/me/drive/special/approot:/picard/{token}.txt:/content"
+        path = f"/me/drive/special/approot:/picard/{manifest_id[:16]}/{token}.txt:/content"
         async with session.put(
                 f"{_BASE_URL}{path}",
                 data=encoded_chunk.encode(),
@@ -95,14 +95,30 @@ class OnedriveFileAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token:
+            return []
+        session = await self._get_session()
+        folder_path = f"/me/drive/special/approot:/picard/{manifest_id[:16]}:/children"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "item_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        url = f"{_BASE_URL}{folder_path}"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status in (404, 400):
+                    break
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for item in data.get("value", []):
+                name = item.get("name", "")
+                if name.endswith(".txt"):
+                    token = name[:-4]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "item_id": item["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            url = data.get("@odata.nextLink")
         return refs
 
     async def health_check(self) -> bool:

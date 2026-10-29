@@ -1,7 +1,8 @@
-"""HubSpot engagement note adapter -- stores chunks as HubSpot notes.
+"""HubSpot note adapter -- stores chunks as HubSpot CRM notes.
 
-Each write_chunk creates an engagement note via POST /engagements/v1/engagements.
-Cold reads fetch via GET /engagements/v1/engagements/{id}.
+Each write_chunk creates a CRM note via POST /crm/v3/objects/notes.
+Cold reads fetch via GET /crm/v3/objects/notes/{id}.
+list_chunks searches by body content prefix using the CRM search API.
 
 Requires: aiohttp, a HubSpot private app access token.
 """
@@ -57,21 +58,23 @@ class HubspotNoteAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
+        body = f"picard-{manifest_id[:16]}-{token}\n{encoded_chunk}"
         payload = {
-            "engagement": {"active": True, "type": "NOTE"},
-            "metadata": {"body": encoded_chunk},
-            "associations": {},
+            "properties": {
+                "hs_note_body": body,
+                "hs_timestamp": str(int(__import__("time").time() * 1000)),
+            }
         }
         async with session.post(
-                f"{_BASE_URL}/engagements/v1/engagements",
+                f"{_BASE_URL}/crm/v3/objects/notes",
                 json=payload) as resp:
             resp.raise_for_status()
             data = await resp.json()
-        eng_id = data["engagement"]["id"]
+        note_id = data["id"]
         self._reg[token] = encoded_chunk
         return StoredChunkRef(
             adapter_name=_NAME,
-            location=json.dumps({"token": token, "eng_id": eng_id,
+            location=json.dumps({"token": token, "note_id": note_id,
                                   "manifest": manifest_id}),
         )
 
@@ -81,10 +84,12 @@ class HubspotNoteAdapter(Adapter):
             return self._reg[loc["token"]]
         session = await self._get_session()
         async with session.get(
-                f"{_BASE_URL}/engagements/v1/engagements/{loc['eng_id']}") as resp:
+                f"{_BASE_URL}/crm/v3/objects/notes/{loc['note_id']}",
+                params={"properties": "hs_note_body"}) as resp:
             resp.raise_for_status()
             data = await resp.json()
-        chunk = data["metadata"]["body"]
+        body = data["properties"]["hs_note_body"]
+        chunk = body.split("\n", 1)[1] if "\n" in body else body
         self._reg[loc["token"]] = chunk
         return chunk
 
@@ -93,19 +98,49 @@ class HubspotNoteAdapter(Adapter):
         self._reg.pop(loc["token"], None)
         session = await self._get_session()
         async with session.delete(
-                f"{_BASE_URL}/engagements/v1/engagements/{loc['eng_id']}") as resp:
-            resp.raise_for_status()
-        return True
+                f"{_BASE_URL}/crm/v3/objects/notes/{loc['note_id']}") as resp:
+            return resp.status in (204, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "eng_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        after = None
+        while True:
+            body: dict = {
+                "filterGroups": [{"filters": [{
+                    "propertyName": "hs_note_body",
+                    "operator": "CONTAINS_TOKEN",
+                    "value": prefix,
+                }]}],
+                "properties": ["hs_note_body"],
+                "limit": 100,
+            }
+            if after:
+                body["after"] = after
+            async with session.post(
+                    f"{_BASE_URL}/crm/v3/objects/notes/search",
+                    json=body) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for result in data.get("results", []):
+                note_body = (result.get("properties") or {}).get("hs_note_body", "")
+                first_line = note_body.split("\n", 1)[0]
+                if first_line.startswith(prefix):
+                    token = first_line[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "note_id": result["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            paging = data.get("paging", {})
+            after = (paging.get("next") or {}).get("after")
+            if not after:
+                break
         return refs
 
     async def health_check(self) -> bool:
@@ -114,8 +149,8 @@ class HubspotNoteAdapter(Adapter):
         try:
             session = await self._get_session()
             async with session.get(
-                    f"{_BASE_URL}/crm/v3/objects/contacts?limit=1") as resp:
-                return resp.status == 200
+                    f"{_BASE_URL}/crm/v3/objects/notes?limit=1") as resp:
+                return resp.status in (200, 403)
         except Exception:
             return False
 

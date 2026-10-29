@@ -59,7 +59,7 @@ class SpotifyPlaylistAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "name": f"picard-{token}",
+            "name": f"picard-{manifest_id[:16]}-{token}",
             "description": encoded_chunk,
             "public": False,
         }
@@ -99,14 +99,28 @@ class SpotifyPlaylistAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token or not self._user_id:
+            return []
+        session = await self._get_session()
+        prefix = f"picard-{manifest_id[:16]}-"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token, "playlist_id": "",
-                                          "manifest": manifest_id}),
-                ))
+        url = f"{_BASE_URL}/users/{self._user_id}/playlists?limit=50"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for pl in data.get("items", []):
+                name = pl.get("name", "")
+                if name.startswith(prefix):
+                    token = name[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "playlist_id": pl["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            url = (data.get("next") or "")
         return refs
 
     async def health_check(self) -> bool:

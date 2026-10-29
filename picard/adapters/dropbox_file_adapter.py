@@ -58,7 +58,7 @@ class DropboxFileAdapter(Adapter):
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
-        path = f"/picard/{token}.txt"
+        path = f"/picard/{manifest_id[:16]}/{token}.txt"
         arg = json.dumps({"path": path, "mode": "overwrite"})
         async with session.post(
                 f"{_CONTENT_URL}/files/upload",
@@ -99,15 +99,38 @@ class DropboxFileAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._access_token:
+            return []
+        session = await self._get_session()
+        folder = f"/picard/{manifest_id[:16]}"
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token,
-                                          "path": f"/picard/{token}.txt",
-                                          "manifest": manifest_id}),
-                ))
+        cursor = None
+        has_more = True
+        while has_more:
+            if cursor:
+                resp_data = {"cursor": cursor}
+                url = f"{_API_URL}/files/list_folder/continue"
+            else:
+                resp_data = {"path": folder, "limit": 2000}
+                url = f"{_API_URL}/files/list_folder"
+            async with session.post(url, json=resp_data) as resp:
+                if resp.status == 409:
+                    break
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for entry in data.get("entries", []):
+                name = entry.get("name", "")
+                if name.endswith(".txt"):
+                    token = name[:-4]
+                    path = entry.get("path_lower", f"/picard/{manifest_id[:16]}/{token}.txt")
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token, "path": path,
+                                              "manifest": manifest_id}),
+                    ))
+            has_more = data.get("has_more", False)
+            cursor = data.get("cursor")
         return refs
 
     async def health_check(self) -> bool:
