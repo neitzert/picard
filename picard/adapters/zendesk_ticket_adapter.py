@@ -64,7 +64,7 @@ class ZendeskTicketAdapter(Adapter):
             "ticket": {
                 "subject": f"picard-{token}",
                 "comment": {"body": encoded_chunk},
-                "tags": [f"picard", f"manifest-{manifest_id[:8]}"],
+                "tags": ["picard", f"manifest-{manifest_id[:16]}"],
             }
         }
         async with session.post(
@@ -103,14 +103,29 @@ class ZendeskTicketAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
+        if not self._subdomain or not self._email or not self._api_token:
+            return []
+        import urllib.parse
+        session = await self._get_session()
+        tag = f"manifest-{manifest_id[:16]}"
+        query = urllib.parse.quote(f"type:ticket tags:{tag}")
         refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id_from_chunk(chunk) == manifest_id:
+        url = f"{self._base_url()}/search.json?query={query}&per_page=100"
+        while url:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            for ticket in data.get("results", []):
+                subject = ticket.get("subject", "")
+                token = subject.removeprefix("picard-")
                 refs.append(StoredChunkRef(
                     adapter_name=_NAME,
-                    location=json.dumps({"token": token, "ticket_id": "",
+                    location=json.dumps({"token": token,
+                                          "ticket_id": ticket["id"],
                                           "manifest": manifest_id}),
                 ))
+            url = data.get("next_page") or ""
         return refs
 
     async def health_check(self) -> bool:

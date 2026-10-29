@@ -64,7 +64,7 @@ class WordpressPostAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "title": f"picard:{token}",
+            "title": f"picard:{manifest_id[:16]}:{token}",
             "content": encoded_chunk,
             "status": "private",
         }
@@ -102,10 +102,36 @@ class WordpressPostAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "post_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._base:
+            return []
+        session = await self._get_session()
+        prefix = f"picard:{manifest_id[:16]}:"
+        refs = []
+        page = 1
+        while True:
+            params = f"search={prefix}&status=private&per_page=100&page={page}"
+            async with session.get(f"{self._base}/posts?{params}") as resp:
+                if resp.status != 200:
+                    break
+                posts = await resp.json()
+            if not posts:
+                break
+            for post in posts:
+                import html as _html
+                title = _html.unescape(
+                    (post.get("title") or {}).get("rendered", ""))
+                if title.startswith(prefix):
+                    token = title[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "post_id": post["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            if len(posts) < 100:
+                break
+            page += 1
+        return refs
 
     async def health_check(self) -> bool:
         if not self._username or not self._app_password:
