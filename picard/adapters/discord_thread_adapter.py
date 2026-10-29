@@ -61,7 +61,7 @@ class DiscordThreadAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "name": f"picard:{token}",
+            "name": f"picard:{manifest_id[:16]}:{token}",
             "message": {"content": encoded_chunk},
         }
         async with session.post(
@@ -101,10 +101,40 @@ class DiscordThreadAdapter(Adapter):
             return resp.status in (200, 404)
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        return [StoredChunkRef(adapter_name=_NAME,
-                               location=json.dumps({"token": t, "thread_id": "",
-                                                     "manifest": manifest_id}))
-                for t, c in self._reg.items() if _manifest_id_from_chunk(c) == manifest_id]
+        if not self._token or not self._channel_id:
+            return []
+        session = await self._get_session()
+        prefix = f"picard:{manifest_id[:16]}:"
+        refs = []
+        before = None
+        while True:
+            params: dict = {"limit": "100"}
+            if before:
+                params["before"] = before
+            async with session.get(
+                    f"{_BASE}/channels/{self._channel_id}/threads/archived/public",
+                    params=params) as resp:
+                if resp.status != 200:
+                    break
+                data = await resp.json()
+            threads = data.get("threads", [])
+            for thread in threads:
+                name = thread.get("name", "")
+                if name.startswith(prefix):
+                    token = name[len(prefix):]
+                    refs.append(StoredChunkRef(
+                        adapter_name=_NAME,
+                        location=json.dumps({"token": token,
+                                              "thread_id": thread["id"],
+                                              "manifest": manifest_id}),
+                    ))
+            if not data.get("has_more"):
+                break
+            if threads:
+                before = threads[-1]["id"]
+            else:
+                break
+        return refs
 
     async def health_check(self) -> bool:
         if not self._token or not self._channel_id:

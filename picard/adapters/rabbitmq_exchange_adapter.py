@@ -112,14 +112,43 @@ class RabbitmqExchangeAdapter(Adapter):
         return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
-        refs = []
-        for token, chunk in self._reg.items():
-            if _manifest_id(chunk) == manifest_id:
-                refs.append(StoredChunkRef(
-                    adapter_name=_NAME,
-                    location=json.dumps({"token": token,
-                                         "exchange": f"picard.{token}"}),
-                ))
+        warm = {
+            token
+            for token, chunk in self._reg.items()
+            if _manifest_id(chunk) == manifest_id
+        }
+        import aiohttp
+        import urllib.parse
+        vhost_enc = urllib.parse.quote(self._vhost, safe="")
+        url = f"http://{self._host}:{self._mgmt_port}/api/exchanges/{vhost_enc}"
+        refs: list[StoredChunkRef] = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, auth=aiohttp.BasicAuth(self._user,
+                                                                    self._password)) as resp:
+                    if resp.status == 200:
+                        exchanges = await resp.json()
+                        for exch in exchanges:
+                            name = exch.get("name", "")
+                            if not name.startswith("picard."):
+                                continue
+                            token = name[len("picard."):]
+                            args = exch.get("arguments", {})
+                            if args.get("x-picard-manifest") == manifest_id:
+                                warm.discard(token)
+                                refs.append(StoredChunkRef(
+                                    adapter_name=_NAME,
+                                    location=json.dumps({"token": token,
+                                                         "exchange": name}),
+                                ))
+        except Exception:
+            pass
+        for token in warm:
+            refs.append(StoredChunkRef(
+                adapter_name=_NAME,
+                location=json.dumps({"token": token,
+                                     "exchange": f"picard.{token}"}),
+            ))
         return refs
 
     async def health_check(self) -> bool:
