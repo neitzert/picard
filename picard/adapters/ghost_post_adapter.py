@@ -137,15 +137,13 @@ class GhostPostAdapter(Adapter):
             return []
         session = await self._get_session()
         prefix = f"picard:{manifest_id[:16]}:"
-        import urllib.parse
-        q = urllib.parse.quote(prefix)
         refs = []
         page = 1
         while True:
             async with session.get(
                     f"{self._base}/ghost/api/admin/posts/",
                     headers=self._headers(),
-                    params={"filter": f"title:~'{q}'",
+                    params={"filter": f"title:~'{prefix}'",
                             "limit": "100", "page": str(page),
                             "fields": "id,title"}) as resp:
                 if resp.status != 200:

@@ -113,10 +113,8 @@ class ConfluencePageAdapter(Adapter):
         if not self._base or not self._email or not self._api_token:
             return []
         session = await self._get_session()
-        import urllib.parse
         prefix = f"picard:{manifest_id[:16]}:"
-        cql = urllib.parse.quote(
-            f'space="{self._space_key}" AND title~"{prefix}" AND type=page')
+        cql = f'space="{self._space_key}" AND title~"{prefix}" AND type=page'
         refs = []
         start = 0
         while True:

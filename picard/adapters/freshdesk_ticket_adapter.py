@@ -105,9 +105,8 @@ class FreshdeskTicketAdapter(Adapter):
         if not self._domain or not self._api_key:
             return []
         session = await self._get_session()
-        import urllib.parse
         tag = f"manifest-{manifest_id[:16]}"
-        query = urllib.parse.quote(f'"tag:{tag}"')
+        query = f'"tag:{tag}"'
         refs = []
         page = 1
         while True:

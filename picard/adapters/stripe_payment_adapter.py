@@ -104,8 +104,9 @@ class StripePaymentAdapter(Adapter):
         session = await self._get_session()
         query = urllib.parse.quote(f"metadata['manifest']:'{manifest_id}'")
         refs = []
-        url = f"{_BASE_URL}/payment_intents/search?query={query}&limit=100"
-        while url:
+        base_url = f"{_BASE_URL}/payment_intents/search?query={query}&limit=100"
+        url = base_url
+        while True:
             async with session.get(url) as resp:
                 if resp.status != 200:
                     break
@@ -117,7 +118,10 @@ class StripePaymentAdapter(Adapter):
                     location=json.dumps({"token": token, "pi_id": pi["id"],
                                           "manifest": manifest_id}),
                 ))
-            url = data.get("next_page")
+            next_page = data.get("next_page")
+            if not data.get("has_more") or not next_page:
+                break
+            url = f"{base_url}&page={urllib.parse.quote(next_page)}"
         return refs
 
     async def health_check(self) -> bool:

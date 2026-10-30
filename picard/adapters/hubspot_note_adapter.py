@@ -83,8 +83,9 @@ class HubspotNoteAdapter(Adapter):
         if loc["token"] in self._reg:
             return self._reg[loc["token"]]
         session = await self._get_session()
+        note_id = loc.get("note_id") or loc.get("eng_id", "")
         async with session.get(
-                f"{_BASE_URL}/crm/v3/objects/notes/{loc['note_id']}",
+                f"{_BASE_URL}/crm/v3/objects/notes/{note_id}",
                 params={"properties": "hs_note_body"}) as resp:
             resp.raise_for_status()
             data = await resp.json()
@@ -97,9 +98,13 @@ class HubspotNoteAdapter(Adapter):
         loc = json.loads(ref.location)
         self._reg.pop(loc["token"], None)
         session = await self._get_session()
+        note_id = loc.get("note_id") or loc.get("eng_id", "")
         async with session.delete(
-                f"{_BASE_URL}/crm/v3/objects/notes/{loc['note_id']}") as resp:
-            return resp.status in (204, 404)
+                f"{_BASE_URL}/crm/v3/objects/notes/{note_id}") as resp:
+            if resp.status in (204, 404):
+                return True
+            resp.raise_for_status()
+            return True
 
     async def list_chunks(self, manifest_id: str) -> Sequence[StoredChunkRef]:
         if not self._access_token:
