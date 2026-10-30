@@ -19,35 +19,14 @@ Not efficient. Protocol-agnostic.
 
 ---
 
-## New in 0.5.0: Cloud and SaaS Substrates
+## New in 0.4.0
 
-244 new adapters, bringing the total to 518. Two categories:
+**518 adapters** -- up from 274. Three additions in this release:
 
-**Tier 2 additions** -- Docker-backed services, all integration-tested against live instances: ScyllaDB (rewritten from scratch -- previous version targeted non-existent REST endpoints; now uses native CQL via cassandra-driver), additional Redis variants (ACL, JSON, Lua script, TimeSeries, Module RDB), NATS KV and object store, extended MQTT, CockroachDB, InfluxDB field storage.
-
-**Tier 3 additions** -- cloud and SaaS API stubs. Each requires credentials for the relevant service. These are not efficient storage. They are a statement.
-
-| Category | Adapters |
-|----------|---------|
-| Cloud databases | DynamoDB, Firestore, CosmosDB, Cassandra, ClickHouse, PlanetScale, Supabase |
-| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable |
-| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, Salesforce |
-| Cloud storage | Dropbox, OneDrive, Box, GCS, Storj |
-| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
-| Messaging and events | Segment, Amplitude, Mixpanel, Kafka, RabbitMQ, Discord, Matrix |
-| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie |
-| Dev platforms | GitLab snippets, Bitbucket snippets, HackMD, GitHub Gist |
-
-**Security hardening.** This release fixed multiple injection vulnerabilities across the adapter layer: Lua code injection in Redis scripts, SQL injection in MySQL DDL (view, trigger, column default), XML injection in WebDAV PROPPATCH, InfluxDB line protocol injection, OData filter injection in Azure Table, LDAP filter injection, path traversal in ScyllaDB REST URLs, and PostgreSQL identifier injection in schema and operator family DDL. All inputs are now properly escaped or parameterized.
-
-**Quality pass.** All Tier 2 and Tier 3 adapters were audited for correctness. Common issues fixed across ~45 adapters: `list_chunks` returning only in-process cache with no remote scan (useless cross-process), write-only substrates incorrectly marked `persistent=True` (SMS, push notifications, analytics events now correctly marked `persistent=False`), cold reads that fell through to KeyError instead of fetching from the service, and `delete_chunk` returning success without attempting deletion.
-
----
-
-## New in 0.4.0: Unconventional Substrates
+**Unconventional substrates** -- ten new adapters push storage into places that were never designed to hold data: kernel state, circulating packets, process memory, hardware telemetry.
 
 > [!WARNING]
-> **Experimental.** These adapters store data in places that were never designed for storage: the Ethereum mempool, Linux kernel traffic shaping rules, circulating network packets, process address space, CPU temperature, and HDD calibration tables. Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
+> **Experimental.** Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
 
 Ten new adapters push storage into substrates with no at-rest ciphertext:
 
@@ -64,7 +43,24 @@ Ten new adapters push storage into substrates with no at-rest ciphertext:
 | [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. |
 | [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state, stdlib only. |
 
-284 adapters in the Tier 2/5 experimental categories. 518 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+**Cloud and SaaS substrates** -- 244 new Tier 2 and Tier 3 adapters. Tier 2 additions are Docker-backed and integration-tested: ScyllaDB (rewritten -- now native CQL via cassandra-driver), additional Redis variants (ACL, JSON, Lua script, TimeSeries, Module RDB), NATS KV and object store, CockroachDB, InfluxDB. Tier 3 are cloud/SaaS API stubs -- each requires credentials for the relevant service.
+
+| Category | Adapters |
+|----------|---------|
+| Cloud databases | DynamoDB, Firestore, CosmosDB, Cassandra, ClickHouse, PlanetScale, Supabase |
+| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable |
+| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, Salesforce |
+| Cloud storage | Dropbox, OneDrive, Box, GCS, Storj |
+| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
+| Messaging and events | Segment, Amplitude, Mixpanel, Kafka, RabbitMQ, Discord, Matrix |
+| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie |
+| Dev platforms | GitLab snippets, Bitbucket snippets, HackMD, GitHub Gist |
+
+**Security hardening** -- injection vulnerabilities fixed across the adapter layer: Lua code injection in Redis scripts, SQL injection in MySQL DDL, XML injection in WebDAV PROPPATCH, InfluxDB line protocol injection, OData filter injection in Azure Table, LDAP filter injection, path traversal in ScyllaDB REST URLs, PostgreSQL identifier injection in schema and operator family DDL. All inputs are now escaped or parameterized.
+
+**Quality pass** -- ~45 adapters corrected: `list_chunks` now does real remote API scans instead of returning only in-process cache, write-only substrates (SMS, push notifications, analytics events) corrected to `persistent=False`, cold reads that silently fell through to KeyError now actually fetch from the service.
+
+518 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
 
 ---
 
