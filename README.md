@@ -21,7 +21,7 @@ Not efficient. Protocol-agnostic.
 
 ## New in 0.4.0
 
-**518 adapters** -- up from 274. Three additions in this release:
+**477 adapters** -- up from 264. Three additions in this release:
 
 **Unconventional substrates** -- ten new adapters push storage into places that were never designed to hold data: kernel state, circulating packets, process memory, hardware telemetry.
 
@@ -60,7 +60,7 @@ Ten new adapters push storage into substrates with no at-rest ciphertext:
 
 **Quality pass** -- ~45 adapters corrected: `list_chunks` now does real remote API scans instead of returning only in-process cache, write-only substrates (SMS, push notifications, analytics events) corrected to `persistent=False`, cold reads that silently fell through to KeyError now actually fetch from the service.
 
-518 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+477 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
 
 ---
 
@@ -122,7 +122,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 *Storage surface by category, adapter health, and encryption details at a glance.*
 
 ![PICARD adapter registry](docs/img/ui-adapters.png)
-*518 adapters browsable by category, with required parameters and one-click add.*
+*477 adapters browsable by category, with required parameters and one-click add.*
 
 ---
 
@@ -271,7 +271,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-518 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+477 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
 ### Tier 1: Your own infrastructure
 
@@ -395,7 +395,7 @@ By using PICARD you accept full responsibility for your actions and their conseq
 
 ## Test Coverage and Contributing
 
-The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,159 tests across 518 adapters). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,159 tests across 477 adapters). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
 
 **Pull requests are welcomed**, especially for:
 
