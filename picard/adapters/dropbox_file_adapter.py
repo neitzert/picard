@@ -57,6 +57,8 @@ class DropboxFileAdapter(Adapter):
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
+        if not manifest_id:
+            manifest_id = "unsealed"
         session = await self._get_session()
         path = f"/picard/{manifest_id[:16]}/{token}.txt"
         arg = json.dumps({"path": path, "mode": "overwrite"})
