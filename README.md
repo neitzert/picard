@@ -21,61 +21,13 @@ Not efficient. Protocol-agnostic.
 
 ## New in 0.4.0
 
-**505 adapters** -- up from 264. Three additions in this release:
+**505 adapters** -- up from 264. 4,159 tests. Five additions in this release:
 
-**Unconventional substrates** -- ten new adapters push storage into places that were never designed to hold data: kernel state, circulating packets, process memory, hardware telemetry.
+---
 
-> [!WARNING]
-> **Experimental.** Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
+### Reed-Solomon erasure coding
 
-Ten new adapters push storage into substrates with no at-rest ciphertext:
-
-| Adapter | Where the data lives |
-|---------|---------------------|
-| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum queued tx pool. Nonce gap prevents mining. Configurable lifetime up to 50 years via geth flags. 128 KB per tx. |
-| [`latency`](picard/adapters/latency_adapter.py) | Linux `tc netem` delay rules on loopback IPs. Bits encoded as RTT. Data is kernel traffic-shaping state, not a file. |
-| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP echo payloads kept circulating by a relay thread. No at-rest state of any kind. ~87 KB capacity. |
-| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Anonymous memfd held open by a companion daemon. No filesystem path, no name, no socket. |
-| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel (demonstration only -- heat dissipates). |
-| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. Power-cycle persistent. Unverified hypothesis -- run the characterization script first. |
-| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | SIP REGISTER state in a registrar's location database. Data lives as telephony routing bindings until `Expires` lapses. |
-| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | PIDF+XML presence documents on a SIP presence server. Data lives as subscription state. |
-| [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. |
-| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state, stdlib only. |
-
-**Cloud and SaaS substrates** -- 244 new Tier 2 and Tier 3 adapters.
-
-**Tier 2** additions are Docker-backed and integration-tested:
-
-| Adapter | Notes |
-|---------|-------|
-| ScyllaDB | Rewritten to native CQL via `cassandra-driver`. Previous REST-based implementation removed. |
-| Redis ACL, JSON, Lua script, TimeSeries, Module RDB | Five new Redis storage variants on top of the existing Redis adapter family. |
-| NATS KV, KV-TTL, Object Store | Three new NATS storage modes beyond the existing JetStream adapter. |
-| CockroachDB | PostgreSQL-wire-compatible distributed SQL. |
-| InfluxDB | Time-series with line protocol; `influxdb-field` variant for per-field scatter. |
-| VictoriaMetrics | High-performance metrics storage in three variants: series, metric name, tag. |
-
-**Tier 3** adapters are cloud/SaaS API stubs. Each requires credentials for the relevant service.
-
-| Category | Services |
-|----------|---------|
-| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable, Contentful |
-| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, ServiceNow |
-| Observability and APM | Datadog, Datadog Events, New Relic, Splunk, Prometheus, Grafana, Loki, Sentry, WandB, OpenTelemetry, Jaeger (log + trace), Zipkin (annotation + span) |
-| Analytics | Amplitude, Segment, Mixpanel |
-| Cloud databases | DynamoDB, Firestore, Firebase RTDB, Azure Table (CosmosDB), ClickHouse, PlanetScale, Supabase, Elasticsearch, OpenSearch, Hazelcast, Qdrant |
-| Cloud storage | GCS, Azure Blob, Dropbox, OneDrive, Box, Storj, Backblaze B2, DigitalOcean Spaces, Cloudflare KV, Cloudflare R2, Wasabi, Vercel KV, Google Drive |
-| Message queues | AWS SQS, AWS SNS, GCP Pub/Sub, Google Pub/Sub, AWS Lambda |
-| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
-| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie, ntfy |
-| Webhooks and bots | Slack, Discord, Microsoft Teams, Webex, Telegram bot |
-| Commerce | Stripe (payment intent metadata), Shopify (metafield), Algolia (record) |
-| Developer platforms | GitLab (snippet + CI config), Bitbucket (snippet), HackMD (note), GitHub Actions, GCP Cloud Functions |
-| Content and publishing | Ghost (post), WordPress (post), MediaWiki (page), Fandom (page) |
-| Knowledge communities | Stack Overflow (answer), HuggingFace (model card) |
-
-**Reed-Solomon erasure coding** -- a new `erasure` RAID level wraps `zfec` to provide configurable k-of-m recovery. Any k shards reconstruct the original block; the remaining m-k are parity. Tolerates up to m-k simultaneous adapter failures with (m/k - 1) storage overhead. Configure with `level = "erasure"`, `erasure_k`, and `erasure_m` in the `[[raid]]` block. Install with `pip install 'picard-store[erasure]'`.
+A new `erasure` RAID level wraps `zfec` to provide configurable k-of-m shard recovery. Any k of m shards reconstruct the original block; the remaining m-k are parity. Tolerates up to m-k simultaneous adapter failures with (m/k - 1) storage overhead.
 
 ```toml
 [[raid]]
@@ -85,29 +37,91 @@ erasure_m = 6
 adapters  = ["s3", "dns", "redis", "dropbox", "onedrive", "matrix"]
 ```
 
-**Security hardening** -- injection vulnerabilities fixed across the adapter layer: Lua code injection in Redis scripts, SQL injection in MySQL DDL, XML injection in WebDAV PROPPATCH, InfluxDB line protocol injection, OData filter injection in Azure Table, LDAP filter injection, path traversal in ScyllaDB REST URLs, PostgreSQL identifier injection in schema and operator family DDL. All inputs are now escaped or parameterized.
-
-**Quality pass** -- ~45 adapters corrected: `list_chunks` now does real remote API scans instead of returning only in-process cache, write-only substrates (SMS, push notifications, analytics events) corrected to `persistent=False`, cold reads that silently fell through to KeyError now actually fetch from the service.
-
-505 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+Install the optional dependency: `pip install 'picard-store[erasure]'`
 
 ---
 
-## New in 0.3.0: Hardware Vulnerability Storage
+### Unconventional substrates
+
+Ten new adapters push storage into places that were never designed to hold data: kernel state, circulating packets, process memory, hardware telemetry. None of these leave ciphertext at rest in the conventional sense.
 
 > [!WARNING]
-> **Experimental: Run at your own risk.** These adapters use hardware vulnerabilities as storage primitives. Results are hardware-specific, non-deterministic across machines, and irreversible in the case of DRAM bit flips. Use only on hardware you own and control. Running against shared or cloud infrastructure is unauthorized access in most jurisdictions.
+> Platform-specific, privilege-hungry, and ranging from "genuinely useful" to "demonstration only." Read the adapter source before use.
 
-PICARD can now store chunks in **DRAM bit states and CPU cache residency** -- entirely outside the operating system's view.
+| Adapter | Where the data lives | Requirements |
+|---------|---------------------|--------------|
+| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum queued tx pool. EIP-1559 tx with nonce gap prevents mining. Data in the `input` field. Configurable lifetime up to 50 years via geth flags. 128 KB per tx. | Local geth node (`--txpool.lifetime 438000h`), `web3>=6.0` |
+| [`latency`](picard/adapters/latency_adapter.py) | Linux `tc netem` delay rules on 127.x.0.x loopback IPs. Bits encoded as RTT. Data is kernel traffic-shaping state, not a file. ~63 bytes capacity. | Linux, `CAP_NET_ADMIN`, iproute2 |
+| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP echo payloads circulating on the loopback interface. AF_PACKET relay thread keeps each packet in flight. No at-rest state. ~87 KB capacity. | Linux, `CAP_NET_RAW`, `scapy>=2.5` |
+| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Anonymous memfd held open by a companion daemon via `memfd_create` + SCM_RIGHTS. No filesystem path, no name, no socket. | Linux, companion daemon |
+| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel. Encodes bits via CPU load; reads sysfs thermal zone sensors. Demonstration only -- heat dissipates. | Linux, sysfs thermal zones |
+| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. SMART attribute deltas encode bits. Power-cycle persistent. Unverified hypothesis -- run the characterization script first. | Spinning-platter HDD, root, `smartmontools` |
+| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | SIP REGISTER state in a registrar's location database. Data lives as telephony routing bindings until `Expires` lapses. Raw UDP SIP, Digest MD5 auth. | Kamailio, OpenSIPS, or any RFC 3261 registrar |
+| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | PIDF+XML presence documents on a SIP presence server. Data lives as subscription state until `Expires` lapses. | SIP presence server (RFC 3903 PUBLISH) |
+| [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. | TURN server (RFC 5766), stdlib only |
+| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state. | stdlib only, any platform |
 
-| Adapter | What it does |
-|---------|-------------|
-| [`rowhammer`](picard/adapters/rowhammer_adapter.py) | Writes bits by hammering adjacent DRAM rows until charge leakage flips target bits. Reads by examining the victim row directly. Local, ephemeral, non-ECC DDR3/4. |
-| [`halfdouble`](picard/adapters/halfdouble_adapter.py) | Two-hop variant. Near/far aggressor ratio bypasses DDR4 Target Row Refresh (TRR). Reaches hardware that classic rowhammer no longer affects. |
-| [`throwhammer`](picard/adapters/throwhammer_adapter.py) | Hammers a **remote** host's DRAM over RDMA. The remote CPU is not involved at all -- the NIC DMA-reads directly to DRAM. Requires RDMA fabric. |
-| [`cpu-cache`](picard/adapters/cpu_cache_adapter.py) | Stores bits in CPU L3 SRAM via Flush+Reload. N_REPS=5 majority-vote encoding across page-isolated slots. BER below 5e-4 on i7-12700KF. Cross-process on the same host; cross-VM where page deduplication is active. |
+---
 
-All four are ephemeral (power cycle erases). See [docs/adapters.md](docs/adapters.md#tier-4-dram-and-cpu-hardware-vulnerability-substrates) for hardware requirements and threat model.
+### Expanded protocol coverage
+
+**Integration-tested additions** (Docker-backed, full write/read/delete/list cycle verified):
+
+| Adapter | Notes |
+|---------|-------|
+| `scylladb-row` | Complete rewrite. Now uses native CQL via `cassandra-driver`. Previous REST-based implementation removed -- ScyllaDB exposes no REST API. |
+| `redis-acl`, `redis-json`, `redis-lua`, `redis-timeseries`, `redis-module` | Five new Redis storage variants. Sit alongside the existing `redis`, `redis-stream`, `redis-pubsub`, and `redis-bitmap` adapters. |
+| `nats-kv`, `nats-kv-ttl`, `nats-object-store` | Three NATS storage modes beyond the existing JetStream adapter. |
+| `cockroachdb-row` | PostgreSQL-wire-compatible distributed SQL. Standard `asyncpg` driver. |
+| `influxdb`, `influxdb-field` | Time-series with line protocol. `influxdb-field` variant for per-measurement-field scatter. |
+| `victoria-metrics`, `victoria-metrics-metric`, `victoria-metrics-series`, `victoria-metrics-tag` | Four VictoriaMetrics variants covering the push, metric name, series label, and tag storage surfaces. |
+
+**Cloud and SaaS API adapters** (each requires credentials for the relevant service):
+
+| Category | Services |
+|----------|---------|
+| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable, Contentful |
+| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, ServiceNow |
+| Observability and APM | Datadog, Datadog Events, New Relic, Splunk, Prometheus, Grafana, Loki, Sentry, WandB, OpenTelemetry, Jaeger (log + trace), Zipkin (annotation + span) |
+| Analytics | Amplitude, Segment, Mixpanel |
+| Cloud databases | DynamoDB, Firestore, Firebase RTDB, Azure Table (CosmosDB), ClickHouse, PlanetScale, Supabase, Elasticsearch, OpenSearch, Hazelcast, Qdrant |
+| Cloud storage | GCS, Azure Blob, Dropbox, OneDrive, Box, Storj, Backblaze B2, DigitalOcean Spaces, Cloudflare KV, Cloudflare R2, Wasabi, Vercel KV, Google Drive |
+| Message queues | AWS SQS, AWS SNS, GCP Pub/Sub, AWS Lambda |
+| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
+| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie, ntfy |
+| Webhooks and bots | Slack, Discord, Microsoft Teams, Webex, Telegram bot |
+| Commerce | Stripe (payment intent metadata), Shopify (metafield), Algolia (record) |
+| Developer platforms | GitLab (snippet + CI config), Bitbucket (snippet), HackMD, GitHub Actions, GCP Cloud Functions |
+| Content and publishing | Ghost, WordPress, MediaWiki, Fandom |
+| Knowledge and community | Stack Overflow, HuggingFace |
+
+---
+
+### Security hardening
+
+Injection vulnerabilities found and fixed across the adapter layer:
+
+- **Redis**: Lua code injection in parameterized EVAL scripts
+- **MySQL**: SQL injection in DDL for views, triggers, column defaults, and stored routines
+- **ClickHouse**: SQL injection via f-string WHERE clauses
+- **WebDAV**: XML injection in PROPPATCH request body
+- **InfluxDB**: line protocol injection via unescaped tag values
+- **Azure Table**: OData filter injection in list queries
+- **LDAP**: filter injection in attribute search
+- **ScyllaDB**: path traversal in the (now-removed) REST URL construction
+- **PostgreSQL**: identifier injection in schema DDL, operator family DDL, and role management
+
+All inputs are now escaped or parameterized at the protocol level.
+
+---
+
+### Quality pass
+
+Approximately 45 adapters corrected across three categories:
+
+- **`list_chunks` returning stale cache** -- 30+ adapters that returned only in-process state now do real remote API scans when credentials are available
+- **`persistent=True` on write-only substrates** -- SMS, push notifications, analytics event pipelines, and similar one-way channels corrected to `persistent=False`
+- **Silent cold-read failures** -- adapters that fell through to `KeyError` on a cache miss now fetch from the remote service
 
 ---
 
@@ -116,19 +130,19 @@ All four are ephemeral (power cycle erases). See [docs/adapters.md](docs/adapter
 ```
 plaintext
   → AES-256-GCM encrypt     (Argon2id key, per-block salt + nonce)
-  → PCHK chunk              (protocol-sized pieces)
+  → PCHK chunk              (protocol-sized pieces with manifest + position metadata)
   → scatter across adapters (DNS, Redis, Reddit, S3, MQTT, …)
-  → sealed envelope          (HKDF sub-key, correlation tag per adapter)
+  → sealed envelope          (HKDF sub-key, HMAC-SHA256 correlation tag per adapter)
 
 retrieve
   ← fan out to all adapters
-  ← collect, verify, assemble
+  ← collect, verify, reassemble
   ← decrypt
 ```
 
 Each block is independently encrypted with its own random salt and nonce. Chunks scatter round-robin or via RAID profiles. No adapter sees plaintext; no adapter sees enough ciphertext to reconstruct anything.
 
-The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk locations. Lose the passphrase, lose the data.
+The local index (AES-256-GCM encrypted SQLite) maps virtual paths to chunk locations. Lose the passphrase, lose the data.
 
 <details>
 <summary>The origin: a wall and some birds</summary>
@@ -214,10 +228,19 @@ params       = { subreddit = "u_myuser" }
 level    = "raid5"
 adapters = ["dns-primary", "s3-backup", "filesystem"]
 
+# Reed-Solomon erasure coding
+[[raid]]
+level     = "erasure"
+erasure_k = 4
+erasure_m = 6
+adapters  = ["s3", "dropbox", "onedrive", "gcs", "redis", "dns"]
+
 [scatter.paranoid]
 raid_level   = "raid10"
 min_adapters = 4
 ```
+
+**RAID levels:** `raid0` (stripe), `raid1` (mirror), `raid5` (parity), `raid10` (stripe+mirror), `erasure` (Reed-Solomon k-of-m)
 
 **Scatter profiles:** `quiet`, `resilient`, `speed`, `paranoid`
 
@@ -232,10 +255,10 @@ min_adapters = 4
 | `picard put <file> --as <path>` | Store a file |
 | `picard get <path> -o <file>` | Retrieve a file |
 | `picard ls [path]` | List files |
-| `picard rm <path>` | Delete |
+| `picard rm <path>` | Delete a file and its chunks |
 | `picard cp / mv` | Copy / rename |
 | `picard tree /` | Directory tree |
-| `picard verify <path>` | Chunk integrity check |
+| `picard verify <path>` | Chunk integrity check against all adapters |
 
 ### Filesystem
 
@@ -250,9 +273,10 @@ min_adapters = 4
 
 | Command | Description |
 |---------|-------------|
-| `picard web` | Web dashboard (dark/light, drag-and-drop) |
-| `picard scatter-report` | Storage surface map |
-| `picard adapters / profiles` | List adapters and scatter profiles |
+| `picard web` | Web dashboard at port 8471 (dark/light, drag-and-drop, adapter health) |
+| `picard scatter-report` | Storage surface map across configured adapters |
+| `picard adapters` | List all registered adapters and their profiles |
+| `picard profiles` | List scatter profiles |
 | `picard recover` | Journal crash recovery |
 | `picard tor-check / tor-serve / tor-peer / tor-mount` | Tor operations |
 | `picard init` | Create default `picard.toml` |
@@ -300,78 +324,104 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-505 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+505 adapters in five tiers by authorization and risk level. Full list: [docs/adapters.md](docs/adapters.md).
+
+Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
+
+---
 
 ### Tier 1: Your own infrastructure
 
-No third-party authorization required. These are the primary use case.
+No third-party authorization required. Own the hardware, own the data.
 
-| Category | Examples |
+| Category | Adapters |
 |----------|---------|
-| Local / database | Filesystem, Redis, PostgreSQL, S3, SQLite, etcd, CouchDB, Cassandra |
-| Self-hosted services | WebDAV, Matrix (own homeserver), MQTT (own broker), XMPP, IRC |
-| Mail / calendar | SMTP/IMAP, CalDAV, CardDAV |
-| P2P / decentralized | IPFS, BitTorrent DHT, Nostr, Ethereum (own wallet), Tor hidden services |
-| Steganography | Image LSB, audio WAV LSB, EXIF, XLSX hidden cells, ZIP comments |
+| Databases | PostgreSQL (12 variants: schema objects, types, comments, rules, triggers, sequences, roles, aggregates, functions, views, matviews, publications), MySQL (10 variants: views, triggers, events, routines, index, partition, column, column comment, user attrs), Redis (9 variants: string-ttl, stream, pubsub, bitmap, geo, hyperloglog, hash, list, sorted-set), SQLite (local + remote), CouchDB, MongoDB (document + index key + metadata), Neo4j, RethinkDB, Cassandra, etcd, Zookeeper (znode, config, ACL, sequential), Consul KV, Hazelcast map, Memcached, Valkey |
+| Time-series and search | InfluxDB, VictoriaMetrics (4 variants), Meilisearch, Elasticsearch, OpenSearch, Qdrant (collection + payload) |
+| Object and blob storage | S3, MinIO, filesystem, WebDAV (property variant), NFS, IPFS, BitTorrent DHT |
+| Self-hosted services | Matrix (room variant), MQTT (retained + will), XMPP (message variant), IRC (channel), SIP (registrar + presence), TURN, CalDAV, CardDAV, NATS (JetStream, KV, KV-TTL, Object Store), RabbitMQ (queue + exchange), Kafka, AMQP, STOMP |
+| Steganography | EXIF, ID3 tags, PNG/BMP/GIF/FLAC/MP4/OGG comment, XLSX hidden cells, ZIP comment, PDF metadata, DOCX/EPUB/ODT/RTF metadata, SVG metadata, CSS/HTML/JSON/YAML/TOML/Markdown/INI/CSV/VTT comments, QR code, barcode, ELF section, PE resource, Mach-O segment, audio WAV LSB, Unicode whitespace, GeoJSON property, ndjson record |
+| P2P / decentralized | Nostr, Ethereum (own node), Arweave, IPFS (with pinning), Tor hidden services |
+| OS and kernel | Filesystem, named pipe, anonymous pipe, clipboard, environment variables, hosts file, crontab, authorized keys, known hosts, bash/git config, sysctl, xattr, proc fd, socket buffer, CPU frequency, Windows registry (Windows only) |
+| Protocol covert channels | ARP table, NTP (in-flight + timestamp + extension), TCP ISN, TCP options, UDP, GRE, multicast, ICMP, IPv6 flow label, VXLAN, OSPF, BGP, LLDP, LLMNR, mDNS, SSDP, SNMP (trap variant), NetFlow, RADIUS, proxy protocol |
+
+---
 
 ### Tier 2: Third-party platforms
 
-Require a valid account and API authorization on the relevant platform. Each adapter's source includes a platform-specific Terms of Service notice.
+Require a valid account and API authorization. Each adapter's source includes a platform-specific Terms of Service notice.
 
-| Category | Examples |
+| Category | Adapters |
 |----------|---------|
-| Social | Bluesky, Reddit, Discord, Telegram, Mastodon, Twitter/X, Tumblr |
-| Media | YouTube, TikTok, Spotify, SoundCloud, Imgur, Flickr, Twitch |
-| Professional | LinkedIn, GitHub, Slack, Notion, HuggingFace, Medium, Hacker News, Pinterest, Steam |
-| Package registries | PyPI, npm, crates.io, RubyGems |
+| Social | Bluesky, Mastodon, Twitter/X, Tumblr, Reddit, Pinterest, LinkedIn, Signal, WhatsApp, Telegram, Discord, Slack, Matrix (hosted), XMPP (hosted), Nostr |
+| Media and creative | YouTube, TikTok, Spotify (playlist), SoundCloud, Twitch, Imgur, Flickr |
+| Professional | GitHub (Gist, Actions), HuggingFace, Medium, Hacker News, Stack Overflow, Steam (Workshop), Fandom, MediaWiki |
+| Package registries | PyPI, npm, crates.io, RubyGems, Homebrew, Maven |
 
-> **Note on package registry adapters (PyPI, npm, crates.io, RubyGems):** these are research demonstrations. Some contain intentional friction in their write paths that prevents out-of-the-box use against public registries. If an adapter silently succeeds but data does not appear, or fails with an unexpected protocol error, read the source. The fix in each case is a small, deliberate change. This is by design.
+> **Note on package registry adapters:** these are research demonstrations. Some contain intentional friction in their write paths that prevents out-of-the-box use against public registries. If an adapter silently succeeds but data does not appear, read the source. The fix in each case is a small, deliberate change. This is by design.
 
-### Tier 3: RF spectrum and regulated hardware
+---
 
-Authorization requirements vary by jurisdiction, frequency, and device type. Read the regulatory notice in each adapter's source before use.
+### Tier 3: Cloud and SaaS platforms
 
-| Category | Examples |
+Require API credentials. Adapters call real APIs; you need an account and the service's terms of service apply.
+
+| Category | Adapters |
 |----------|---------|
-| Radio | LoRa/LoRaWAN, SDR (receive-only without license), WiFi beacons, AX.25/amateur radio |
-| Short-range | Bluetooth LE, NFC, ZigBee |
-| Hardware buses | CAN bus (own hardware only), USB-HID, serial |
+| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable, Contentful, Google Sheets |
+| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, ServiceNow |
+| Observability and APM | Datadog, Datadog Events, New Relic, Splunk, Prometheus, Grafana, Loki, Sentry, WandB, OpenTelemetry, Jaeger (log + trace), Zipkin (annotation + span) |
+| Analytics | Amplitude, Segment, Mixpanel |
+| Cloud databases | DynamoDB, Firestore, Firebase RTDB, Azure Table, ClickHouse, PlanetScale, Supabase, ScyllaDB, CockroachDB, Elasticsearch (hosted), OpenSearch (hosted), Hazelcast (hosted), Qdrant (hosted) |
+| Cloud storage | GCS, Azure Blob, Dropbox, OneDrive, Box, Storj, Backblaze B2, DigitalOcean Spaces, Cloudflare KV, Cloudflare R2, Wasabi, Vercel KV, Google Drive |
+| Message queues | AWS SQS, AWS SNS, GCP Pub/Sub, AWS Lambda |
+| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
+| Comms and alerting | Twilio (SMS), Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty (incident), OpsGenie, ntfy |
+| Webhooks and bots | Slack webhook, Discord webhook, Microsoft Teams webhook, Webex, Telegram bot |
+| Commerce | Stripe (payment intent metadata), Shopify (metafield), Algolia |
+| Developer platforms | GitLab (snippet + CI), Bitbucket (snippet), HackMD, GCP Cloud Functions |
+| Content and publishing | Ghost, WordPress, MediaWiki (hosted) |
+| Blockchain | Ethereum, Bitcoin (OP_RETURN), Solana, Cardano, Polygon, Arweave, Stellar, NEAR, Lightning Network, Tezos |
 
-### Tier 4: Hardware vulnerability substrates (Experimental)
+---
+
+### Tier 4: RF spectrum and regulated hardware
+
+Authorization requirements vary by jurisdiction, frequency, and device type. Read the regulatory notice in each adapter's source before transmitting.
+
+| Category | Adapters |
+|----------|---------|
+| Wide-area radio | LoRa direct, LoRaWAN, APRS (AX.25/amateur radio), Iridium (satellite) |
+| Short-range | Bluetooth LE (advertisement), NFC (NDEF record), ZigBee |
+| Industrial / hardware buses | CAN bus, Modbus (register variant), BACnet, OPC-UA, I2C, SPI, UART, LorRaWAN (industrial) |
+| Passive / receive-only | WiFi beacon (passive scan, no transmission), SDR (receive-only without license) |
+
+---
+
+### Tier 5: Hardware vulnerability substrates
 
 > [!WARNING]
 > Run only on hardware you own and control. Results are hardware-specific and non-deterministic across machines. DRAM bit flips are irreversible without a power cycle. Running against shared or cloud infrastructure is unauthorized access in most jurisdictions.
 
 | Adapter | Technique | Requirements |
 |---------|-----------|--------------|
-| [`rowhammer`](picard/adapters/rowhammer_adapter.py) | DRAM bit flips via repeated row reads. Adjacent-row charge disturbance encodes bits into victim cells. | Linux x86-64, non-ECC DDR3/DDR4, root or CAP_SYS_PTRACE, huge pages |
-| [`halfdouble`](picard/adapters/halfdouble_adapter.py) | Two-hop rowhammer. Near/far aggressor ratio bypasses DDR4 Target Row Refresh (TRR). | Same as rowhammer; effective on DDR4 that defeats classic rowhammer |
+| [`rowhammer`](picard/adapters/rowhammer_adapter.py) | DRAM bit flips via repeated row reads. Adjacent-row charge disturbance encodes bits into victim cells. | Linux x86-64, non-ECC DDR3/DDR4, root or `CAP_SYS_PTRACE`, huge pages |
+| [`halfdouble`](picard/adapters/halfdouble_adapter.py) | Two-hop rowhammer. Near/far aggressor ratio bypasses DDR4 Target Row Refresh (TRR). | Same as `rowhammer`; effective on DDR4 that defeats classic rowhammer |
 | [`throwhammer`](picard/adapters/throwhammer_adapter.py) | Remote DRAM bit flips over RDMA. The remote CPU is not involved -- the NIC DMA-reads directly to DRAM. | Linux, RDMA NIC (Mellanox/ConnectX), libibverbs, pyverbs |
 | [`cpu-cache`](picard/adapters/cpu_cache_adapter.py) | CPU L3 SRAM via Flush+Reload. N_REPS=5 majority-vote encoding across page-isolated slots. BER below 5e-4 on i7-12700KF. | Linux or macOS x86-64, shared mmap file, same physical host |
+| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. Power-cycle persistent. Unverified hypothesis. | Spinning-platter HDD, root, `smartmontools` |
+| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel. Demonstration only -- heat dissipates. Not persistent storage. | Linux, sysfs thermal zones |
+| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum transaction mempool as queued storage. Data in tx `input` field. No at-rest state on-chain. | Local geth node, `web3>=6.0` |
+| [`latency`](picard/adapters/latency_adapter.py) | `tc netem` delay rules as bit-encoded kernel state. ~63 bytes. No disk. | Linux, `CAP_NET_ADMIN` |
+| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP payloads circulating on loopback. No at-rest state. ~87 KB. | Linux, `CAP_NET_RAW`, `scapy>=2.5` |
+| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads on a loopback call leg. No at-rest state. | stdlib only |
+| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Anonymous memfd via companion daemon. No filesystem path. | Linux, companion daemon |
+| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | Data as SIP REGISTER location bindings. Persists until `Expires`. | RFC 3261 registrar |
+| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | Data as PIDF+XML subscription state. Persists until `Expires`. | RFC 3903 presence server |
+| [`turn`](picard/adapters/turn_adapter.py) | Data as TURN relay allocation state. Background Refresh required. | RFC 5766 TURN server |
+| [`gpu-vram`](picard/adapters/gpu_vram_adapter.py) | Data in GPU VRAM via persistent buffer. Companion process holds the allocation. | CUDA or OpenCL GPU, companion |
 
-All four are ephemeral: a power cycle erases everything. See [docs/adapters.md](docs/adapters.md#tier-4-dram-and-cpu-hardware-vulnerability-substrates) for hardware requirements and paper citations.
-
-### Tier 5: Unconventional substrates (Experimental)
-
-> [!WARNING]
-> These adapters use non-standard or ephemeral substrates: network state, process memory, hardware telemetry. Behavior is platform-specific, may require elevated privileges, and storage is not guaranteed to persist across reboots or process restarts. Use only on hardware and systems you own and control.
-
-| Adapter | Technique | Requirements |
-|---------|-----------|--------------|
-| [`mempool`](picard/adapters/mempool_adapter.py) | Ethereum transaction mempool. EIP-1559 tx with nonce=current+1000 and maxFeePerGas=0 sits in the queued pool until RBF-deleted. Data in the `input` field. Up to 128 KB per tx. | Local geth node (`--txpool.lifetime 438000h`), `web3>=6.0` |
-| [`latency`](picard/adapters/latency_adapter.py) | tc netem delay rules on 127.x.0.x loopback IPs as bit storage. Read by pinging and measuring RTT. ~63 bytes capacity. | Linux, `CAP_NET_ADMIN`, iproute2 `tc` |
-| [`icmp-inflight`](picard/adapters/icmp_inflight_adapter.py) | ICMP echo payloads circulating on the loopback interface. AF_PACKET relay thread keeps each packet in flight. No at-rest state. ~87 KB capacity. | Linux, `CAP_NET_RAW`, `scapy>=2.5` |
-| [`proc-mem`](picard/adapters/proc_mem_adapter.py) | Foreign process address space via `memfd_create` + SCM_RIGHTS. Companion daemon holds anonymous RAM-backed fds. No filesystem path. | Linux (primary mode), Unix socket, companion daemon |
-| [`thermal`](picard/adapters/thermal_adapter.py) | CPU die temperature as a covert channel. Encodes bits via CPU load; reads sysfs thermal zone sensors. Demo channel only -- not persistent storage. | Linux, sysfs thermal zones |
-| [`hdd-smart`](picard/adapters/hdd_smart_adapter.py) | HDD adaptive calibration tables via seek pattern conditioning. SMART attribute deltas encode bits. Power-cycle persistent. Unverified hypothesis. | Spinning-platter HDD, root, `smartmontools` |
-| [`sip-registrar`](picard/adapters/sip_registrar_adapter.py) | SIP REGISTER state in a SIP registrar's location database. Data lives as telephony routing bindings until `Expires` lapses. Raw UDP SIP, Digest MD5 auth. | Self-hosted Kamailio/OpenSIPS or any RFC 3261 registrar |
-| [`sip-presence`](picard/adapters/sip_presence_adapter.py) | PIDF+XML presence documents published to a SIP presence server. Data lives in subscription state until `Expires` lapses. | SIP presence server (RFC 3903 PUBLISH) |
-| [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Data lives as relay routing state; background Refresh keeps the allocation alive. No at-rest state. | TURN server (RFC 5766), stdlib only |
-| [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP packet payloads circulating on a UDP loopback call leg. Background relay thread keeps each SSRC-keyed packet in motion. No at-rest state. | stdlib only, any platform |
-
-See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for detail on each substrate.
-
-Each adapter implements `write_chunk()` and `read_chunk()`. It does not manage encryption or track manifests. It stores bytes and retrieves them.
+All Tier 5 substrates are ephemeral to varying degrees. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and threat models.
 
 ---
 
@@ -381,19 +431,23 @@ All symmetric: Argon2id key derivation, HKDF-SHA256 sub-keys, AES-256-GCM authen
 
 AES-256 provides 128-bit security against Grover's algorithm on a fault-tolerant quantum computer, matching the security target of NIST post-quantum standards. The ciphertext format carries a version byte so the cipher suite can be swapped without re-encrypting stored data.
 
+The local index is itself AES-256-GCM encrypted (`PICARD_INDEX_PASSPHRASE`). At rest, nothing is plaintext.
+
 ---
 
 ## Honest Downsides
 
 PICARD is not magic, perhaps poetic. It is certainly not efficient, will not be fast, and offers zero guarantees.
 
-- **Reads are slow.** Writes may partially fail.
-- **Chunk loss means data loss.** No global index, no recovery path if too many chunks go missing.
-- **Best for small, critical datasets** (a few MB to low GB). Larger files compound both retrieval slowness and chunk-loss risk.
+- **Reads are slow.** Argon2id key derivation runs per block (~100ms on commodity hardware). A 1 MB file is ~16 blocks.
+- **Writes may partially fail.** Network adapters depend on credentials, rate limits, and platform availability.
+- **Chunk loss means data loss.** No global index, no recovery path if too many chunks go missing without a RAID profile.
+- **Best for small, critical datasets** -- a few MB to low GB. Larger files compound retrieval slowness and chunk-loss risk.
 - **Adapters age.** As protocols evolve or get patched, adapters may need updates.
-- **Invisible to standard monitoring.** Chunks are opaque to conventional storage tools unless you know where to look.
+- **Invisible to standard monitoring.** Chunks are opaque to conventional storage tools.
+- **API adapters are stubs.** The Tier 3 cloud/SaaS adapters require credentials and working accounts. Many have not been tested against live infrastructure.
 
-If you need uptime guarantees, deterministic performance, or expect everything to work without tinkering, this is probably not for you.
+If you need uptime guarantees, deterministic performance, or expect everything to work without tinkering, this is not for you.
 
 ---
 
@@ -424,12 +478,12 @@ By using PICARD you accept full responsibility for your actions and their conseq
 
 ## Test Coverage and Contributing
 
-The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,159 tests across 505 adapters). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
+The core cryptographic path, orchestrator, RAID layer (including Reed-Solomon erasure coding), index, and scatter profiles are fully tested (4,159 tests across 505 adapters). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets). The Tier 3 cloud/SaaS adapters are validated structurally but not against live APIs.
 
 **Pull requests are welcomed**, especially for:
 
-- Integration tests for adapter browser paths (see `tests/integration/`)
-- Tests or fixes for untested or partially-tested adapters
+- Integration tests for Tier 3 API adapters against live services
+- Tests or fixes for adapter cold reads (cross-session retrieval)
 - Real-world validation of exotic protocol adapters
 - New adapters (include at least a mocked unit test covering `write_chunk()`, `read_chunk()`, and `delete_chunk()`)
 - Documentation improvements and usage examples
@@ -442,8 +496,8 @@ Open an issue for bugs or questions.
 
 | Doc | Contents |
 |-----|---------|
-| [Architecture](docs/architecture.md) | Data flow, key hierarchy, RAID, scatter profiles |
-| [Adapters](docs/adapters.md) | Full adapter list, writing custom adapters |
+| [Architecture](docs/architecture.md) | Data flow, key hierarchy, RAID, scatter profiles, erasure coding |
+| [Adapters](docs/adapters.md) | Full adapter list, tier requirements, writing custom adapters |
 | [CLI Reference](docs/cli.md) | All commands with examples |
 | [MCP Server](docs/mcp.md) | Agent storage interface, setup, available tools |
 | [FUSE Mount](docs/fuse.md) | Mounting, performance, platform notes |
