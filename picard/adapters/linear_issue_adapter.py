@@ -57,7 +57,7 @@ class LinearIssueAdapter(Adapter):
     async def write_chunk(self, encoded_chunk: str) -> StoredChunkRef:
         token = uuid.uuid4().hex[:16]
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
-        title = f"picard-{token}"
+        title = f"picard-{manifest_id}-{token}"
         mutation = """
         mutation CreateIssue($title: String!, $description: String!, $teamId: String!) {
           issueCreate(input: {title: $title, description: $description, teamId: $teamId}) {
@@ -133,14 +133,15 @@ class LinearIssueAdapter(Adapter):
             session = await self._get_session()
             async with session.post(_API_URL, json={
                 "query": query,
-                "variables": {"term": "picard-"},
+                "variables": {"term": f"picard-{manifest_id}-"},
             }) as resp:
                 if resp.status == 200:
                     data = await resp.json()
                     for issue in (data.get("data", {}).get("issueSearch", {}).get("nodes") or []):
                         title = issue.get("title", "")
-                        if title.startswith("picard-"):
-                            tok = title[len("picard-"):]
+                        prefix = f"picard-{manifest_id}-"
+                        if title.startswith(prefix):
+                            tok = title[len(prefix):]
                             issue_id = issue["id"]
                             if tok not in seen:
                                 seen.add(tok)

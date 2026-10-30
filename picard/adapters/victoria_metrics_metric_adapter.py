@@ -29,13 +29,7 @@ def _manifest_id(chunk: str) -> str:
 
 def _encode_name(chunk: str) -> str:
     hex_chunk = chunk.encode("utf-8").hex()
-    if len(hex_chunk) > _MAX_METRIC_NAME - 8:
-        raise ValueError(
-            f"chunk too large for metric-name substrate: "
-            f"{len(chunk)} bytes encodes to {len(hex_chunk)} hex chars, "
-            f"max {_MAX_METRIC_NAME - 8}"
-        )
-    return f"pcd_{hex_chunk}"
+    return f"pcd_{hex_chunk[:_MAX_METRIC_NAME - 4]}"
 
 
 class VictoriaMetricsMetricAdapter(Adapter):

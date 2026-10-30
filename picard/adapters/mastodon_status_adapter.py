@@ -61,7 +61,7 @@ class MastodonStatusAdapter(Adapter):
         payload = {
             "status": encoded_chunk,
             "visibility": "direct",
-            "spoiler_text": f"picard:{token}",
+            "spoiler_text": f"picard:{manifest_id}:{token}",
         }
         async with session.post(
                 f"{self._base}/api/v1/statuses", data=payload) as resp:
@@ -124,8 +124,9 @@ class MastodonStatusAdapter(Adapter):
                             break
                         for s in statuses:
                             spoiler = s.get("spoiler_text", "")
-                            if spoiler.startswith("picard:"):
-                                tok = spoiler[len("picard:"):]
+                            prefix = f"picard:{manifest_id}:"
+                            if spoiler.startswith(prefix):
+                                tok = spoiler[len(prefix):]
                                 if tok not in seen:
                                     seen.add(tok)
                                     refs.append(StoredChunkRef(

@@ -61,7 +61,7 @@ class GitlabSnippetAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "title": f"picard:{token}",
+            "title": f"picard:{manifest_id}:{token}",
             "visibility": "private",
             "files": [{"file_path": "chunk.txt", "content": encoded_chunk}],
         }
@@ -113,8 +113,9 @@ class GitlabSnippetAdapter(Adapter):
                     break
                 for item in items:
                     title = item.get("title", "")
-                    if title.startswith("picard:"):
-                        tok = title[len("picard:"):]
+                    prefix = f"picard:{manifest_id}:"
+                    if title.startswith(prefix):
+                        tok = title[len(prefix):]
                         snippet_id = item["id"]
                         if tok not in seen:
                             seen.add(tok)

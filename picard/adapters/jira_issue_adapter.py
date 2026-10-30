@@ -68,7 +68,7 @@ class JiraIssueAdapter(Adapter):
         payload = {
             "fields": {
                 "project": {"key": self._project_key},
-                "summary": f"picard:{token}",
+                "summary": f"picard:{manifest_id}:{token}",
                 "issuetype": {"name": "Task"},
                 "description": {
                     "type": "doc", "version": 1,
@@ -131,8 +131,9 @@ class JiraIssueAdapter(Adapter):
                     break
                 for issue in issues:
                     summary = issue.get("fields", {}).get("summary", "")
-                    if summary.startswith("picard:"):
-                        tok = summary[len("picard:"):]
+                    prefix = f"picard:{manifest_id}:"
+                    if summary.startswith(prefix):
+                        tok = summary[len(prefix):]
                         issue_key = issue["key"]
                         if tok not in seen:
                             seen.add(tok)

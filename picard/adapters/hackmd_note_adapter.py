@@ -60,7 +60,7 @@ class HackmdNoteAdapter(Adapter):
         manifest_id = _manifest_id_from_chunk(encoded_chunk)
         session = await self._get_session()
         payload = {
-            "title": f"picard-{token}",
+            "title": f"picard-{manifest_id}-{token}",
             "content": encoded_chunk,
             "readPermission": "owner",
             "writePermission": "owner",
@@ -109,8 +109,9 @@ class HackmdNoteAdapter(Adapter):
                     items = await resp.json()
                     for item in (items or []):
                         title = item.get("title", "")
-                        if title.startswith("picard-"):
-                            tok = title[len("picard-"):]
+                        prefix = f"picard-{manifest_id}-"
+                        if title.startswith(prefix):
+                            tok = title[len(prefix):]
                             note_id = item.get("id", "")
                             if note_id and tok not in seen:
                                 seen.add(tok)
