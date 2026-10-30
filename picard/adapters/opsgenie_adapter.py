@@ -72,7 +72,7 @@ class OpsGenieAdapter(Adapter):
         session = await self._get_session()
         for _ in range(5):
             async with session.get(
-                f"{_API_URL}/requests/{request_id}",
+                f"{_API_URL}/alerts/requests/{request_id}",
                 headers=self._headers(),
             ) as resp:
                 if resp.status == 200:

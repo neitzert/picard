@@ -21,7 +21,7 @@ _TABLE = "chunks"
 
 _DDL_KEYSPACE = (
     f"CREATE KEYSPACE IF NOT EXISTS {_KEYSPACE} "
-    "WITH replication = {{'class': 'SimpleStrategy', 'replication_factor': 1}}"
+    "WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1}"
 )
 _DDL_TABLE = (
     f"CREATE TABLE IF NOT EXISTS {_KEYSPACE}.{_TABLE} ("
