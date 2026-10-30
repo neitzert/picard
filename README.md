@@ -56,6 +56,16 @@ Ten new adapters push storage into substrates with no at-rest ciphertext:
 | Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie |
 | Dev platforms | GitLab snippets, Bitbucket snippets, HackMD, GitHub Gist |
 
+**Reed-Solomon erasure coding** -- a new `erasure` RAID level wraps `zfec` to provide configurable k-of-m recovery. Any k shards reconstruct the original block; the remaining m-k are parity. Tolerates up to m-k simultaneous adapter failures with (m/k - 1) storage overhead. Configure with `level = "erasure"`, `erasure_k`, and `erasure_m` in the `[[raid]]` block. Install with `pip install 'picard-store[erasure]'`.
+
+```toml
+[[raid]]
+level     = "erasure"
+erasure_k = 4
+erasure_m = 6
+adapters  = ["s3", "dns", "redis", "dropbox", "onedrive", "matrix"]
+```
+
 **Security hardening** -- injection vulnerabilities fixed across the adapter layer: Lua code injection in Redis scripts, SQL injection in MySQL DDL, XML injection in WebDAV PROPPATCH, InfluxDB line protocol injection, OData filter injection in Azure Table, LDAP filter injection, path traversal in ScyllaDB REST URLs, PostgreSQL identifier injection in schema and operator family DDL. All inputs are now escaped or parameterized.
 
 **Quality pass** -- ~45 adapters corrected: `list_chunks` now does real remote API scans instead of returning only in-process cache, write-only substrates (SMS, push notifications, analytics events) corrected to `persistent=False`, cold reads that silently fell through to KeyError now actually fetch from the service.
