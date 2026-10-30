@@ -19,6 +19,31 @@ Not efficient. Protocol-agnostic.
 
 ---
 
+## New in 0.5.0: Cloud and SaaS Substrates
+
+244 new adapters, bringing the total to 518. Two categories:
+
+**Tier 2 additions** -- Docker-backed services, all integration-tested against live instances: ScyllaDB (rewritten from scratch -- previous version targeted non-existent REST endpoints; now uses native CQL via cassandra-driver), additional Redis variants (ACL, JSON, Lua script, TimeSeries, Module RDB), NATS KV and object store, extended MQTT, CockroachDB, InfluxDB field storage.
+
+**Tier 3 additions** -- cloud and SaaS API stubs. Each requires credentials for the relevant service. These are not efficient storage. They are a statement.
+
+| Category | Adapters |
+|----------|---------|
+| Cloud databases | DynamoDB, Firestore, CosmosDB, Cassandra, ClickHouse, PlanetScale, Supabase |
+| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable |
+| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, Salesforce |
+| Cloud storage | Dropbox, OneDrive, Box, GCS, Storj |
+| Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
+| Messaging and events | Segment, Amplitude, Mixpanel, Kafka, RabbitMQ, Discord, Matrix |
+| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie |
+| Dev platforms | GitLab snippets, Bitbucket snippets, HackMD, GitHub Gist |
+
+**Security hardening.** This release fixed multiple injection vulnerabilities across the adapter layer: Lua code injection in Redis scripts, SQL injection in MySQL DDL (view, trigger, column default), XML injection in WebDAV PROPPATCH, InfluxDB line protocol injection, OData filter injection in Azure Table, LDAP filter injection, path traversal in ScyllaDB REST URLs, and PostgreSQL identifier injection in schema and operator family DDL. All inputs are now properly escaped or parameterized.
+
+**Quality pass.** All Tier 2 and Tier 3 adapters were audited for correctness. Common issues fixed across ~45 adapters: `list_chunks` returning only in-process cache with no remote scan (useless cross-process), write-only substrates incorrectly marked `persistent=True` (SMS, push notifications, analytics events now correctly marked `persistent=False`), cold reads that fell through to KeyError instead of fetching from the service, and `delete_chunk` returning success without attempting deletion.
+
+---
+
 ## New in 0.4.0: Unconventional Substrates
 
 > [!WARNING]
@@ -39,7 +64,7 @@ Ten new adapters push storage into substrates with no at-rest ciphertext:
 | [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. |
 | [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state, stdlib only. |
 
-274 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
+284 adapters in the Tier 2/5 experimental categories. 518 adapters total. See [docs/adapters.md](docs/adapters.md#tier-5-unconventional-substrates) for requirements and detail.
 
 ---
 
@@ -101,7 +126,7 @@ The local index (an AES-256-GCM encrypted SQLite database) maps paths to chunk l
 *Storage surface by category, adapter health, and encryption details at a glance.*
 
 ![PICARD adapter registry](docs/img/ui-adapters.png)
-*274 adapters browsable by category, with required parameters and one-click add.*
+*518 adapters browsable by category, with required parameters and one-click add.*
 
 ---
 
@@ -250,7 +275,7 @@ See [docs/mcp.md](docs/mcp.md) for available tools and setup details.
 
 ## Adapters
 
-274 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
+518 adapters in five tiers by authorization requirement. Full list: [docs/adapters.md](docs/adapters.md).
 
 ### Tier 1: Your own infrastructure
 
@@ -374,7 +399,7 @@ By using PICARD you accept full responsibility for your actions and their conseq
 
 ## Test Coverage and Contributing
 
-The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,236 tests). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
+The core cryptographic path, orchestrator, RAID layer, index, and scatter profiles are fully tested (4,159 tests across 518 adapters). Many protocol adapters have unit tests with mocked transports; a significant portion has not been exercised against live infrastructure, particularly the browser-automation paths and adapters for exotic protocols (RF, hardware buses, satellite, raw sockets).
 
 **Pull requests are welcomed**, especially for:
 
