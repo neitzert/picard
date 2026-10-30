@@ -43,18 +43,37 @@ Ten new adapters push storage into substrates with no at-rest ciphertext:
 | [`turn`](picard/adapters/turn_adapter.py) | STUN/TURN relay allocation state. Background Refresh keeps the allocation alive. No at-rest state. |
 | [`rtp-inflight`](picard/adapters/rtp_inflight_adapter.py) | RTP payloads circulating on a UDP loopback call leg. SSRC-keyed relay thread, no at-rest state, stdlib only. |
 
-**Cloud and SaaS substrates** -- 244 new Tier 2 and Tier 3 adapters. Tier 2 additions are Docker-backed and integration-tested: ScyllaDB (rewritten -- now native CQL via cassandra-driver), additional Redis variants (ACL, JSON, Lua script, TimeSeries, Module RDB), NATS KV and object store, CockroachDB, InfluxDB. Tier 3 are cloud/SaaS API stubs -- each requires credentials for the relevant service.
+**Cloud and SaaS substrates** -- 244 new Tier 2 and Tier 3 adapters.
 
-| Category | Adapters |
+**Tier 2** additions are Docker-backed and integration-tested:
+
+| Adapter | Notes |
+|---------|-------|
+| ScyllaDB | Rewritten to native CQL via `cassandra-driver`. Previous REST-based implementation removed. |
+| Redis ACL, JSON, Lua script, TimeSeries, Module RDB | Five new Redis storage variants on top of the existing Redis adapter family. |
+| NATS KV, KV-TTL, Object Store | Three new NATS storage modes beyond the existing JetStream adapter. |
+| CockroachDB | PostgreSQL-wire-compatible distributed SQL. |
+| InfluxDB | Time-series with line protocol; `influxdb-field` variant for per-field scatter. |
+| VictoriaMetrics | High-performance metrics storage in three variants: series, metric name, tag. |
+
+**Tier 3** adapters are cloud/SaaS API stubs. Each requires credentials for the relevant service.
+
+| Category | Services |
 |----------|---------|
-| Cloud databases | DynamoDB, Firestore, CosmosDB, Cassandra, ClickHouse, PlanetScale, Supabase |
-| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable |
-| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, Salesforce |
-| Cloud storage | Dropbox, OneDrive, Box, GCS, Storj |
+| Work and project management | Jira, Confluence, Notion, Linear, Asana, ClickUp, Trello, Airtable, Contentful |
+| CRM and support | HubSpot, Freshdesk, Zendesk, Intercom, ServiceNow |
+| Observability and APM | Datadog, Datadog Events, New Relic, Splunk, Prometheus, Grafana, Loki, Sentry, WandB, OpenTelemetry, Jaeger (log + trace), Zipkin (annotation + span) |
+| Analytics | Amplitude, Segment, Mixpanel |
+| Cloud databases | DynamoDB, Firestore, Firebase RTDB, Azure Table (CosmosDB), ClickHouse, PlanetScale, Supabase, Elasticsearch, OpenSearch, Hazelcast, Qdrant |
+| Cloud storage | GCS, Azure Blob, Dropbox, OneDrive, Box, Storj, Backblaze B2, DigitalOcean Spaces, Cloudflare KV, Cloudflare R2, Wasabi, Vercel KV, Google Drive |
+| Message queues | AWS SQS, AWS SNS, GCP Pub/Sub, Google Pub/Sub, AWS Lambda |
 | Identity and secrets | Auth0, Okta, AWS Secrets Manager, Azure Key Vault, HashiCorp Vault |
-| Messaging and events | Segment, Amplitude, Mixpanel, Kafka, RabbitMQ, Discord, Matrix |
-| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie |
-| Dev platforms | GitLab snippets, Bitbucket snippets, HackMD, GitHub Gist |
+| Comms and alerting | Twilio, Mailgun, Mailchimp, SendGrid, Pushover, PagerDuty, OpsGenie, ntfy |
+| Webhooks and bots | Slack, Discord, Microsoft Teams, Webex, Telegram bot |
+| Commerce | Stripe (payment intent metadata), Shopify (metafield), Algolia (record) |
+| Developer platforms | GitLab (snippet + CI config), Bitbucket (snippet), HackMD (note), GitHub Actions, GCP Cloud Functions |
+| Content and publishing | Ghost (post), WordPress (post), MediaWiki (page), Fandom (page) |
+| Knowledge communities | Stack Overflow (answer), HuggingFace (model card) |
 
 **Reed-Solomon erasure coding** -- a new `erasure` RAID level wraps `zfec` to provide configurable k-of-m recovery. Any k shards reconstruct the original block; the remaining m-k are parity. Tolerates up to m-k simultaneous adapter failures with (m/k - 1) storage overhead. Configure with `level = "erasure"`, `erasure_k`, and `erasure_m` in the `[[raid]]` block. Install with `pip install 'picard-store[erasure]'`.
 
